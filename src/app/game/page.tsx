@@ -28,7 +28,7 @@ export default function GamePage() {
 function GameInner() {
   const router = useRouter();
   const sp = useSearchParams();
-  const paidTxHash = sp.get("tx") || undefined;
+  const txHash = sp.get("tx") || "";
   const { address } = useCurrentPlayer();
   const { t, game } = useLang();
   const [runId, setRunId] = useState<string | null>(null);
@@ -44,11 +44,12 @@ function GameInner() {
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const transitionRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Safety guard: if someone lands on /game without connecting a wallet
-  // (deep-linked URL), bounce them home.
+  // Safety guard: /game requires a connected wallet AND a tx hash in the URL
+  // (every play is backed by an on-chain play() call). Deep-linked without
+  // those → bounce home.
   useEffect(() => {
-    if (!address) router.replace(`/?game=${game}`);
-  }, [address, game, router]);
+    if (!address || !txHash) router.replace(`/?game=${game}`);
+  }, [address, txHash, game, router]);
 
   // pre-game countdown: 5 → 4 → 3 → 2 → 1 → GO! → startRun (≈5.5s total)
   useEffect(() => {
@@ -56,8 +57,8 @@ function GameInner() {
     if (readyCount === 0) {
       const id = setTimeout(async () => {
         try {
-          if (!address) throw new Error("no-address");
-          const res = await startRun(game, address, paidTxHash);
+          if (!address || !txHash) throw new Error("no-address-or-tx");
+          const res = await startRun(game, address, txHash);
           setRunId(res.runId);
           setQuestion(res.question);
           setLeftIsCorrect(Math.random() < 0.5);
@@ -76,7 +77,7 @@ function GameInner() {
       1000,
     );
     return () => clearTimeout(id);
-  }, [readyCount, router, address, paidTxHash]);
+  }, [readyCount, router, address, txHash, game]);
 
   // per-question countdown
   useEffect(() => {

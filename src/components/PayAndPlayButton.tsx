@@ -31,6 +31,7 @@ type Stage =
   | "connecting"
   | "switching"
   | "approving"
+  | "signing"
   | "paying"
   | "starting";
 
@@ -64,7 +65,7 @@ export function PayAndPlayButton({
     ).toISOString();
   }, []);
 
-  async function runPaidFlow(currentAddress: `0x${string}`) {
+  async function runPlayFlow(currentAddress: `0x${string}`) {
     if (!publicClient) throw new Error("no-rpc");
 
     if (chainId !== ACTIVE_CHAIN.id) {
@@ -72,26 +73,30 @@ export function PayAndPlayButton({
       await switchChainAsync({ chainId: ACTIVE_CHAIN.id });
     }
 
-    const allowance = (await publicClient.readContract({
-      address: token.address,
-      abi: erc20Abi,
-      functionName: "allowance",
-      args: [currentAddress, POT_ADDRESS],
-    })) as bigint;
-
-    if (allowance < ENTRY_FEE_UNITS) {
-      setStage("approving");
-      const approveHash = await writeContractAsync({
-        chainId: ACTIVE_CHAIN.id,
+    // Approve only needed for paid plays — free plays don't pull USDT.
+    // The contract itself decides free vs paid from `lastFreePlayDay`.
+    if (!playerHasFreePlay) {
+      const allowance = (await publicClient.readContract({
         address: token.address,
         abi: erc20Abi,
-        functionName: "approve",
-        args: [POT_ADDRESS, maxUint256],
-      });
-      await publicClient.waitForTransactionReceipt({ hash: approveHash });
+        functionName: "allowance",
+        args: [currentAddress, POT_ADDRESS],
+      })) as bigint;
+
+      if (allowance < ENTRY_FEE_UNITS) {
+        setStage("approving");
+        const approveHash = await writeContractAsync({
+          chainId: ACTIVE_CHAIN.id,
+          address: token.address,
+          abi: erc20Abi,
+          functionName: "approve",
+          args: [POT_ADDRESS, maxUint256],
+        });
+        await publicClient.waitForTransactionReceipt({ hash: approveHash });
+      }
     }
 
-    setStage("paying");
+    setStage(playerHasFreePlay ? "signing" : "paying");
     const playHash = await writeContractAsync({
       chainId: ACTIVE_CHAIN.id,
       address: POT_ADDRESS,
@@ -108,22 +113,18 @@ export function PayAndPlayButton({
   async function handleClick() {
     setError(null);
 
-    // Wallet required for any play — free or paid. Keeps the leaderboard
-    // to real addresses and lets winners actually claim on-chain.
+    if (!contractLive) return;
+
+    // Wallet required for any play — free or paid. Every play goes through
+    // an on-chain play() call so fake addresses can't pollute the leaderboard.
     if (!isConnected || !address) {
       pendingRef.current = true;
       setPickerOpen(true);
       return;
     }
 
-    if (playerHasFreePlay) {
-      router.push(`/game?game=${game}`);
-      return;
-    }
-    if (!contractLive) return;
-
     try {
-      await runPaidFlow(address);
+      await runPlayFlow(address);
     } catch (e) {
       console.error("pay-and-play failed:", e);
       setError(friendlyError(e, 120));
@@ -141,20 +142,11 @@ export function PayAndPlayButton({
       const addr = result.accounts[0];
       if (!addr) throw new Error("no-wallet");
 
-      if (!wasPending) {
+      if (!wasPending || !contractLive) {
         setStage("idle");
         return;
       }
-      // Resume the play intent now that we have a wallet.
-      if (playerHasFreePlay) {
-        router.push(`/game?game=${game}`);
-        return;
-      }
-      if (!contractLive) {
-        setStage("idle");
-        return;
-      }
-      await runPaidFlow(addr);
+      await runPlayFlow(addr);
     } catch (e) {
       console.error("pay-and-play connect failed:", e);
       setError(friendlyError(e, 120));
@@ -217,6 +209,8 @@ function stageLabel(s: Stage): string {
       return "Switching network…";
     case "approving":
       return "Approving USDT…";
+    case "signing":
+      return "Signing play…";
     case "paying":
       return "Paying $0.10…";
     case "starting":

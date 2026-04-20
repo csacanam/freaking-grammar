@@ -8,7 +8,11 @@ import {
   TOKEN_DECIMALS,
 } from "@/lib/supabase";
 import { POT_ADDRESS } from "@/lib/wagmi";
-import { celoClient, FREAKING_POT_ABI } from "@/lib/onchain";
+import {
+  celoClient,
+  FREAKING_POT_ABI,
+  readHasFreePlayToday,
+} from "@/lib/onchain";
 
 export const dynamic = "force-dynamic";
 
@@ -111,16 +115,35 @@ export async function GET(req: NextRequest) {
 
   let playerHasFreePlay = true;
   if (player) {
-    // Only terminal runs count — `open` rows from abandoned tabs don't burn
-    // the free allowance.
-    const { count } = await supabase
-      .from("runs")
-      .select("*", { count: "exact", head: true })
-      .eq("lang", lang)
-      .eq("day_utc", day)
-      .eq("player", player)
-      .neq("status", "open");
-    playerHasFreePlay = (count ?? 0) === 0;
+    // On-chain is source of truth. Fall back to DB (only terminal runs count,
+    // `open` rows from abandoned tabs don't burn the allowance) if the RPC
+    // hiccups or the contract isn't deployed yet.
+    if (!isAddressEqual(POT_ADDRESS, zeroAddress)) {
+      try {
+        playerHasFreePlay = await readHasFreePlayToday(
+          gameId,
+          player as `0x${string}`,
+        );
+      } catch {
+        const { count } = await supabase
+          .from("runs")
+          .select("*", { count: "exact", head: true })
+          .eq("lang", lang)
+          .eq("day_utc", day)
+          .eq("player", player)
+          .neq("status", "open");
+        playerHasFreePlay = (count ?? 0) === 0;
+      }
+    } else {
+      const { count } = await supabase
+        .from("runs")
+        .select("*", { count: "exact", head: true })
+        .eq("lang", lang)
+        .eq("day_utc", day)
+        .eq("player", player)
+        .neq("status", "open");
+      playerHasFreePlay = (count ?? 0) === 0;
+    }
   }
 
   return Response.json({

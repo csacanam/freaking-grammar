@@ -25,7 +25,7 @@ type PlayedArgs = {
 };
 
 export type VerifyResult =
-  | { valid: true; potAfter: bigint; dayNumber: bigint }
+  | { valid: true; wasFree: boolean; potAfter: bigint; dayNumber: bigint }
   | { valid: false; reason: string };
 
 /// Confirms the tx actually paid `entryFee` into `play(gameId)` from `player`
@@ -81,11 +81,26 @@ export async function verifyPaymentTx(
   if (Number(args.gameId) !== gameId) {
     return { valid: false, reason: "wrong-gameId" };
   }
-  if (args.wasFree) {
-    return { valid: false, reason: "was-free" };
-  }
 
-  return { valid: true, potAfter: args.potAfter, dayNumber: args.day };
+  return {
+    valid: true,
+    wasFree: args.wasFree,
+    potAfter: args.potAfter,
+    dayNumber: args.day,
+  };
+}
+
+/// On-chain truth for "has this player still got today's free play".
+export async function readHasFreePlayToday(
+  gameId: number,
+  player: `0x${string}`,
+): Promise<boolean> {
+  return (await celoClient.readContract({
+    address: POT_ADDRESS,
+    abi: FREAKING_POT_ABI,
+    functionName: "hasFreePlayToday",
+    args: [BigInt(gameId), player],
+  })) as boolean;
 }
 
 /// Reads current pot amount from the contract for (gameId, dayNumber).

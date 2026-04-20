@@ -74,12 +74,12 @@ export type FinishResult = { score: number; rank: number };
 export async function startRun(
   lang: Lang,
   player: string,
-  paidTxHash?: string,
+  txHash: string,
 ): Promise<StartRunResult> {
   const r = await fetch(`/api/runs${q({ lang })}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ player, paidTxHash }),
+    body: JSON.stringify({ player, txHash }),
   });
   if (!r.ok) throw new Error(`startRun failed: ${r.status}`);
   return r.json();
