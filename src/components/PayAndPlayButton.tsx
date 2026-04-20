@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   useAccount,
@@ -58,7 +58,6 @@ export function PayAndPlayButton({
     balance: number;
     address: string;
   } | null>(null);
-  const pendingRef = useRef(false);
 
   const contractLive = !isAddressEqual(POT_ADDRESS, zeroAddress);
   const token = STABLECOIN[ACTIVE_CHAIN.id];
@@ -140,7 +139,6 @@ export function PayAndPlayButton({
     // Wallet required for any play — free or paid. Every play goes through
     // an on-chain play() call so fake addresses can't pollute the leaderboard.
     if (!isConnected || !address) {
-      pendingRef.current = true;
       setPickerOpen(true);
       return;
     }
@@ -159,26 +157,16 @@ export function PayAndPlayButton({
 
   async function onPickWallet(c: Connector) {
     setPickerOpen(false);
-    const wasPending = pendingRef.current;
-    pendingRef.current = false;
     try {
       setStage("connecting");
-      const result = await connectAsync({ connector: c });
-      const addr = result.accounts[0];
-      if (!addr) throw new Error("no-wallet");
-
-      if (!wasPending || !contractLive) {
-        setStage("idle");
-        return;
-      }
-      await runPlayFlow(addr);
+      await connectAsync({ connector: c });
     } catch (e) {
-      console.error("pay-and-play connect failed:", e);
-      if ((e as Error)?.message !== "insufficient-usdt") {
-        setError(friendlyError(e, 120));
-      }
-      setStage("idle");
+      console.error("wallet connect failed:", e);
+      setError(friendlyError(e, 120));
     }
+    // Connect and play are separate actions. After a successful connect, the
+    // button re-renders with the real play label — user clicks again to play.
+    setStage("idle");
   }
 
   const busy = stage !== "idle";
@@ -231,10 +219,7 @@ export function PayAndPlayButton({
         open={pickerOpen}
         connectors={connectors}
         onSelect={onPickWallet}
-        onClose={() => {
-          pendingRef.current = false;
-          setPickerOpen(false);
-        }}
+        onClose={() => setPickerOpen(false)}
       />
       <NeedUsdtModal
         open={!!needUsdt}
