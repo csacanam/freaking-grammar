@@ -43,7 +43,7 @@ export default function LobbyPage() {
   const totalUnclaimed = unclaimed.reduce((s, w) => s + w.amountUSD, 0);
 
   return (
-    <div className="flex-1 flex flex-col px-5 pt-6 pb-4 max-w-md mx-auto w-full gap-5">
+    <div className="flex-1 flex flex-col px-5 pt-6 pb-32 max-w-md mx-auto w-full gap-5">
       <header className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Image src="/mascot.png" alt="" width={36} height={36} />
@@ -75,7 +75,11 @@ export default function LobbyPage() {
         )}
       </div>
 
-      <PayAndPlayButton playerHasFreePlay={!!lobby?.playerHasFreePlay} />
+      <div className="fixed inset-x-0 bottom-20 z-30 pointer-events-none pb-[env(safe-area-inset-bottom)]">
+        <div className="max-w-md mx-auto px-5 pointer-events-auto">
+          <PayAndPlayButton playerHasFreePlay={!!lobby?.playerHasFreePlay} />
+        </div>
+      </div>
     </div>
   );
 }

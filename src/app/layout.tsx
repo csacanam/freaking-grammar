@@ -3,9 +3,48 @@ import "./globals.css";
 import { Providers } from "@/lib/providers";
 import { BottomTabs } from "@/components/BottomTabs";
 
+const SITE_URL =
+  process.env.NEXT_PUBLIC_SITE_URL || "https://freaking-grammar.vercel.app";
+
+// Farcaster mini-app preview embedded when the URL is shared in Warpcast /
+// Base App. `fc:miniapp` is Farcaster's share-card protocol — the image
+// shown is our dynamic OG image (see opengraph-image.tsx).
+const fcMiniApp = {
+  version: "1",
+  imageUrl: `${SITE_URL}/opengraph-image`,
+  button: {
+    title: "Play",
+    action: {
+      type: "launch_frame",
+      url: SITE_URL,
+      name: "Freaking Grammar",
+      splashImageUrl: `${SITE_URL}/mascot.png`,
+      splashBackgroundColor: "#68c3a0",
+    },
+  },
+};
+
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: "Freaking Grammar",
-  description: "Test your grammar agility. Daily pot, winner takes all.",
+  description:
+    "Daily grammar pot. Tap the right word fastest. Winner takes 100%.",
+  openGraph: {
+    title: "Freaking Grammar",
+    description: "Daily grammar pot · one winner per game",
+    url: SITE_URL,
+    siteName: "Freaking Grammar",
+    images: [{ url: "/opengraph-image", width: 1200, height: 630 }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Freaking Grammar",
+    description: "Daily grammar pot · one winner per game",
+    images: ["/opengraph-image"],
+  },
+  other: {
+    "fc:miniapp": JSON.stringify(fcMiniApp),
+  },
 };
 
 export const viewport: Viewport = {

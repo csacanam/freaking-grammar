@@ -169,22 +169,34 @@ export function PayAndPlayButton({
     ? `▶  ${paidVerb}  ·  $0.10`
     : `▶  ${replay ? t.playAgain : t.playFree}`;
 
+  // Caption folded into the button so it stays fixed at the bottom without
+  // two separate lines of secondary text.
+  const showCaption = !busy && !playerHasFreePlay;
+
   return (
     <div className="flex flex-col gap-2">
-      <Button full onClick={handleClick} disabled={busy || isLocked}>
-        {label}
+      <Button
+        full
+        onClick={handleClick}
+        disabled={busy || isLocked}
+        className={showCaption ? "!h-auto !py-2.5 !text-xl" : ""}
+      >
+        {showCaption ? (
+          <span className="flex flex-col items-center leading-tight gap-0.5">
+            <span>{label}</span>
+            <span className="text-[10px] tracking-[0.2em] uppercase opacity-70 font-display">
+              {isPaid ? `${t.potShare}  ·  ` : ""}
+              {t.freeAgainIn}{" "}
+              <Countdown
+                targetIso={resetIso}
+                className="font-mono tabular-nums"
+              />
+            </span>
+          </span>
+        ) : (
+          label
+        )}
       </Button>
-      {!busy && isPaid && (
-        <p className="text-xs text-center font-display tracking-widest uppercase text-muted">
-          {t.potShare}
-        </p>
-      )}
-      {!busy && !playerHasFreePlay && (
-        <p className="text-xs text-center font-display tracking-widest uppercase text-muted">
-          {t.freeAgainIn}{" "}
-          <Countdown targetIso={resetIso} className="font-mono tabular-nums" />
-        </p>
-      )}
       {error && (
         <p className="text-xs text-red text-center font-mono">{error}</p>
       )}
