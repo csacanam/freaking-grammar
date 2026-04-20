@@ -4,16 +4,14 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   useAccount,
-  useConnect,
   usePublicClient,
   useSwitchChain,
   useWriteContract,
-  type Connector,
 } from "wagmi";
+import { useConnectModal } from "@rainbow-me/rainbowkit";
 import { erc20Abi, isAddressEqual, maxUint256, zeroAddress } from "viem";
 import { Button } from "@/components/Button";
 import { Countdown } from "@/components/Countdown";
-import { WalletPicker } from "@/components/WalletPicker";
 import { NeedUsdtModal } from "@/components/NeedUsdtModal";
 import { friendlyError } from "@/lib/format";
 import {
@@ -29,7 +27,6 @@ const FREAKING_POT_ABI = FreakingPotArtifact.abi;
 
 type Stage =
   | "idle"
-  | "connecting"
   | "switching"
   | "approving"
   | "signing"
@@ -46,14 +43,13 @@ export function PayAndPlayButton({
   const router = useRouter();
   const { t, game, gameId } = useLang();
   const { address, isConnected, chainId } = useAccount();
-  const { connectAsync, connectors } = useConnect();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
   const publicClient = usePublicClient({ chainId: ACTIVE_CHAIN.id });
+  const { openConnectModal } = useConnectModal();
 
   const [stage, setStage] = useState<Stage>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [pickerOpen, setPickerOpen] = useState(false);
   const [needUsdt, setNeedUsdt] = useState<{
     balance: number;
     address: string;
@@ -138,8 +134,10 @@ export function PayAndPlayButton({
 
     // Wallet required for any play — free or paid. Every play goes through
     // an on-chain play() call so fake addresses can't pollute the leaderboard.
+    // Connect and play are separate actions: first click opens RainbowKit's
+    // modal, user picks + signs, then clicks again to actually play.
     if (!isConnected || !address) {
-      setPickerOpen(true);
+      openConnectModal?.();
       return;
     }
 
@@ -153,20 +151,6 @@ export function PayAndPlayButton({
       }
       setStage("idle");
     }
-  }
-
-  async function onPickWallet(c: Connector) {
-    setPickerOpen(false);
-    try {
-      setStage("connecting");
-      await connectAsync({ connector: c });
-    } catch (e) {
-      console.error("wallet connect failed:", e);
-      setError(friendlyError(e, 120));
-    }
-    // Connect and play are separate actions. After a successful connect, the
-    // button re-renders with the real play label — user clicks again to play.
-    setStage("idle");
   }
 
   const busy = stage !== "idle";
@@ -215,12 +199,6 @@ export function PayAndPlayButton({
       {error && (
         <p className="text-xs text-red text-center font-mono">{error}</p>
       )}
-      <WalletPicker
-        open={pickerOpen}
-        connectors={connectors}
-        onSelect={onPickWallet}
-        onClose={() => setPickerOpen(false)}
-      />
       <NeedUsdtModal
         open={!!needUsdt}
         balanceUSD={needUsdt?.balance ?? 0}
@@ -234,8 +212,6 @@ export function PayAndPlayButton({
 
 function stageLabel(s: Stage): string {
   switch (s) {
-    case "connecting":
-      return "Connecting wallet…";
     case "switching":
       return "Switching network…";
     case "approving":

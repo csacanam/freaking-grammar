@@ -1,16 +1,15 @@
 "use client";
 
-import { Suspense, useMemo, useRef, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   useAccount,
-  useConnect,
   usePublicClient,
   useReadContract,
   useSwitchChain,
   useWriteContract,
-  type Connector,
 } from "wagmi";
+import { useConnectModal } from "@rainbow-me/rainbowkit";
 import {
   erc20Abi,
   isAddressEqual,
@@ -19,7 +18,6 @@ import {
   zeroAddress,
 } from "viem";
 import { Button } from "@/components/Button";
-import { WalletPicker } from "@/components/WalletPicker";
 import { BackLink } from "@/components/BackLink";
 import { friendlyError, fmtUSD } from "@/lib/format";
 import { ACTIVE_CHAIN, POT_ADDRESS, STABLECOIN } from "@/lib/wagmi";
@@ -48,14 +46,12 @@ function RefillInner() {
 
   const [gameId, setGameId] = useState<number>(initialGame);
   const [amount, setAmount] = useState<string>(initialAmount);
-  const [stage, setStage] = useState<"idle" | "connecting" | "approving" | "funding">("idle");
+  const [stage, setStage] = useState<"idle" | "approving" | "funding">("idle");
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const pendingRef = useRef(false);
 
   const { address, isConnected, chainId } = useAccount();
-  const { connectAsync, connectors } = useConnect();
+  const { openConnectModal } = useConnectModal();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
   const publicClient = usePublicClient({ chainId: ACTIVE_CHAIN.id });
@@ -146,9 +142,10 @@ function RefillInner() {
       return;
     }
 
+    // Connect first, fund on the next click — avoids surprise approval
+    // prompts right after wallet selection.
     if (!isConnected || !address) {
-      pendingRef.current = true;
-      setPickerOpen(true);
+      openConnectModal?.();
       return;
     }
 
@@ -158,24 +155,6 @@ function RefillInner() {
       console.error("refill failed:", e);
       setError(friendlyError(e));
     } finally {
-      setStage("idle");
-    }
-  }
-
-  async function onPickWallet(c: Connector) {
-    setPickerOpen(false);
-    const wasPending = pendingRef.current;
-    pendingRef.current = false;
-    try {
-      setStage("connecting");
-      const r = await connectAsync({ connector: c });
-      const addr = r.accounts[0];
-      if (!addr) throw new Error("no-wallet");
-      if (wasPending) await runFund(addr);
-      else setStage("idle");
-    } catch (e) {
-      console.error("refill connect failed:", e);
-      setError(friendlyError(e));
       setStage("idle");
     }
   }
@@ -276,12 +255,12 @@ function RefillInner() {
         </div>
 
         <Button full disabled={busy || !contractLive} onClick={handleFund}>
-          {stage === "connecting"
-            ? "Connecting wallet…"
-            : stage === "approving"
+          {stage === "approving"
             ? "Approving USDT…"
             : stage === "funding"
             ? "Funding…"
+            : !isConnected
+            ? "Connect wallet"
             : `Fund ${fmtUSD(parseFloat(amount) || 0)}`}
         </Button>
 
@@ -302,15 +281,6 @@ function RefillInner() {
           </p>
         )}
       </div>
-      <WalletPicker
-        open={pickerOpen}
-        connectors={connectors}
-        onSelect={onPickWallet}
-        onClose={() => {
-          pendingRef.current = false;
-          setPickerOpen(false);
-        }}
-      />
     </div>
   );
 }

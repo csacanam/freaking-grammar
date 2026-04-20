@@ -2,6 +2,8 @@
 
 import { WagmiProvider } from "wagmi";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { RainbowKitProvider } from "@rainbow-me/rainbowkit";
+import "@rainbow-me/rainbowkit/styles.css";
 import { Suspense, useEffect, useState, type ReactNode } from "react";
 import { wagmiConfig } from "./wagmi";
 import { LangProvider } from "./lang-provider";
@@ -32,10 +34,12 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <WagmiProvider config={wagmiConfig}>
       <QueryClientProvider client={qc}>
-        <MiniPayBridge />
-        <Suspense>
-          <LangProvider>{children}</LangProvider>
-        </Suspense>
+        <RainbowKitProvider modalSize="compact">
+          <MiniPayBridge />
+          <Suspense>
+            <LangProvider>{children}</LangProvider>
+          </Suspense>
+        </RainbowKitProvider>
       </QueryClientProvider>
     </WagmiProvider>
   );

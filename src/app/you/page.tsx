@@ -4,11 +4,11 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import {
   useAccount,
-  useConnect,
   usePublicClient,
   useSwitchChain,
   useWriteContract,
 } from "wagmi";
+import { useConnectModal } from "@rainbow-me/rainbowkit";
 import { isAddressEqual, zeroAddress } from "viem";
 import { Button } from "@/components/Button";
 import { fmtUSD } from "@/lib/format";
@@ -31,7 +31,7 @@ export default function YouPage() {
   const [claimError, setClaimError] = useState<string | null>(null);
   const { address: player } = useCurrentPlayer();
   const { isConnected, chainId } = useAccount();
-  const { connectAsync, connectors } = useConnect();
+  const { openConnectModal } = useConnectModal();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
   const publicClient = usePublicClient({ chainId: ACTIVE_CHAIN.id });
@@ -62,7 +62,9 @@ export default function YouPage() {
 
     try {
       if (!isConnected) {
-        await connectAsync({ connector: connectors[0] });
+        openConnectModal?.();
+        setClaiming(false);
+        return;
       }
       if (chainId !== ACTIVE_CHAIN.id) {
         await switchChainAsync({ chainId: ACTIVE_CHAIN.id });

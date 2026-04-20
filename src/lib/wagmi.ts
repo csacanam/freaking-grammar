@@ -1,16 +1,53 @@
 import { http } from "viem";
 import { celo, base, mainnet } from "viem/chains";
-import { createConfig, injected } from "wagmi";
+import { createConfig } from "wagmi";
 import { farcasterMiniApp } from "@farcaster/miniapp-wagmi-connector";
+import { connectorsForWallets } from "@rainbow-me/rainbowkit";
+import {
+  coinbaseWallet,
+  injectedWallet,
+  metaMaskWallet,
+  rabbyWallet,
+  rainbowWallet,
+  trustWallet,
+  walletConnectWallet,
+} from "@rainbow-me/rainbowkit/wallets";
 
-// Farcaster mini-app auto-connects inside Warpcast/Base App; `injected` handles
-// MiniPay (Opera Mini on Celo) and regular browsers with a wallet extension.
-// Mainnet is included read-only for ENS name resolution on leaderboards.
+// RainbowKit handles the connect modal: EIP-6963 detection for installed
+// desktop wallets + WalletConnect-driven deep-links for mobile wallets (Rabby,
+// MetaMask app, Coinbase Wallet, Trust, Rainbow…). farcasterMiniApp is added
+// as an extra wagmi connector so the app auto-connects inside Warpcast / Base
+// App without appearing in the user-facing picker. MiniPay auto-connect is
+// handled separately in src/lib/minipay.ts. Mainnet is read-only for ENS.
 export const CELO_RPC_URL =
   process.env.NEXT_PUBLIC_CELO_RPC_URL || "https://forno.celo.org";
 export const MAINNET_RPC_URL =
   process.env.NEXT_PUBLIC_MAINNET_RPC_URL ||
   "https://ethereum-rpc.publicnode.com";
+
+const WALLETCONNECT_PROJECT_ID =
+  process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "";
+
+const rainbowKitConnectors = connectorsForWallets(
+  [
+    {
+      groupName: "Recommended",
+      wallets: [
+        metaMaskWallet,
+        rabbyWallet,
+        coinbaseWallet,
+        rainbowWallet,
+        trustWallet,
+        walletConnectWallet,
+        injectedWallet,
+      ],
+    },
+  ],
+  {
+    appName: "Freaking Grammar",
+    projectId: WALLETCONNECT_PROJECT_ID,
+  },
+);
 
 export const wagmiConfig = createConfig({
   chains: [celo, base, mainnet],
@@ -19,7 +56,7 @@ export const wagmiConfig = createConfig({
     [base.id]: http(),
     [mainnet.id]: http(MAINNET_RPC_URL),
   },
-  connectors: [farcasterMiniApp(), injected({ shimDisconnect: false })],
+  connectors: [farcasterMiniApp(), ...rainbowKitConnectors],
   ssr: true,
 });
 
