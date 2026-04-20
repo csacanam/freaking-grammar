@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/roll-day",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/treasury-alert",
+      "schedule": "0 14 * * *"
+    }
+  ]
+}

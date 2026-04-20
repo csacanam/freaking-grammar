@@ -1,0 +1,40 @@
+import type { NextRequest } from "next/server";
+import { validateLang } from "@/lib/i18n";
+import { supabase, TOKEN_DECIMALS } from "@/lib/supabase";
+
+export const dynamic = "force-dynamic";
+
+const MOCK = { gamesPlayed: 12, wins: 1, totalEarnedUSD: 3.88 };
+
+export async function GET(req: NextRequest) {
+  const lang = validateLang(req.nextUrl.searchParams.get("lang"));
+  const player = req.nextUrl.searchParams.get("player")?.toLowerCase();
+
+  if (!supabase || !player) return Response.json(MOCK);
+
+  const [playedRes, winsRes] = await Promise.all([
+    supabase
+      .from("runs")
+      .select("*", { count: "exact", head: true })
+      .eq("lang", lang)
+      .eq("player", player)
+      .eq("status", "finished"),
+    supabase
+      .from("wins")
+      .select("amount_units")
+      .eq("lang", lang)
+      .eq("player", player),
+  ]);
+
+  const wins = (winsRes.data ?? []) as Array<{ amount_units: string | number }>;
+  const totalEarnedUSD = wins.reduce(
+    (s, w) => s + Number(w.amount_units) / TOKEN_DECIMALS,
+    0,
+  );
+
+  return Response.json({
+    gamesPlayed: playedRes.count ?? 0,
+    wins: wins.length,
+    totalEarnedUSD,
+  });
+}

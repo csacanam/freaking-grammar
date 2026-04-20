@@ -1,0 +1,119 @@
+// Runtime i18n. The app is language-switchable via LangProvider + useLang().
+// Server code (API routes, cron, server components) reads the chosen lang from
+// the request's ?lang=... query param and uses the helpers below.
+
+export type Lang = "en" | "es";
+export const LANGS: readonly Lang[] = ["en", "es"] as const;
+
+export const dict = {
+  en: {
+    appName: "Freaking Grammar",
+    tagline: "Test your grammar agility",
+    tabPlay: "Home",
+    tabHistory: "History",
+    tabYou: "You",
+    todaysPot: "Today's pot",
+    pickGame: "Pick a game",
+    tapToSwitch: "Tap to switch",
+    closesIn: "Closes in",
+    winnerTakesAll: "One winner per game",
+    potShare: "$0.08 feeds the pot",
+    leaderboard: "Leaderboard",
+    todaysLeaderboard: "Today's leaderboard",
+    finalStandings: "Final standings",
+    noPlaysYet: "No plays yet today — be the first.",
+    play: "Play",
+    playFree: "Play free",
+    playPaid: "Play",
+    freePlayUsed: "Free play used",
+    freeAgainIn: "Free again in",
+    score: "Score",
+    timeLeft: "Time",
+    getReady: "Get ready",
+    tapCorrect: "Tap the correct word",
+    rulesTime: "5 seconds per question",
+    rulesMiss: "One mistake ends the game",
+    go: "GO!",
+    gameOver: "Game over",
+    yourScore: "Your score",
+    yourRank: "Your rank",
+    playAgain: "Play again",
+    backToLobby: "Back to home",
+    share: "Share",
+    youHaveUnclaimed: "You have unclaimed wins",
+    claimAll: "Claim all",
+    claim: "Claim",
+    claimed: "Claimed",
+    pastGames: "Past games",
+    noHistoryYet: "No past games yet — play today.",
+    stats: "Stats",
+    gamesPlayed: "Games played",
+    wins: "Wins",
+    totalEarned: "Total earned",
+    winner: "Winner",
+    noWinner: "No winner",
+    connecting: "Connecting…",
+    connect: "Connect wallet",
+  },
+  es: {
+    appName: "Freaking Grammar",
+    tagline: "Pon a prueba tu agilidad en la gramática",
+    tabPlay: "Inicio",
+    tabHistory: "Historial",
+    tabYou: "Tú",
+    todaysPot: "Pot de hoy",
+    pickGame: "Elige un juego",
+    tapToSwitch: "Toca para cambiar",
+    closesIn: "Cierra en",
+    winnerTakesAll: "Un ganador por juego",
+    potShare: "$0.08 alimenta el pot",
+    leaderboard: "Tabla",
+    todaysLeaderboard: "Tabla de hoy",
+    finalStandings: "Resultado final",
+    noPlaysYet: "Aún nadie ha jugado hoy — sé el primero.",
+    play: "Jugar",
+    playFree: "Jugada gratis",
+    playPaid: "Jugar",
+    freePlayUsed: "Gratis usada",
+    freeAgainIn: "Gratis en",
+    score: "Puntaje",
+    timeLeft: "Tiempo",
+    getReady: "Prepárate",
+    tapCorrect: "Toca la palabra correcta",
+    rulesTime: "5 segundos por pregunta",
+    rulesMiss: "Un error y se acaba",
+    go: "¡YA!",
+    gameOver: "Fin del juego",
+    yourScore: "Tu puntaje",
+    yourRank: "Tu posición",
+    playAgain: "Jugar otra",
+    backToLobby: "Volver al inicio",
+    share: "Compartir",
+    youHaveUnclaimed: "Tienes premios sin reclamar",
+    claimAll: "Reclamar todo",
+    claim: "Reclamar",
+    claimed: "Reclamado",
+    pastGames: "Juegos anteriores",
+    noHistoryYet: "Todavía no hay historial — juega hoy.",
+    stats: "Estadísticas",
+    gamesPlayed: "Partidas",
+    wins: "Victorias",
+    totalEarned: "Total ganado",
+    winner: "Ganador",
+    noWinner: "Sin ganador",
+    connecting: "Conectando…",
+    connect: "Conectar wallet",
+  },
+} as const;
+
+export type Strings = (typeof dict)[Lang];
+
+/** Narrow any string to a valid Lang, defaulting to "en". */
+export function validateLang(s: string | null | undefined): Lang {
+  return s === "es" ? "es" : "en";
+}
+
+/** Contract gameId for a given language (matches the initGame calls). */
+export function gameIdFor(lang: Lang): 1 | 2 {
+  return lang === "en" ? 1 : 2;
+}

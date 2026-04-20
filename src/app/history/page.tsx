@@ -1,0 +1,73 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { fmtUSD, shortAddr } from "@/lib/format";
+import { getHistory, type HistoryDay } from "@/lib/api";
+import { useLang } from "@/lib/lang-provider";
+import { SakaLabsCredit } from "@/components/SakaLabsCredit";
+
+export default function HistoryPage() {
+  const { t, game } = useLang();
+  const [days, setDays] = useState<HistoryDay[] | null>(null);
+  useEffect(() => {
+    getHistory(game).then(setDays);
+  }, [game]);
+
+  return (
+    <div className="flex-1 flex flex-col px-5 pt-6 max-w-md mx-auto w-full gap-5">
+      <header className="flex items-end justify-between">
+        <h1 className="font-display text-3xl tracking-wider">{t.pastGames}</h1>
+        <SakaLabsCredit />
+      </header>
+
+      <ul className="flex flex-col gap-3">
+        {days === null && (
+          <>
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+          </>
+        )}
+        {days?.length === 0 && (
+          <li className="rounded-2xl bg-white border border-dashed border-black/10 p-8 text-center text-muted text-sm">
+            {t.noHistoryYet}
+          </li>
+        )}
+        {days?.map((d) => (
+          <li
+            key={d.date}
+            className="rounded-2xl bg-white border border-black/5 p-4 shadow-[0_3px_0_0_rgba(0,0,0,0.04)]"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-xs font-display tracking-widest uppercase text-muted">
+                  {d.date}
+                </div>
+                <div className="font-display text-3xl mt-0.5">{fmtUSD(d.potUSD)}</div>
+              </div>
+              <div className="text-right">
+                <div className="text-xs font-display tracking-widest uppercase text-muted">
+                  {t.winner}
+                </div>
+                {d.winner ? (
+                  <>
+                    <div className="font-mono text-sm">{shortAddr(d.winner)}</div>
+                    <div className="text-xs text-muted">
+                      {t.score}: <span className="font-display">{d.winnerScore}</span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-sm text-muted italic">{t.noWinner}</div>
+                )}
+              </div>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function SkeletonCard() {
+  return <div className="h-20 rounded-2xl bg-black/5 animate-pulse" />;
+}
