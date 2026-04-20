@@ -44,6 +44,8 @@ export const metadata: Metadata = {
   },
   other: {
     "fc:miniapp": JSON.stringify(fcMiniApp),
+    "talentapp:project_verification":
+      "0271c229cfedd27cd3ece2158b4c3f2621fc40db9e69013c953ff77b15bef408596abe4461d369454648c4110fc64be149b5f4cca98b89126a2fb56d5193864e",
   },
 };
 
