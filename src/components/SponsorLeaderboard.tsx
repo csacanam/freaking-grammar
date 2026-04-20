@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { usePublicClient } from "wagmi";
 import { parseAbiItem, isAddressEqual, zeroAddress } from "viem";
 import { fmtUSD, shortAddr } from "@/lib/format";
-import { ACTIVE_CHAIN, POT_ADDRESS } from "@/lib/wagmi";
+import { ACTIVE_CHAIN, POT_ADDRESS } from "@/lib/chain";
 
 const TOKEN_DECIMALS = 1_000_000;
 

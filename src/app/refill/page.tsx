@@ -20,7 +20,7 @@ import {
 import { Button } from "@/components/Button";
 import { BackLink } from "@/components/BackLink";
 import { friendlyError, fmtUSD } from "@/lib/format";
-import { ACTIVE_CHAIN, POT_ADDRESS, STABLECOIN } from "@/lib/wagmi";
+import { ACTIVE_CHAIN, POT_ADDRESS, STABLECOIN } from "@/lib/chain";
 import FreakingPotArtifact from "@/lib/contracts/FreakingPot.json";
 
 const FREAKING_POT_ABI = FreakingPotArtifact.abi;

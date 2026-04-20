@@ -11,7 +11,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { celo } from "viem/chains";
-import { CELO_RPC_URL, POT_ADDRESS, STABLECOIN, ACTIVE_CHAIN } from "@/lib/wagmi";
+import { CELO_RPC_URL, POT_ADDRESS, STABLECOIN, ACTIVE_CHAIN } from "@/lib/chain";
 import {
   FREAKING_POT_ABI,
   celoClient,

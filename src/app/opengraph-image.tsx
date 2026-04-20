@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og";
 import { isAddressEqual, zeroAddress } from "viem";
-import { POT_ADDRESS } from "@/lib/wagmi";
+import { POT_ADDRESS } from "@/lib/chain";
 import { celoClient, FREAKING_POT_ABI } from "@/lib/onchain";
 
 export const alt = "Freaking Grammar — daily grammar pot";

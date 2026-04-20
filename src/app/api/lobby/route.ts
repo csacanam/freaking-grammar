@@ -7,7 +7,7 @@ import {
   nextUtcMidnightIso,
   TOKEN_DECIMALS,
 } from "@/lib/supabase";
-import { POT_ADDRESS } from "@/lib/wagmi";
+import { POT_ADDRESS } from "@/lib/chain";
 import {
   celoClient,
   FREAKING_POT_ABI,

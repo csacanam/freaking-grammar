@@ -19,7 +19,7 @@ import {
   ENTRY_FEE_UNITS,
   POT_ADDRESS,
   STABLECOIN,
-} from "@/lib/wagmi";
+} from "@/lib/chain";
 import { useLang } from "@/lib/lang-provider";
 import FreakingPotArtifact from "@/lib/contracts/FreakingPot.json";
 

@@ -6,7 +6,7 @@ import { isAddressEqual, zeroAddress } from "viem";
 import { fmtUSD } from "@/lib/format";
 import { Countdown } from "./Countdown";
 import { useLang } from "@/lib/lang-provider";
-import { ACTIVE_CHAIN, POT_ADDRESS } from "@/lib/wagmi";
+import { ACTIVE_CHAIN, POT_ADDRESS } from "@/lib/chain";
 import { FREAKING_POT_ABI } from "@/lib/onchain";
 import type { Lang } from "@/lib/i18n";
 

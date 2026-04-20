@@ -6,7 +6,7 @@ import {
   type Hex,
 } from "viem";
 import { celo } from "viem/chains";
-import { CELO_RPC_URL, POT_ADDRESS } from "./wagmi";
+import { CELO_RPC_URL, POT_ADDRESS } from "./chain";
 import FreakingPotArtifact from "./contracts/FreakingPot.json";
 
 export const FREAKING_POT_ABI = FreakingPotArtifact.abi as Abi;

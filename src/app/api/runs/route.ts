@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { isAddressEqual, zeroAddress } from "viem";
 import { gameIdFor, validateLang } from "@/lib/i18n";
 import { supabase, todayUtc } from "@/lib/supabase";
-import { POT_ADDRESS } from "@/lib/wagmi";
+import { POT_ADDRESS } from "@/lib/chain";
 import { verifyPaymentTx } from "@/lib/onchain";
 
 export const dynamic = "force-dynamic";

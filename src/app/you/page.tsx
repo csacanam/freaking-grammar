@@ -15,7 +15,7 @@ import { fmtUSD } from "@/lib/format";
 import { getStats, getUnclaimed, type StatsData, type UnclaimedWin } from "@/lib/api";
 import { useCurrentPlayer } from "@/lib/wallet";
 import { shortAddr } from "@/lib/format";
-import { ACTIVE_CHAIN, POT_ADDRESS } from "@/lib/wagmi";
+import { ACTIVE_CHAIN, POT_ADDRESS } from "@/lib/chain";
 import { useLang } from "@/lib/lang-provider";
 import FreakingPotArtifact from "@/lib/contracts/FreakingPot.json";
 import { SakaLabsCredit } from "@/components/SakaLabsCredit";

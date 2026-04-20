@@ -4,7 +4,7 @@
 
 import { isAddressEqual, zeroAddress } from "viem";
 import { supabase, TOKEN_DECIMALS } from "@/lib/supabase";
-import { POT_ADDRESS } from "@/lib/wagmi";
+import { POT_ADDRESS } from "@/lib/chain";
 import { celoClient, FREAKING_POT_ABI, readTreasuryState } from "@/lib/onchain";
 import type { Lang } from "@/lib/i18n";
 
