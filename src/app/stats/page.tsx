@@ -1,5 +1,6 @@
 import { supabase, TOKEN_DECIMALS } from "@/lib/supabase";
 import { fmtUSD } from "@/lib/format";
+import { BackLink } from "@/components/BackLink";
 
 export const dynamic = "force-dynamic";
 
@@ -114,9 +115,10 @@ export default async function StatsPage() {
 
   return (
     <div className="flex-1 flex flex-col px-5 pt-6 pb-10 max-w-3xl mx-auto w-full gap-6">
-      <header>
+      <header className="flex flex-col gap-2">
+        <BackLink />
         <h1 className="font-display text-4xl tracking-wider">Stats</h1>
-        <p className="text-xs font-mono text-muted mt-1">
+        <p className="text-xs font-mono text-muted">
           Live from Supabase · refresh to update
         </p>
       </header>

@@ -20,6 +20,7 @@ import {
 } from "viem";
 import { Button } from "@/components/Button";
 import { WalletPicker } from "@/components/WalletPicker";
+import { BackLink } from "@/components/BackLink";
 import { friendlyError, fmtUSD } from "@/lib/format";
 import { ACTIVE_CHAIN, POT_ADDRESS, STABLECOIN } from "@/lib/wagmi";
 import FreakingPotArtifact from "@/lib/contracts/FreakingPot.json";
@@ -189,9 +190,10 @@ function RefillInner() {
 
   return (
     <div className="flex-1 flex flex-col px-5 pt-6 pb-10 max-w-md mx-auto w-full gap-5">
-      <header>
+      <header className="flex flex-col gap-2">
+        <BackLink />
         <h1 className="font-display text-4xl tracking-wider">Refill treasury</h1>
-        <p className="text-xs font-mono text-muted mt-1">
+        <p className="text-xs font-mono text-muted">
           Any wallet can top up a game&apos;s daily-seed runway.
         </p>
       </header>

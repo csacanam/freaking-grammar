@@ -14,6 +14,7 @@ import { erc20Abi, isAddressEqual, maxUint256, zeroAddress } from "viem";
 import { Button } from "@/components/Button";
 import { Countdown } from "@/components/Countdown";
 import { WalletPicker } from "@/components/WalletPicker";
+import { NeedUsdtModal } from "@/components/NeedUsdtModal";
 import { friendlyError } from "@/lib/format";
 import {
   ACTIVE_CHAIN,
@@ -53,6 +54,10 @@ export function PayAndPlayButton({
   const [stage, setStage] = useState<Stage>("idle");
   const [error, setError] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [needUsdt, setNeedUsdt] = useState<{
+    balance: number;
+    address: string;
+  } | null>(null);
   const pendingRef = useRef(false);
 
   const contractLive = !isAddressEqual(POT_ADDRESS, zeroAddress);
@@ -73,15 +78,32 @@ export function PayAndPlayButton({
       await switchChainAsync({ chainId: ACTIVE_CHAIN.id });
     }
 
-    // Approve only needed for paid plays — free plays don't pull USDT.
-    // The contract itself decides free vs paid from `lastFreePlayDay`.
+    // Approve + balance check only needed for paid plays — free plays don't
+    // pull USDT. The contract itself decides free vs paid from `lastFreePlayDay`.
     if (!playerHasFreePlay) {
-      const allowance = (await publicClient.readContract({
-        address: token.address,
-        abi: erc20Abi,
-        functionName: "allowance",
-        args: [currentAddress, POT_ADDRESS],
-      })) as bigint;
+      const [balance, allowance] = (await Promise.all([
+        publicClient.readContract({
+          address: token.address,
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [currentAddress],
+        }),
+        publicClient.readContract({
+          address: token.address,
+          abi: erc20Abi,
+          functionName: "allowance",
+          args: [currentAddress, POT_ADDRESS],
+        }),
+      ])) as [bigint, bigint];
+
+      if (balance < ENTRY_FEE_UNITS) {
+        setNeedUsdt({
+          balance: Number(balance) / 1_000_000,
+          address: currentAddress,
+        });
+        setStage("idle");
+        throw new Error("insufficient-usdt");
+      }
 
       if (allowance < ENTRY_FEE_UNITS) {
         setStage("approving");
@@ -127,7 +149,10 @@ export function PayAndPlayButton({
       await runPlayFlow(address);
     } catch (e) {
       console.error("pay-and-play failed:", e);
-      setError(friendlyError(e, 120));
+      // "insufficient-usdt" is already surfaced via the NeedUsdtModal.
+      if ((e as Error)?.message !== "insufficient-usdt") {
+        setError(friendlyError(e, 120));
+      }
       setStage("idle");
     }
   }
@@ -149,7 +174,9 @@ export function PayAndPlayButton({
       await runPlayFlow(addr);
     } catch (e) {
       console.error("pay-and-play connect failed:", e);
-      setError(friendlyError(e, 120));
+      if ((e as Error)?.message !== "insufficient-usdt") {
+        setError(friendlyError(e, 120));
+      }
       setStage("idle");
     }
   }
@@ -182,9 +209,9 @@ export function PayAndPlayButton({
         className={showCaption ? "!h-auto !py-2.5 !text-xl" : ""}
       >
         {showCaption ? (
-          <span className="flex flex-col items-center leading-tight gap-0.5">
+          <span className="flex flex-col items-center leading-tight gap-1">
             <span>{label}</span>
-            <span className="text-[10px] tracking-[0.2em] uppercase opacity-70 font-display">
+            <span className="text-sm tracking-[0.15em] uppercase text-yellow font-display">
               {isPaid ? `${t.potShare}  ·  ` : ""}
               {t.freeAgainIn}{" "}
               <Countdown
@@ -208,6 +235,13 @@ export function PayAndPlayButton({
           pendingRef.current = false;
           setPickerOpen(false);
         }}
+      />
+      <NeedUsdtModal
+        open={!!needUsdt}
+        balanceUSD={needUsdt?.balance ?? 0}
+        needUSD={0.1}
+        walletAddress={needUsdt?.address}
+        onClose={() => setNeedUsdt(null)}
       />
     </div>
   );

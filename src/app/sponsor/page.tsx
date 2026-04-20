@@ -21,6 +21,7 @@ import {
 import { Button } from "@/components/Button";
 import { WalletPicker } from "@/components/WalletPicker";
 import { SponsorLeaderboard } from "@/components/SponsorLeaderboard";
+import { BackLink } from "@/components/BackLink";
 import { friendlyError, fmtUSD } from "@/lib/format";
 import { ACTIVE_CHAIN, POT_ADDRESS, STABLECOIN } from "@/lib/wagmi";
 import FreakingPotArtifact from "@/lib/contracts/FreakingPot.json";
@@ -178,9 +179,10 @@ function SponsorInner() {
 
   return (
     <div className="flex-1 flex flex-col px-5 pt-6 pb-10 max-w-md mx-auto w-full gap-5">
-      <header>
+      <header className="flex flex-col gap-2">
+        <BackLink />
         <h1 className="font-display text-4xl tracking-wider">Sponsor a pot</h1>
-        <p className="text-xs text-muted mt-1">
+        <p className="text-xs text-muted">
           100% goes to the winner. Your wallet goes on the sponsor wall below.
         </p>
       </header>
