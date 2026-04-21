@@ -25,14 +25,18 @@ export default function LobbyPage() {
     setLobby(null);
     setUnclaimed([]);
     // Lobby (pot + leaderboard) is public — fetch even without a wallet so
-    // visitors can see what's going on. Unclaimed wins need an address.
+    // visitors can see what's going on. Unclaimed wins come from BOTH games
+    // so the banner reflects everything the player can claim, not just the
+    // currently selected language.
     Promise.all([
       getLobby(game, address || undefined),
-      address ? getUnclaimed(game, address) : Promise.resolve([]),
-    ]).then(([l, u]) => {
+      address
+        ? Promise.all([getUnclaimed("en", address), getUnclaimed("es", address)])
+        : Promise.resolve([[], []] as UnclaimedWin[][]),
+    ]).then(([l, uByLang]) => {
       if (alive) {
         setLobby(l);
-        setUnclaimed(u);
+        setUnclaimed([...uByLang[0], ...uByLang[1]]);
       }
     });
     return () => {
