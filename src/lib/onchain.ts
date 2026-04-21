@@ -117,6 +117,30 @@ export async function readPotAmount(
   return result;
 }
 
+/// For a set of (gameId, day) candidates, returns the subset still unclaimed
+/// on-chain. Source of truth is `claimed[gameId][day]` — DB rows can lag
+/// because no indexer listens for Claimed events.
+export async function readClaimedFlags(
+  gameId: number,
+  days: number[],
+): Promise<Record<number, boolean>> {
+  const results = (await Promise.all(
+    days.map((d) =>
+      celoClient.readContract({
+        address: POT_ADDRESS,
+        abi: FREAKING_POT_ABI,
+        functionName: "claimed",
+        args: [BigInt(gameId), BigInt(d)],
+      }),
+    ),
+  )) as boolean[];
+  const out: Record<number, boolean> = {};
+  days.forEach((d, i) => {
+    out[d] = results[i];
+  });
+  return out;
+}
+
 /// Treasury balance + configured daily seed for a game. Used by the runway
 /// alert cron to tell the operator how many more days of pots are funded.
 export async function readTreasuryState(
