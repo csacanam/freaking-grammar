@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import {
   useAccount,
+  useDisconnect,
   usePublicClient,
   useSwitchChain,
   useWriteContract,
@@ -42,6 +43,7 @@ export default function YouPage() {
   const { address: player } = useCurrentPlayer();
   const { isConnected, chainId } = useAccount();
   const { openConnectModal } = useConnectModal();
+  const { disconnect } = useDisconnect();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
   const publicClient = usePublicClient({ chainId: ACTIVE_CHAIN.id });
@@ -206,6 +208,20 @@ export default function YouPage() {
           </div>
         )}
       </section>
+
+      {isConnected && (
+        <section className="mt-auto pt-4 pb-6">
+          <button
+            onClick={() => disconnect()}
+            className="w-full rounded-2xl border border-black/10 bg-white px-5 h-12 font-display text-sm tracking-widest uppercase text-muted hover:text-red hover:border-red/30 transition shadow-[0_2px_0_0_rgba(0,0,0,0.04)]"
+          >
+            Disconnect wallet
+          </button>
+          <p className="text-[11px] text-muted text-center mt-2">
+            Switch to a different wallet to play from another account.
+          </p>
+        </section>
+      )}
     </div>
   );
 }
