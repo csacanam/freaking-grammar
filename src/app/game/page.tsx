@@ -262,8 +262,29 @@ function GameInner() {
       </div>
 
       <div className="absolute inset-x-4 top-[23%] z-10 pointer-events-none">
-        <div className="bg-white rounded-2xl shadow-[0_6px_0_0_rgba(0,0,0,0.10)] px-5 py-5">
-          <p className="font-display text-[clamp(1.1rem,5.5vw,1.6rem)] leading-tight text-ink text-center break-words">
+        <div className="bg-white rounded-2xl shadow-[0_6px_0_0_rgba(0,0,0,0.10)] overflow-hidden">
+          {/* Time-left bar glued to the top of the phrase card. Traffic-
+              light progression: teal (go) → yellow (yield) → red + pulse
+              (stop). Safe now that the half palettes no longer rotate —
+              the bar never echoes the background. */}
+          <div className="h-1 bg-black/5">
+            <div
+              className={`h-full transition-[width,background-color] duration-100 ease-linear ${
+                secondsLeft < 1
+                  ? "bg-red animate-pulse"
+                  : secondsLeft < 2
+                  ? "bg-yellow"
+                  : "bg-teal"
+              }`}
+              style={{
+                width: `${Math.max(
+                  0,
+                  Math.min(100, (secondsLeft / QUESTION_SECONDS) * 100),
+                )}%`,
+              }}
+            />
+          </div>
+          <p className="font-display text-[clamp(1.1rem,5.5vw,1.6rem)] leading-tight text-ink text-center break-words px-5 py-5">
             {phraseParts.map((part, i) => (
               <span key={i}>
                 {part}

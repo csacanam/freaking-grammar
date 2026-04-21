@@ -57,7 +57,13 @@ export default function HistoryPage() {
               <div>
                 <div className="text-xs font-display tracking-widest uppercase text-muted flex items-center gap-2">
                   <span>{d.date}</span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/5">
+                  <span
+                    className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${
+                      d.lang === "en"
+                        ? "bg-teal/20 text-teal"
+                        : "bg-purple/20 text-purple"
+                    }`}
+                  >
                     {d.lang.toUpperCase()}
                   </span>
                 </div>

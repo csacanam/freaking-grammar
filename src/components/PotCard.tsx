@@ -11,9 +11,36 @@ import type { LobbyData } from "@/lib/api";
 
 const TOP = 3;
 
-const META: Record<Lang, { flag: string; label: string }> = {
-  en: { flag: "🇺🇸", label: "English" },
-  es: { flag: "🇪🇸", label: "Español" },
+// Color identity per game — matches the split-screen palette inside the game
+// (EN = left/teal, ES = right/purple). Same colors on the card as in the
+// gameplay reinforces the association: "purple card → purple side in play".
+const META: Record<
+  Lang,
+  {
+    flag: string;
+    label: string;
+    stripe: string;
+    tagBg: string;
+    tagText: string;
+    sponsorText: string;
+  }
+> = {
+  en: {
+    flag: "🇺🇸",
+    label: "English",
+    stripe: "bg-teal",
+    tagBg: "bg-teal/10",
+    tagText: "text-teal",
+    sponsorText: "text-teal",
+  },
+  es: {
+    flag: "🇪🇸",
+    label: "Español",
+    stripe: "bg-purple",
+    tagBg: "bg-purple/10",
+    tagText: "text-purple",
+    sponsorText: "text-purple",
+  },
 };
 
 // Self-contained pot venue: flag + pot amount + top-3 mini leaderboard +
@@ -35,22 +62,28 @@ export function PotCard({
   const meOutside = me && me.rank > TOP;
 
   return (
-    <div className="rounded-3xl bg-white border border-black/5 p-5 shadow-[0_6px_0_0_rgba(0,0,0,0.06)] flex flex-col gap-4">
-      <div className="flex items-center gap-2">
-        <span className="text-2xl leading-none">{meta.flag}</span>
-        <span className="font-display text-xl tracking-wider uppercase">
-          {meta.label}
-        </span>
-      </div>
+    <div className="rounded-3xl bg-white border border-black/5 shadow-[0_6px_0_0_rgba(0,0,0,0.06)] flex flex-col overflow-hidden">
+      <div className={`h-1.5 ${meta.stripe}`} />
+      <div className="p-5 flex flex-col gap-4">
+        <div className="flex items-center gap-2">
+          <span className="text-2xl leading-none">{meta.flag}</span>
+          <span className="font-display text-xl tracking-wider uppercase">
+            {meta.label}
+          </span>
+        </div>
 
-      <div className="rounded-2xl bg-teal/10 px-4 py-3 flex items-baseline justify-between gap-3">
-        <div className="font-display text-sm tracking-[0.15em] uppercase text-teal leading-tight">
-          {t.winnerTakesAll}
+        <div
+          className={`rounded-2xl ${meta.tagBg} px-4 py-3 flex items-baseline justify-between gap-3`}
+        >
+          <div
+            className={`font-display text-sm tracking-[0.15em] uppercase ${meta.tagText} leading-tight`}
+          >
+            {t.winnerTakesAll}
+          </div>
+          <div className="font-display text-5xl text-ink leading-none tabular-nums">
+            {lobby ? fmtUSD(lobby.potUSD) : "—"}
+          </div>
         </div>
-        <div className="font-display text-5xl text-ink leading-none tabular-nums">
-          {lobby ? fmtUSD(lobby.potUSD) : "—"}
-        </div>
-      </div>
 
       <ul className="divide-y divide-black/5">
         {lobby === null && (
@@ -81,12 +114,13 @@ export function PotCard({
         playerHasFreePlay={!!lobby?.playerHasFreePlay}
       />
 
-      <Link
-        href={`/sponsor?game=${game}`}
-        className="text-center text-xs font-display tracking-widest uppercase text-teal hover:underline -mt-1"
-      >
-        Sponsor this pot →
-      </Link>
+        <Link
+          href={`/sponsor?game=${game}`}
+          className={`text-center text-xs font-display tracking-widest uppercase ${meta.sponsorText} hover:underline -mt-1`}
+        >
+          Sponsor this pot →
+        </Link>
+      </div>
     </div>
   );
 }
