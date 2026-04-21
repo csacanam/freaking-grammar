@@ -12,21 +12,31 @@ import { useConnectModal } from "@rainbow-me/rainbowkit";
 import { isAddressEqual, zeroAddress } from "viem";
 import { Button } from "@/components/Button";
 import { fmtUSD } from "@/lib/format";
-import { getStats, getUnclaimed, type StatsData, type UnclaimedWin } from "@/lib/api";
+import { getStats, getUnclaimed, type UnclaimedWin } from "@/lib/api";
 import { useCurrentPlayer } from "@/lib/wallet";
-import { shortAddr } from "@/lib/format";
 import { ACTIVE_CHAIN, POT_ADDRESS } from "@/lib/chain";
 import { useLang } from "@/lib/lang-provider";
+import { gameIdFor, type Lang } from "@/lib/i18n";
 import FreakingPotArtifact from "@/lib/contracts/FreakingPot.json";
 import { SakaLabsCredit } from "@/components/SakaLabsCredit";
 import { PlayerName } from "@/components/PlayerName";
 
 const FREAKING_POT_ABI = FreakingPotArtifact.abi;
 
+const LANGS: Lang[] = ["en", "es"];
+
+type AggregatedStats = {
+  gamesPlayed: number;
+  wins: number;
+  totalEarnedUSD: number;
+};
+
+type TaggedWin = UnclaimedWin & { lang: Lang };
+
 export default function YouPage() {
-  const { t, game, gameId } = useLang();
-  const [stats, setStats] = useState<StatsData | null>(null);
-  const [unclaimed, setUnclaimed] = useState<UnclaimedWin[] | null>(null);
+  const { t } = useLang();
+  const [stats, setStats] = useState<AggregatedStats | null>(null);
+  const [unclaimed, setUnclaimed] = useState<TaggedWin[] | null>(null);
   const [claiming, setClaiming] = useState(false);
   const [claimError, setClaimError] = useState<string | null>(null);
   const { address: player } = useCurrentPlayer();
@@ -38,13 +48,35 @@ export default function YouPage() {
 
   useEffect(() => {
     if (!player) return;
-    Promise.all([getStats(game, player), getUnclaimed(game, player)]).then(
-      ([s, u]) => {
-        setStats(s);
-        setUnclaimed(u);
-      },
-    );
-  }, [player, game]);
+    // Aggregate stats + unclaimed across BOTH games — a "You" page scoped to
+    // one pot hides the other game's winnings. Each item is tagged with its
+    // lang so Claim All can split into per-game txs below.
+    Promise.all(
+      LANGS.flatMap((l) => [
+        getStats(l, player),
+        getUnclaimed(l, player).then((ws) =>
+          ws.map((w) => ({ ...w, lang: l })),
+        ),
+      ]),
+    ).then((results) => {
+      const statsByLang = [results[0], results[2]] as [
+        Awaited<ReturnType<typeof getStats>>,
+        Awaited<ReturnType<typeof getStats>>,
+      ];
+      const winsByLang = [results[1], results[3]] as [TaggedWin[], TaggedWin[]];
+      setStats({
+        gamesPlayed: statsByLang[0].gamesPlayed + statsByLang[1].gamesPlayed,
+        wins: statsByLang[0].wins + statsByLang[1].wins,
+        totalEarnedUSD:
+          statsByLang[0].totalEarnedUSD + statsByLang[1].totalEarnedUSD,
+      });
+      setUnclaimed(
+        [...winsByLang[0], ...winsByLang[1]].sort((a, b) =>
+          b.date.localeCompare(a.date),
+        ),
+      );
+    });
+  }, [player]);
 
   const total = (unclaimed ?? []).reduce((s, w) => s + w.amountUSD, 0);
   const contractLive = !isAddressEqual(POT_ADDRESS, zeroAddress);
@@ -71,18 +103,25 @@ export default function YouPage() {
       }
       if (!publicClient) throw new Error("no-rpc");
 
-      const days = unclaimed.map((w) => BigInt(w.dayNumber));
-      const hash = await writeContractAsync({
-        chainId: ACTIVE_CHAIN.id,
-        address: POT_ADDRESS,
-        abi: FREAKING_POT_ABI,
-        functionName: "claimMultiple",
-        args: [days, BigInt(gameId)],
-      });
-      await publicClient.waitForTransactionReceipt({ hash });
+      // Split wins by game and send one claimMultiple() call per game. The
+      // contract tracks pots per (gameId, day), so we can't batch across games.
+      const byLang: Record<Lang, bigint[]> = { en: [], es: [] };
+      for (const w of unclaimed) byLang[w.lang].push(BigInt(w.dayNumber));
 
-      // Re-pull from the server; rows should flip to claimed=true eventually,
-      // but for immediate UX we clear locally.
+      for (const l of LANGS) {
+        const days = byLang[l];
+        if (days.length === 0) continue;
+        const hash = await writeContractAsync({
+          chainId: ACTIVE_CHAIN.id,
+          address: POT_ADDRESS,
+          abi: FREAKING_POT_ABI,
+          functionName: "claimMultiple",
+          args: [days, BigInt(gameIdFor(l))],
+        });
+        await publicClient.waitForTransactionReceipt({ hash });
+      }
+
+      // Optimistic clear. Server will flip rows to claimed=true eventually.
       setUnclaimed([]);
     } catch (e) {
       const msg = (e as Error).message ?? "claim failed";
@@ -131,10 +170,16 @@ export default function YouPage() {
           <div className="rounded-3xl bg-white border border-black/5 overflow-hidden shadow-[0_4px_0_0_rgba(0,0,0,0.04)]">
             <ul className="divide-y divide-black/5">
               {unclaimed.map((w) => (
-                <li key={w.date} className="flex items-center justify-between px-4 py-3">
+                <li
+                  key={`${w.lang}-${w.date}`}
+                  className="flex items-center justify-between px-4 py-3"
+                >
                   <div>
-                    <div className="text-xs font-display tracking-widest uppercase text-muted">
-                      {w.date}
+                    <div className="text-xs font-display tracking-widest uppercase text-muted flex items-center gap-2">
+                      <span>{w.date}</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/5">
+                        {w.lang.toUpperCase()}
+                      </span>
                     </div>
                     <div className="font-display text-2xl">{fmtUSD(w.amountUSD)}</div>
                   </div>
