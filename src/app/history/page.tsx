@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fmtUSD, shortAddr } from "@/lib/format";
+import { fmtUSD } from "@/lib/format";
 import { getHistory, type HistoryDay } from "@/lib/api";
 import { useLang } from "@/lib/lang-provider";
 import { type Lang } from "@/lib/i18n";
 import { SakaLabsCredit } from "@/components/SakaLabsCredit";
+import { PlayerName } from "@/components/PlayerName";
 
 const LANGS: Lang[] = ["en", "es"];
 
@@ -68,7 +69,9 @@ export default function HistoryPage() {
                 </div>
                 {d.winner ? (
                   <>
-                    <div className="font-mono text-sm">{shortAddr(d.winner)}</div>
+                    <div className="text-sm truncate max-w-[10rem]">
+                      <PlayerName address={d.winner} />
+                    </div>
                     <div className="text-xs text-muted">
                       {t.score}: <span className="font-display">{d.winnerScore}</span>
                     </div>

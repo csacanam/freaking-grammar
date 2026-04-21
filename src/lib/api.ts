@@ -58,6 +58,24 @@ export async function getUnclaimed(lang: Lang, player?: string): Promise<Unclaim
   return r.json();
 }
 
+export type OpenRun = {
+  txHash: string;
+  lang: Lang;
+  gameId: 1 | 2;
+  paidAtIso: string;
+};
+
+// Paid plays on-chain today that never completed a run. Home shows these as
+// "Resume →" so nobody eats a paid turn to a client-side bug or a tab close.
+export async function getOpenRuns(player?: string): Promise<OpenRun[]> {
+  if (!player) return [];
+  const r = await fetch(`/api/me/open-runs${q({ player })}`, {
+    cache: "no-store",
+  });
+  if (!r.ok) return [];
+  return r.json();
+}
+
 // ---------------------------------------------------- runs / gameplay
 
 export type RunQuestion = { phrase: string; correct: string; wrong: string };
@@ -81,7 +99,18 @@ export async function startRun(
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ player, txHash }),
   });
-  if (!r.ok) throw new Error(`startRun failed: ${r.status}`);
+  if (!r.ok) {
+    // Surface the server-reported reason so the retry overlay can say
+    // something useful instead of a bare status code.
+    let reason = String(r.status);
+    try {
+      const body = (await r.json()) as { error?: string };
+      if (body?.error) reason = body.error;
+    } catch {
+      /* non-JSON body */
+    }
+    throw new Error(`startRun failed: ${reason}`);
+  }
   return r.json();
 }
 

@@ -64,6 +64,16 @@ export function LangProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Sync `game` state when the URL `?game=` changes after mount. Without this
+  // the provider's state was frozen to whatever the URL had at first render,
+  // so navigating from `/` → `/game?game=es` kept game="en" in context and
+  // startRun fetched /api/runs?lang=en against an ES-paid tx → wrong-gameId.
+  useEffect(() => {
+    if ((urlGame === "es" || urlGame === "en") && urlGame !== game) {
+      setGameState(urlGame);
+    }
+  }, [urlGame, game]);
+
   function setGame(g: Lang) {
     setGameState(g);
     if (typeof window !== "undefined") {

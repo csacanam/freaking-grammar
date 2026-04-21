@@ -21,6 +21,7 @@ import {
   STABLECOIN,
 } from "@/lib/chain";
 import { useLang } from "@/lib/lang-provider";
+import { gameIdFor, type Lang } from "@/lib/i18n";
 import FreakingPotArtifact from "@/lib/contracts/FreakingPot.json";
 
 const FREAKING_POT_ABI = FreakingPotArtifact.abi;
@@ -36,12 +37,19 @@ type Stage =
 export function PayAndPlayButton({
   playerHasFreePlay,
   replay = false,
+  game: gameOverride,
 }: {
   playerHasFreePlay: boolean;
   replay?: boolean;
+  // Optional: pot cards pass their own game explicitly so the button drives
+  // the right pot regardless of the URL ?game= selection. Falls back to the
+  // lang context for legacy callers (game/over page).
+  game?: Lang;
 }) {
   const router = useRouter();
-  const { t, game, gameId } = useLang();
+  const { t, game: ctxGame } = useLang();
+  const game = gameOverride ?? ctxGame;
+  const gameId = gameIdFor(game);
   const { address, isConnected, chainId } = useAccount();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
@@ -168,9 +176,11 @@ export function PayAndPlayButton({
     ? `▶  ${paidVerb}  ·  $0.10`
     : `▶  ${replay ? t.playAgain : t.playFree}`;
 
-  // Caption folded into the button so it stays fixed at the bottom without
-  // two separate lines of secondary text.
-  const showCaption = !busy && !playerHasFreePlay;
+  // Caption folded into the button. When the user still has their free play,
+  // surface the gameplay rules (5s timer + top-score-wins) so first-timers
+  // don't burn their turn figuring out the mechanic. When free play is used,
+  // switch to the pot-share + countdown messaging.
+  const showCaption = !busy;
 
   return (
     <div className="flex flex-col gap-2">
@@ -184,12 +194,18 @@ export function PayAndPlayButton({
           <span className="flex flex-col items-center leading-tight gap-1">
             <span>{label}</span>
             <span className="text-sm tracking-[0.15em] uppercase text-yellow font-display">
-              {isPaid ? `${t.potShare}  ·  ` : ""}
-              {t.freeAgainIn}{" "}
-              <Countdown
-                targetIso={resetIso}
-                className="font-mono tabular-nums"
-              />
+              {playerHasFreePlay ? (
+                <>⏱  {t.rulesHint}</>
+              ) : (
+                <>
+                  {isPaid ? `${t.potShare}  ·  ` : ""}
+                  {t.freeAgainIn}{" "}
+                  <Countdown
+                    targetIso={resetIso}
+                    className="font-mono tabular-nums"
+                  />
+                </>
+              )}
             </span>
           </span>
         ) : (

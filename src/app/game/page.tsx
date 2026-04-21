@@ -39,10 +39,19 @@ function GameInner() {
   const [leftIsCorrect, setLeftIsCorrect] = useState(true);
   const [secondsLeft, setSecondsLeft] = useState(QUESTION_SECONDS);
   const [outcome, setOutcome] = useState<Outcome>("loading");
-  const [readyCount, setReadyCount] = useState<number | null>(5);
+  // Two-phase pre-game: (1) briefing overlay with rules + explicit "I'm ready"
+  // tap — gives first-timers time to read the 5s-per-question rule without
+  // the urgency of a countdown. (2) short 3-2-1-GO for tension after the tap.
+  const [readyCount, setReadyCount] = useState<number | null>(3);
+  const [readyStarted, setReadyStarted] = useState(false);
 
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const transitionRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Prevents double-invoke of startRun when the pre-game effect re-runs (HMR,
+  // StrictMode, dep reference changes). The server is idempotent anyway but
+  // guarding here avoids the needless second round-trip.
+  const startingRef = useRef(false);
+  const [startError, setStartError] = useState<string | null>(null);
 
   // Safety guard: /game requires a connected wallet AND a tx hash in the URL
   // (every play is backed by an on-chain play() call). Deep-linked without
@@ -51,11 +60,15 @@ function GameInner() {
     if (!address || !txHash) router.replace(`/?game=${game}`);
   }, [address, txHash, game, router]);
 
-  // pre-game countdown: 5 → 4 → 3 → 2 → 1 → GO! → startRun (≈5.5s total)
+  // Countdown 3 → 2 → 1 → GO! → startRun (~3s). Gated behind readyStarted so
+  // it doesn't auto-run while the briefing is still on screen.
   useEffect(() => {
     if (readyCount === null) return;
+    if (!readyStarted) return;
     if (readyCount === 0) {
       const id = setTimeout(async () => {
+        if (startingRef.current) return;
+        startingRef.current = true;
         try {
           if (!address || !txHash) throw new Error("no-address-or-tx");
           const res = await startRun(game, address, txHash);
@@ -66,8 +79,13 @@ function GameInner() {
           setSecondsLeft(QUESTION_SECONDS);
           setOutcome("playing");
           setReadyCount(null);
-        } catch {
-          router.replace(`/?game=${game}`);
+        } catch (e) {
+          // Don't yeet the user back home on server errors — they paid for
+          // this turn. Surface the error and let them retry from the
+          // briefing, which reuses the same txHash (server is idempotent).
+          console.error("startRun failed:", e);
+          startingRef.current = false;
+          setStartError((e as Error)?.message ?? "Could not start the run.");
         }
       }, 500);
       return () => clearTimeout(id);
@@ -77,7 +95,7 @@ function GameInner() {
       1000,
     );
     return () => clearTimeout(id);
-  }, [readyCount, router, address, txHash, game]);
+  }, [readyCount, readyStarted, router, address, txHash, game]);
 
   // per-question countdown
   useEffect(() => {
@@ -175,8 +193,25 @@ function GameInner() {
   const rightStyle = sideStyle(pickedRight, !pickedLeft && !pickedRight && outcome === "playing");
   const canTap = outcome === "playing";
 
+  if (startError) {
+    return (
+      <StartErrorOverlay
+        message={startError}
+        onRetry={() => {
+          setStartError(null);
+          setReadyStarted(false);
+          setReadyCount(3);
+        }}
+      />
+    );
+  }
+
   if (readyCount !== null) {
-    return <ReadyOverlay count={readyCount} />;
+    return !readyStarted ? (
+      <BriefingOverlay onReady={() => setReadyStarted(true)} />
+    ) : (
+      <ReadyOverlay count={readyCount} />
+    );
   }
 
   if (!question) {
@@ -253,20 +288,70 @@ function GameInner() {
   );
 }
 
+// Shown when startRun fails (network hiccup, server error, stale tx). The
+// player already paid, so we must never silently drop them back home — give
+// them a retry that re-sends the same txHash (idempotent on the server).
+function StartErrorOverlay({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center gap-6 bg-teal text-white px-6 text-center">
+      <Image src="/mascot.png" alt="" width={96} height={96} />
+      <h1 className="font-display text-4xl leading-tight">
+        Couldn&rsquo;t start the run
+      </h1>
+      <p className="font-mono text-sm opacity-80 max-w-xs break-words">
+        {message}
+      </p>
+      <button
+        onClick={onRetry}
+        className="bg-yellow text-ink font-display text-xl tracking-widest uppercase px-8 py-3 rounded-2xl shadow-[0_5px_0_0_rgba(0,0,0,0.18)] active:translate-y-[3px] active:shadow-[0_2px_0_0_rgba(0,0,0,0.18)]"
+      >
+        Try again
+      </button>
+      <p className="text-xs opacity-60 max-w-[18rem]">
+        Your payment is safe — the same tx is reused on retry.
+      </p>
+    </div>
+  );
+}
+
+// Phase 1 — briefing. Rules paced at the user's speed; no automatic ticking
+// so first-timers can actually read the 5s-per-question rule before the run.
+function BriefingOverlay({ onReady }: { onReady: () => void }) {
+  const { t } = useLang();
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center gap-6 bg-teal text-white px-6 text-center">
+      <Image src="/mascot.png" alt="" width={112} height={112} priority />
+      <h1 className="font-display text-5xl leading-tight">{t.tapCorrect}</h1>
+      <div className="flex flex-col gap-3 font-display text-3xl leading-tight">
+        <p>{t.rulesTime}</p>
+        <p>{t.rulesMiss}</p>
+      </div>
+      <button
+        onClick={onReady}
+        className="mt-2 bg-yellow text-ink font-display text-2xl tracking-widest uppercase px-10 py-4 rounded-2xl shadow-[0_6px_0_0_rgba(0,0,0,0.18)] active:translate-y-[3px] active:shadow-[0_3px_0_0_rgba(0,0,0,0.18)] transition"
+      >
+        {t.imReady}
+      </button>
+    </div>
+  );
+}
+
+// Phase 2 — tension. Short 3-2-1-GO after the explicit tap. No new info here;
+// the rules were already internalized in the briefing.
 function ReadyOverlay({ count }: { count: number }) {
   const { t } = useLang();
   const isGo = count === 0;
   return (
-    <div className="flex-1 flex flex-col items-center justify-center gap-7 bg-teal text-white px-6 text-center">
-      <div className="font-display text-xl tracking-[0.3em] indent-[0.3em] uppercase opacity-90">
-        {t.getReady}
-      </div>
-      <Image src="/mascot.png" alt="" width={112} height={112} priority />
-      <h1 className="font-display text-5xl leading-tight">{t.tapCorrect}</h1>
-      <div className="flex flex-col gap-2 font-display text-2xl leading-tight">
-        <p>{t.rulesTime}</p>
-        <p>{t.rulesMiss}</p>
-      </div>
+    <div className="flex-1 flex flex-col items-center justify-center gap-10 bg-teal text-white px-6 text-center">
+      <h1 className="font-display text-4xl leading-tight opacity-90">
+        {t.tapCorrect}
+      </h1>
       <div
         key={count}
         className={`font-display leading-none ${

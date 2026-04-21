@@ -42,13 +42,57 @@ export async function POST(req: NextRequest) {
   // fake / ghost addresses flooding the leaderboard. The contract is the
   // source of truth for was_free (first play of the day is free per the
   // `lastFreePlayDay` map).
+  //
+  // Idempotent: if a run already exists for this txHash and is still open
+  // at q_index=0 (user hasn't answered anything yet), return the original
+  // runId + question instead of erroring. This covers double-invoke from
+  // client effects re-running, page reloads during the briefing/countdown,
+  // or StrictMode-style double mounts. A progressed or finished run
+  // (status != open, or any answered question) still rejects the replay.
   const { data: dup } = await supabase
     .from("runs")
-    .select("id")
+    .select("id,status")
     .eq("paid_tx_hash", txHash)
     .maybeSingle();
   if (dup) {
-    return Response.json({ error: "tx-already-used" }, { status: 400 });
+    const dupId = (dup as { id: string; status: string }).id;
+    const dupStatus = (dup as { id: string; status: string }).status;
+    if (dupStatus !== "open") {
+      return Response.json({ error: "tx-already-used" }, { status: 400 });
+    }
+
+    const { data: rqData } = await supabase
+      .from("run_questions")
+      .select("question_id,q_index,answered_at")
+      .eq("run_id", dupId)
+      .order("q_index", { ascending: true });
+    const rqs = (rqData ?? []) as Array<{
+      question_id: string;
+      q_index: number;
+      answered_at: string | null;
+    }>;
+    const anyAnswered = rqs.some((r) => r.answered_at !== null);
+    if (anyAnswered) {
+      return Response.json({ error: "tx-already-used" }, { status: 400 });
+    }
+
+    const firstQId = rqs[0]?.question_id;
+    if (!firstQId) {
+      return Response.json({ error: "tx-already-used" }, { status: 400 });
+    }
+    const { data: qRow } = await supabase
+      .from("questions")
+      .select("phrase,correct,wrong")
+      .eq("id", firstQId)
+      .maybeSingle();
+    if (!qRow) {
+      return Response.json({ error: "tx-already-used" }, { status: 400 });
+    }
+    const q = qRow as { phrase: string; correct: string; wrong: string };
+    return Response.json({
+      runId: dupId,
+      question: { phrase: q.phrase, correct: q.correct, wrong: q.wrong },
+    });
   }
 
   const check = await verifyPaymentTx(txHash, player, gameId);
