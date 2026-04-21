@@ -4,14 +4,28 @@ import { useEffect, useState } from "react";
 import { fmtUSD, shortAddr } from "@/lib/format";
 import { getHistory, type HistoryDay } from "@/lib/api";
 import { useLang } from "@/lib/lang-provider";
+import { type Lang } from "@/lib/i18n";
 import { SakaLabsCredit } from "@/components/SakaLabsCredit";
 
+const LANGS: Lang[] = ["en", "es"];
+
+type TaggedDay = HistoryDay & { lang: Lang };
+
 export default function HistoryPage() {
-  const { t, game } = useLang();
-  const [days, setDays] = useState<HistoryDay[] | null>(null);
+  const { t } = useLang();
+  const [days, setDays] = useState<TaggedDay[] | null>(null);
+
   useEffect(() => {
-    getHistory(game).then(setDays);
-  }, [game]);
+    // Pull both games so users see the full timeline regardless of which game
+    // is currently selected. Each row is tagged with an EN/ES badge.
+    Promise.all(LANGS.map((l) => getHistory(l))).then((results) => {
+      const merged = results.flatMap((r, i) =>
+        r.map((d) => ({ ...d, lang: LANGS[i] })),
+      );
+      merged.sort((a, b) => b.date.localeCompare(a.date));
+      setDays(merged);
+    });
+  }, []);
 
   return (
     <div className="flex-1 flex flex-col px-5 pt-6 max-w-md mx-auto w-full gap-5">
@@ -35,13 +49,16 @@ export default function HistoryPage() {
         )}
         {days?.map((d) => (
           <li
-            key={d.date}
+            key={`${d.lang}-${d.date}`}
             className="rounded-2xl bg-white border border-black/5 p-4 shadow-[0_3px_0_0_rgba(0,0,0,0.04)]"
           >
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-xs font-display tracking-widest uppercase text-muted">
-                  {d.date}
+                <div className="text-xs font-display tracking-widest uppercase text-muted flex items-center gap-2">
+                  <span>{d.date}</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/5">
+                    {d.lang.toUpperCase()}
+                  </span>
                 </div>
                 <div className="font-display text-3xl mt-0.5">{fmtUSD(d.potUSD)}</div>
               </div>

@@ -55,5 +55,4 @@ export const wagmiConfig = createConfig({
     [mainnet.id]: http(MAINNET_RPC_URL),
   },
   connectors: [farcasterMiniApp(), ...rainbowKitConnectors],
-  ssr: true,
 });
