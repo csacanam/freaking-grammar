@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import {
   useAccount,
   useDisconnect,
@@ -44,6 +45,7 @@ export default function YouPage() {
   const { isConnected, chainId } = useAccount();
   const { openConnectModal } = useConnectModal();
   const { disconnect } = useDisconnect();
+  const router = useRouter();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
   const publicClient = usePublicClient({ chainId: ACTIVE_CHAIN.id });
@@ -212,7 +214,10 @@ export default function YouPage() {
       {isConnected && (
         <section className="mt-auto pt-4 pb-6">
           <button
-            onClick={() => disconnect()}
+            onClick={() => {
+              disconnect();
+              router.push("/");
+            }}
             className="w-full rounded-2xl border border-black/10 bg-white px-5 h-12 font-display text-sm tracking-widest uppercase text-muted hover:text-red hover:border-red/30 transition shadow-[0_2px_0_0_rgba(0,0,0,0.04)]"
           >
             Disconnect wallet
