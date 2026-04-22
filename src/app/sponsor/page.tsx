@@ -255,6 +255,25 @@ function SponsorInner() {
       </div>
 
       <SponsorLeaderboard />
+
+      <div className="rounded-2xl border border-dashed border-black/10 bg-white p-4 text-center">
+        <div className="font-display text-sm tracking-wider uppercase">
+          Want to sponsor with your own token?
+        </div>
+        <p className="text-xs text-muted mt-1 leading-snug">
+          Communities, DAOs and brands can fund bonus rewards on top of the
+          daily pot — any Celo token, any amount, tagged with your name on
+          the pot card.
+        </p>
+        <a
+          href="https://t.me/camilosaka"
+          target="_blank"
+          rel="noreferrer"
+          className="inline-block mt-3 text-xs font-display tracking-widest uppercase text-teal hover:underline"
+        >
+          Talk to @camilosaka on Telegram →
+        </a>
+      </div>
     </div>
   );
 }

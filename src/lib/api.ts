@@ -3,11 +3,19 @@
 
 import type { Lang } from "@/lib/i18n";
 
+export type BonusLine = {
+  sponsor: string;
+  emoji: string | null;
+  amount: number;
+  tokenSymbol: string;
+};
+
 export type LobbyData = {
   potUSD: number;
   closesAtIso: string;
   leaderboard: { rank: number; player: string; score: number; isMe?: boolean }[];
   playerHasFreePlay: boolean;
+  bonuses?: BonusLine[];
 };
 
 export type HistoryDay = {
@@ -15,6 +23,7 @@ export type HistoryDay = {
   potUSD: number;
   winner: string | null;
   winnerScore: number | null;
+  bonuses?: BonusLine[];
 };
 
 export type StatsData = {

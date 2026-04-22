@@ -87,6 +87,29 @@ export default function HistoryPage() {
                 )}
               </div>
             </div>
+            {d.bonuses && d.bonuses.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-black/5 flex flex-col gap-1">
+                {d.bonuses.map((b, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center justify-between text-xs"
+                  >
+                    <span className="text-muted font-display tracking-widest uppercase">
+                      {b.emoji ? `${b.emoji} ` : ""}
+                      {b.sponsor}
+                    </span>
+                    <span className="text-ink font-sans">
+                      <span className="font-bold tabular-nums">
+                        +{b.amount.toLocaleString()}
+                      </span>{" "}
+                      <span className="font-semibold">
+                        {b.tokenSymbol}
+                      </span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </li>
         ))}
       </ul>

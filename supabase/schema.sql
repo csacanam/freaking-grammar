@@ -78,3 +78,45 @@ create table if not exists wins (
   primary key (lang, day_utc, player)
 );
 create index if not exists wins_player_idx on wins (player, claimed);
+
+-- ------------------------------------------------ sponsor_campaigns
+-- External sponsors (communities, DAOs, individuals) committing a budget of
+-- any ERC20 on Celo as a *bonus* on top of the USDT pot. Each day's winner
+-- of the games in `games[]` receives `daily_amount_per_game_units` of
+-- `token_address`. Carry-over is implicit: days without a winner don't
+-- spend budget, so the campaign naturally extends.
+create table if not exists sponsor_campaigns (
+  id                           uuid primary key default gen_random_uuid(),
+  name                         text not null,                        -- "Celo Colombia"
+  emoji                        text,                                 -- "🇨🇴" for display
+  contact_url                  text,                                 -- optional sponsor link
+  token_address                text not null,                        -- ERC20 on Celo, lower-case
+  token_symbol                 text not null,
+  token_decimals               integer not null,
+  daily_amount_per_game_units  numeric(78,0) not null,               -- per game, per day
+  total_budget_units           numeric(78,0) not null,
+  games                        text[] not null default array['en','es']::text[],
+  starts_at_utc                date not null,
+  active                       boolean not null default true,
+  created_at                   timestamptz not null default now()
+);
+create index if not exists sponsor_campaigns_active_idx
+  on sponsor_campaigns (active, starts_at_utc);
+
+-- ------------------------------------------------ sponsor_payouts
+-- Airdrop log — one row per (campaign, lang, day) once the winner has been
+-- paid. Used for auditing, /you display of bonus winnings, and summing
+-- "spent" to know when a campaign has exhausted its budget.
+create table if not exists sponsor_payouts (
+  id               uuid primary key default gen_random_uuid(),
+  campaign_id      uuid not null references sponsor_campaigns(id) on delete cascade,
+  lang             text not null check (lang in ('en','es')),
+  day_utc          date not null,
+  winner           text not null,
+  amount_units     numeric(78,0) not null,
+  airdrop_tx_hash  text,
+  created_at       timestamptz not null default now(),
+  unique (campaign_id, lang, day_utc)
+);
+create index if not exists sponsor_payouts_winner_idx
+  on sponsor_payouts (winner, day_utc desc);
