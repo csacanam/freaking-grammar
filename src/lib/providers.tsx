@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RainbowKitProvider } from "@rainbow-me/rainbowkit";
 import "@rainbow-me/rainbowkit/styles.css";
 import { Suspense, useEffect, useState, type ReactNode } from "react";
+import { celo, base, mainnet } from "viem/chains";
 import { wagmiConfig } from "./wagmi";
 import { LangProvider } from "./lang-provider";
 import { useMiniPayAutoConnect } from "./minipay";
@@ -114,6 +115,11 @@ export function Providers({ children }: { children: ReactNode }) {
       appId={PRIVY_APP_ID}
       config={{
         loginMethods: ["email"],
+        // Without these, embedded wallets default to Ethereum mainnet and
+        // writeContract calls against Celo hang forever — Privy doesn't
+        // know the target chain is legal, so it never signs.
+        defaultChain: celo,
+        supportedChains: [celo, base, mainnet],
         embeddedWallets: {
           showWalletUIs: false,
           ethereum: {
