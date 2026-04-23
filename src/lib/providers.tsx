@@ -1,11 +1,12 @@
 "use client";
 
-import { WagmiProvider } from "@privy-io/wagmi";
-import { PrivyProvider } from "@privy-io/react-auth";
+import { WagmiProvider } from "wagmi";
+import { PrivyProvider, useWallets } from "@privy-io/react-auth";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RainbowKitProvider } from "@rainbow-me/rainbowkit";
 import "@rainbow-me/rainbowkit/styles.css";
-import { Suspense, useEffect, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
+import { useAccount, useConnect, useConnectors } from "wagmi";
 import { celo, base, mainnet } from "viem/chains";
 import { wagmiConfig } from "./wagmi";
 import { LangProvider } from "./lang-provider";
@@ -17,6 +18,74 @@ const PRIVY_APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID || "";
 // Must live inside WagmiProvider so the wagmi hooks have a client.
 function MiniPayBridge() {
   useMiniPayAutoConnect();
+  return null;
+}
+
+// Bridges the Privy embedded wallet into wagmi WITHOUT using
+// @privy-io/wagmi — that package's WagmiProvider runs useSyncPrivyWallets
+// which calls `config._internal.connectors.setState(newArray)` on every
+// tick, blowing away every RainbowKit connector we defined so the "Use
+// your own wallet" modal ends up empty. Instead we:
+//   1. Wait for Privy to create the embedded wallet (useWallets).
+//   2. Announce it via EIP-6963; wagmi's multiInjectedProviderDiscovery
+//      picks it up and registers it as an injected connector alongside
+//      everything else.
+//   3. Auto-connect once the connector shows up in useConnectors().
+function PrivyEmbeddedBridge() {
+  const { wallets, ready } = useWallets();
+  const connectors = useConnectors();
+  const { connectAsync } = useConnect();
+  const { address } = useAccount();
+  const announcedFor = useRef<string | null>(null);
+
+  // Step 1 + 2: announce the provider via EIP-6963 so wagmi discovers it.
+  useEffect(() => {
+    if (!ready) return;
+    if (typeof window === "undefined") return;
+    const privyWallet = wallets.find((w) => w.walletClientType === "privy");
+    if (!privyWallet) return;
+    if (announcedFor.current === privyWallet.address) return;
+
+    (async () => {
+      try {
+        const provider = await privyWallet.getEthereumProvider();
+        const info = Object.freeze({
+          uuid: `privy-${privyWallet.address}`,
+          rdns: "io.privy.wallet",
+          name: "Privy Wallet",
+          icon: "",
+        });
+        const detail = Object.freeze({ info, provider });
+
+        // Respond to any future request-provider events.
+        window.addEventListener("eip6963:requestProvider", () => {
+          window.dispatchEvent(
+            new CustomEvent("eip6963:announceProvider", { detail }),
+          );
+        });
+
+        // Proactively announce so wagmi registers it right now.
+        window.dispatchEvent(
+          new CustomEvent("eip6963:announceProvider", { detail }),
+        );
+
+        announcedFor.current = privyWallet.address;
+      } catch (e) {
+        console.error("PrivyEmbeddedBridge: announce failed", e);
+      }
+    })();
+  }, [wallets, ready]);
+
+  // Step 3: once wagmi sees the Privy connector, auto-connect.
+  useEffect(() => {
+    if (address) return;
+    const privyConnector = connectors.find((c) => c.id === "io.privy.wallet");
+    if (!privyConnector) return;
+    connectAsync({ connector: privyConnector }).catch((e) => {
+      console.error("PrivyEmbeddedBridge: connect failed", e);
+    });
+  }, [connectors, address, connectAsync]);
+
   return null;
 }
 
@@ -36,88 +105,13 @@ export function Providers({ children }: { children: ReactNode }) {
     })();
   }, []);
 
-  // Diagnostic: dump every EIP-6963 provider announcement.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const handler = (event: Event) => {
-      const e = event as CustomEvent<{
-        info?: {
-          uuid?: string;
-          rdns?: string;
-          name?: string;
-          icon?: unknown;
-        };
-      }>;
-      const info = e.detail?.info;
-      if (!info) return;
-      const icon = info.icon;
-      const iconType = typeof icon;
-      console.log("[EIP-6963]", {
-        uuid: info.uuid,
-        rdns: info.rdns,
-        name: info.name,
-        iconType,
-        iconPreview:
-          iconType === "string"
-            ? (icon as string).slice(0, 80)
-            : icon,
-      });
-    };
-    window.addEventListener("eip6963:announceProvider", handler);
-    window.dispatchEvent(new Event("eip6963:requestProvider"));
-    return () =>
-      window.removeEventListener("eip6963:announceProvider", handler);
-  }, []);
-
-  // Workaround for a bug in @privy-io/wagmi 4.0.5: the "Privy Wallet"
-  // connector it injects after an embedded-wallet login has `icon` set to
-  // a React component (function), but Privy's own SDK iterates all wagmi
-  // connectors and calls `icon.replace(...)` assuming strings — which
-  // crashes the whole post-login render with:
-  //   "e.icon?.replace is not a function"
-  //
-  // We can't prevent Privy from registering the connector, and our
-  // constructor-time `withStringIcon` doesn't see it because it's added
-  // internally, not via our `connectors: [...]` array. Instead we patch
-  // `Array.prototype.filter` to normalise any Privy-Wallet-like item's
-  // icon to an empty string right before the filter runs. Harmless for
-  // other arrays; narrow match on `id.startsWith('io.privy.wallet')` so
-  // we don't mutate unrelated objects.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const w = window as unknown as { __fgPrivyIconPatched?: boolean };
-    if (w.__fgPrivyIconPatched) return;
-    w.__fgPrivyIconPatched = true;
-    const orig = Array.prototype.filter;
-    Array.prototype.filter = function <T>(
-      this: T[],
-      fn: (v: T, i: number, a: T[]) => boolean,
-      ctx?: unknown,
-    ): T[] {
-      for (const v of this) {
-        const o = v as unknown as { id?: unknown; icon?: unknown };
-        if (
-          o &&
-          typeof o === "object" &&
-          typeof o.id === "string" &&
-          o.id.startsWith("io.privy.wallet") &&
-          typeof o.icon !== "string"
-        ) {
-          o.icon = "";
-        }
-      }
-      return orig.call(this, fn, ctx) as T[];
-    } as typeof Array.prototype.filter;
-  }, []);
-
   return (
     <PrivyProvider
       appId={PRIVY_APP_ID}
       config={{
         loginMethods: ["email"],
-        // Without these, embedded wallets default to Ethereum mainnet and
-        // writeContract calls against Celo hang forever — Privy doesn't
-        // know the target chain is legal, so it never signs.
+        // defaultChain must match wagmi's primary chain so the embedded
+        // wallet is provisioned on Celo, not Ethereum.
         defaultChain: celo,
         supportedChains: [celo, base, mainnet],
         embeddedWallets: {
@@ -135,6 +129,7 @@ export function Providers({ children }: { children: ReactNode }) {
         <WagmiProvider config={wagmiConfig}>
           <RainbowKitProvider modalSize="compact">
             <MiniPayBridge />
+            <PrivyEmbeddedBridge />
             <WelcomeGasBridge />
             <Suspense>
               <LangProvider>{children}</LangProvider>
