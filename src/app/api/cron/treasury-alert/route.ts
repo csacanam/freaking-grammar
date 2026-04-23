@@ -17,7 +17,7 @@ import {
   celoClient,
   readTreasuryState,
 } from "@/lib/onchain";
-import { TOKEN_DECIMALS } from "@/lib/supabase";
+import { supabase, TOKEN_DECIMALS } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
@@ -94,9 +94,21 @@ export async function GET(req: NextRequest) {
     }),
   );
 
+  // Operator's balance for each sponsor campaign token so the alert catches
+  // "Celo Colombia is about to run out of COPm" the same way it catches USDT
+  // runway on the pots.
+  const sponsorStates = operatorPk
+    ? await readSponsorStates(
+        privateKeyToAccount(
+          (operatorPk.startsWith("0x") ? operatorPk : `0x${operatorPk}`) as Hex,
+        ).address,
+      )
+    : [];
+
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || req.nextUrl.origin;
   const text = formatMessage({
     states,
+    sponsorStates,
     fund: fundReport,
     gasWarn,
     baseUrl,
@@ -287,15 +299,104 @@ function allocate(
   }));
 }
 
+// ------------------------------------------------- sponsor campaign states
+
+type SponsorState = {
+  name: string;
+  tokenSymbol: string;
+  tokenDecimals: number;
+  balanceRaw: bigint;
+  dailyPerDayRaw: bigint; // per day across all games this campaign covers
+  budgetRaw: bigint;
+  spentRaw: bigint;
+  gamesCount: number;
+};
+
+async function readSponsorStates(
+  operator: `0x${string}`,
+): Promise<SponsorState[]> {
+  if (!supabase) return [];
+  const { data: campaignsData } = await supabase
+    .from("sponsor_campaigns")
+    .select(
+      "id,name,token_address,token_symbol,token_decimals,games,daily_amount_per_game_units::text,total_budget_units::text",
+    )
+    .eq("active", true);
+  type Row = {
+    id: string;
+    name: string;
+    token_address: string;
+    token_symbol: string;
+    token_decimals: number;
+    games: string[];
+    daily_amount_per_game_units: string;
+    total_budget_units: string;
+  };
+  const campaigns = (campaignsData ?? []) as Row[];
+  if (campaigns.length === 0) return [];
+
+  // Spent totals per campaign in one query.
+  const { data: spentData } = await supabase
+    .from("sponsor_payouts")
+    .select("campaign_id,amount_units::text")
+    .in(
+      "campaign_id",
+      campaigns.map((c) => c.id),
+    );
+  const spentByCampaign = new Map<string, bigint>();
+  for (const p of (spentData ?? []) as Array<{
+    campaign_id: string;
+    amount_units: string;
+  }>) {
+    const prev = spentByCampaign.get(p.campaign_id) ?? 0n;
+    spentByCampaign.set(p.campaign_id, prev + BigInt(p.amount_units));
+  }
+
+  const balanceByToken = new Map<string, bigint>();
+  const states: SponsorState[] = [];
+  for (const c of campaigns) {
+    const key = c.token_address.toLowerCase();
+    let balance = balanceByToken.get(key);
+    if (balance === undefined) {
+      try {
+        balance = (await celoClient.readContract({
+          address: c.token_address as `0x${string}`,
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [operator],
+        })) as bigint;
+        balanceByToken.set(key, balance);
+      } catch {
+        balance = 0n;
+      }
+    }
+    const daily = BigInt(c.daily_amount_per_game_units);
+    const gamesCount = c.games.length;
+    const dailyPerDay = daily * BigInt(gamesCount);
+    states.push({
+      name: c.name,
+      tokenSymbol: c.token_symbol,
+      tokenDecimals: c.token_decimals,
+      balanceRaw: balance,
+      dailyPerDayRaw: dailyPerDay,
+      budgetRaw: BigInt(c.total_budget_units),
+      spentRaw: spentByCampaign.get(c.id) ?? 0n,
+      gamesCount,
+    });
+  }
+  return states;
+}
+
 // --------------------------------------------------------- message format
 
 function formatMessage(args: {
   states: GameState[];
+  sponsorStates: SponsorState[];
   fund: AutoFundReport;
   gasWarn: boolean;
   baseUrl: string;
 }): string {
-  const { states, fund, gasWarn, baseUrl } = args;
+  const { states, sponsorStates, fund, gasWarn, baseUrl } = args;
   const lines: string[] = [];
   lines.push("*🏦 Freaking Grammar — Treasury*");
   lines.push("");
@@ -325,6 +426,29 @@ function formatMessage(args: {
     const link = `${baseUrl}/refill?game=${s.key}`;
     const row = `${icon} *${s.label}* — $${s.treasuryUSD.toFixed(2)} · ${s.days.toFixed(1)}d runway`;
     lines.push(s.days < 7 ? `${row} — [fund](${link})` : row);
+  }
+
+  if (sponsorStates.length > 0) {
+    lines.push("");
+    lines.push("*🎁 Sponsor campaigns*");
+    for (const s of sponsorStates) {
+      const balance = Number(s.balanceRaw) / 10 ** s.tokenDecimals;
+      const dailyPerDay = Number(s.dailyPerDayRaw) / 10 ** s.tokenDecimals;
+      const budget = Number(s.budgetRaw) / 10 ** s.tokenDecimals;
+      const spent = Number(s.spentRaw) / 10 ** s.tokenDecimals;
+      const remainingBudget = budget - spent;
+      const walletDays =
+        dailyPerDay > 0 ? Math.floor(balance / dailyPerDay) : 0;
+      const budgetDays =
+        dailyPerDay > 0 ? Math.floor(remainingBudget / dailyPerDay) : 0;
+      // The binding constraint is whichever (wallet, budget) runs out first.
+      const effectiveDays = Math.min(walletDays, budgetDays);
+      const icon =
+        effectiveDays === 0 ? "🔴" : effectiveDays < 3 ? "🟡" : "🟢";
+      lines.push(
+        `${icon} *${s.name}* (${s.tokenSymbol}) — ${balance.toLocaleString()} bal · ${dailyPerDay.toLocaleString()}/day · ${effectiveDays}d left`,
+      );
+    }
   }
 
   if (gasWarn && fund.ran && "operatorCELO" in fund) {

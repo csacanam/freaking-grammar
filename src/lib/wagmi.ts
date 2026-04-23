@@ -2,7 +2,7 @@
 
 import { http } from "viem";
 import { celo, base, mainnet } from "viem/chains";
-import { createConfig } from "wagmi";
+import { createConfig } from "@privy-io/wagmi";
 import { farcasterMiniApp } from "@farcaster/miniapp-wagmi-connector";
 import { connectorsForWallets } from "@rainbow-me/rainbowkit";
 import {
@@ -16,12 +16,11 @@ import {
 } from "@rainbow-me/rainbowkit/wallets";
 import { CELO_RPC_URL, MAINNET_RPC_URL } from "./chain";
 
-// Client-only: RainbowKit handles the connect modal. EIP-6963 detection for
-// installed desktop wallets + WalletConnect-driven deep-links to mobile wallet
-// apps (Rabby, MetaMask, Coinbase, Trust, Rainbow…). farcasterMiniApp is
-// prepended as an extra wagmi connector so the app auto-connects inside
-// Warpcast / Base App without appearing in the user-facing picker. MiniPay
-// auto-connect is handled separately in src/lib/minipay.ts.
+// Client-only. Uses @privy-io/wagmi's createConfig so the Privy embedded
+// wallet integrates as a first-class wagmi connector when a user signs in
+// with email. RainbowKit still powers the "use your own wallet" path, and
+// farcasterMiniApp keeps auto-connecting inside Warpcast / Base App.
+// MiniPay auto-connect lives separately in src/lib/minipay.ts.
 
 const WALLETCONNECT_PROJECT_ID =
   process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "";

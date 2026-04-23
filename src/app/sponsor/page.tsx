@@ -22,6 +22,7 @@ import { SponsorLeaderboard } from "@/components/SponsorLeaderboard";
 import { BackLink } from "@/components/BackLink";
 import { friendlyError, fmtUSD } from "@/lib/format";
 import { ACTIVE_CHAIN, POT_ADDRESS, STABLECOIN } from "@/lib/chain";
+import { useLang } from "@/lib/lang-provider";
 import FreakingPotArtifact from "@/lib/contracts/FreakingPot.json";
 
 const FREAKING_POT_ABI = FreakingPotArtifact.abi;
@@ -40,6 +41,7 @@ export default function SponsorPage() {
 }
 
 function SponsorInner() {
+  const { t } = useLang();
   const sp = useSearchParams();
   const initialGame = (sp.get("game") || "").toLowerCase() === "es" ? 2 : 1;
 
@@ -258,12 +260,10 @@ function SponsorInner() {
 
       <div className="rounded-2xl border border-dashed border-black/10 bg-white p-4 text-center">
         <div className="font-display text-sm tracking-wider uppercase">
-          Want to sponsor with your own token?
+          {t.wantToSponsor}
         </div>
         <p className="text-xs text-muted mt-1 leading-snug">
-          Communities, DAOs and brands can fund bonus rewards on top of the
-          daily pot — any Celo token, any amount, tagged with your name on
-          the pot card.
+          {t.sponsorCtaBlurb}
         </p>
         <a
           href="https://t.me/camilosaka"
@@ -271,7 +271,7 @@ function SponsorInner() {
           rel="noreferrer"
           className="inline-block mt-3 text-xs font-display tracking-widest uppercase text-teal hover:underline"
         >
-          Talk to @camilosaka on Telegram →
+          {t.talkToCamilo}
         </a>
       </div>
     </div>

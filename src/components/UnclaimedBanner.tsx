@@ -17,7 +17,7 @@ export function UnclaimedBanner({ totalUSD }: { totalUSD: number }) {
           <span className="text-2xl">🏆</span>
           <div>
             <div className="font-display tracking-wide leading-tight">{t.youHaveUnclaimed}</div>
-            <div className="text-xs opacity-70">tap to claim</div>
+            <div className="text-xs opacity-70">{t.tapToClaim}</div>
           </div>
         </div>
         <div className="font-display text-2xl">{fmtUSD(totalUSD)}</div>

@@ -9,10 +9,18 @@ import {
   useWriteContract,
 } from "wagmi";
 import { useConnectModal } from "@rainbow-me/rainbowkit";
-import { erc20Abi, isAddressEqual, maxUint256, zeroAddress } from "viem";
+import { useLogin } from "@privy-io/react-auth";
+import {
+  erc20Abi,
+  formatEther,
+  isAddressEqual,
+  maxUint256,
+  parseEther,
+  zeroAddress,
+} from "viem";
 import { Button } from "@/components/Button";
 import { Countdown } from "@/components/Countdown";
-import { NeedUsdtModal } from "@/components/NeedUsdtModal";
+import { NeedFundsModal } from "@/components/NeedFundsModal";
 import { friendlyError } from "@/lib/format";
 import {
   ACTIVE_CHAIN,
@@ -55,11 +63,14 @@ export function PayAndPlayButton({
   const { writeContractAsync } = useWriteContract();
   const publicClient = usePublicClient({ chainId: ACTIVE_CHAIN.id });
   const { openConnectModal } = useConnectModal();
+  const { login: privyLogin } = useLogin();
 
   const [stage, setStage] = useState<Stage>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [needUsdt, setNeedUsdt] = useState<{
-    balance: number;
+  const [needFunds, setNeedFunds] = useState<{
+    token: "USDT" | "CELO";
+    balance: string;
+    need: string;
     address: string;
   } | null>(null);
 
@@ -81,8 +92,26 @@ export function PayAndPlayButton({
       await switchChainAsync({ chainId: ACTIVE_CHAIN.id });
     }
 
-    // Approve + balance check only needed for paid plays — free plays don't
-    // pull USDT. The contract itself decides free vs paid from `lastFreePlayDay`.
+    // Gas check first — fails the nicest. Every play tx needs at least this
+    // much CELO; if the wallet is short the play tx would either revert at
+    // the wallet level or bubble up as a gas error. Surface it with the
+    // NeedFundsModal instead.
+    const MIN_CELO = parseEther("0.002");
+    const celoBal = await publicClient.getBalance({ address: currentAddress });
+    if (celoBal < MIN_CELO) {
+      setNeedFunds({
+        token: "CELO",
+        balance: formatEther(celoBal),
+        need: "0.01",
+        address: currentAddress,
+      });
+      setStage("idle");
+      throw new Error("insufficient-celo");
+    }
+
+    // Approve + USDT balance check only needed for paid plays — free plays
+    // don't pull USDT. The contract itself decides free vs paid from
+    // `lastFreePlayDay`.
     if (!playerHasFreePlay) {
       const [balance, allowance] = (await Promise.all([
         publicClient.readContract({
@@ -100,8 +129,10 @@ export function PayAndPlayButton({
       ])) as [bigint, bigint];
 
       if (balance < ENTRY_FEE_UNITS) {
-        setNeedUsdt({
-          balance: Number(balance) / 1_000_000,
+        setNeedFunds({
+          token: "USDT",
+          balance: (Number(balance) / 1_000_000).toFixed(2),
+          need: "0.10",
           address: currentAddress,
         });
         setStage("idle");
@@ -139,22 +170,15 @@ export function PayAndPlayButton({
     setError(null);
 
     if (!contractLive) return;
-
-    // Wallet required for any play — free or paid. Every play goes through
-    // an on-chain play() call so fake addresses can't pollute the leaderboard.
-    // Connect and play are separate actions: first click opens RainbowKit's
-    // modal, user picks + signs, then clicks again to actually play.
-    if (!isConnected || !address) {
-      openConnectModal?.();
-      return;
-    }
+    if (!isConnected || !address) return; // handled by login buttons
 
     try {
       await runPlayFlow(address);
     } catch (e) {
       console.error("pay-and-play failed:", e);
-      // "insufficient-usdt" is already surfaced via the NeedUsdtModal.
-      if ((e as Error)?.message !== "insufficient-usdt") {
+      // Insufficient-funds cases are already surfaced via NeedFundsModal.
+      const msg = (e as Error)?.message;
+      if (msg !== "insufficient-usdt" && msg !== "insufficient-celo") {
         setError(friendlyError(e, 120));
       }
       setStage("idle");
@@ -166,10 +190,8 @@ export function PayAndPlayButton({
   const isLocked = !playerHasFreePlay && !contractLive;
   const needsConnect = !isConnected || !address;
   const paidVerb = replay ? t.playAgain : t.playPaid;
-  const label = busy
+  const playLabel = busy
     ? stageLabel(stage)
-    : needsConnect
-    ? t.connect
     : isLocked
     ? t.freePlayUsed
     : isPaid
@@ -182,6 +204,40 @@ export function PayAndPlayButton({
   // switch to the pot-share + countdown messaging.
   const showCaption = !busy;
 
+  // Pre-login UI: two explicit options instead of a single "Connect" button.
+  // Primary = email via Privy (creates an embedded wallet, beginner-friendly).
+  // Secondary = self-custody wallet via the RainbowKit modal — same picker
+  // we've always had, just scoped to this button. The "OR" divider makes
+  // both feel like valid first-class choices.
+  if (needsConnect) {
+    return (
+      <div className="flex flex-col gap-2">
+        <Button
+          full
+          onClick={() => privyLogin({ loginMethods: ["email"] })}
+          disabled={!contractLive}
+        >
+          {t.signInWithEmail}
+        </Button>
+        <div className="flex items-center gap-3 my-1">
+          <div className="flex-1 h-px bg-black/10" />
+          <span className="text-[10px] font-display tracking-[0.25em] uppercase text-muted">
+            {t.or}
+          </span>
+          <div className="flex-1 h-px bg-black/10" />
+        </div>
+        <Button
+          full
+          variant="ghost"
+          onClick={() => openConnectModal?.()}
+          disabled={!contractLive}
+        >
+          {t.useYourOwnWallet}
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-2">
       <Button
@@ -192,7 +248,7 @@ export function PayAndPlayButton({
       >
         {showCaption ? (
           <span className="flex flex-col items-center leading-tight gap-1">
-            <span>{label}</span>
+            <span>{playLabel}</span>
             <span className="text-sm tracking-[0.15em] uppercase text-yellow font-display">
               {playerHasFreePlay ? (
                 <>⏱  {t.rulesHint}</>
@@ -209,18 +265,20 @@ export function PayAndPlayButton({
             </span>
           </span>
         ) : (
-          label
+          playLabel
         )}
       </Button>
       {error && (
         <p className="text-xs text-red text-center font-mono">{error}</p>
       )}
-      <NeedUsdtModal
-        open={!!needUsdt}
-        balanceUSD={needUsdt?.balance ?? 0}
-        needUSD={0.1}
-        walletAddress={needUsdt?.address}
-        onClose={() => setNeedUsdt(null)}
+      <NeedFundsModal
+        open={!!needFunds}
+        token={needFunds?.token ?? "USDT"}
+        mode="insufficient"
+        balance={needFunds?.balance}
+        need={needFunds?.need}
+        walletAddress={needFunds?.address}
+        onClose={() => setNeedFunds(null)}
       />
     </div>
   );

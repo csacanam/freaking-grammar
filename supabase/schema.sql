@@ -120,3 +120,21 @@ create table if not exists sponsor_payouts (
 );
 create index if not exists sponsor_payouts_winner_idx
   on sponsor_payouts (winner, day_utc desc);
+
+-- ----------------------------------------------- welcome_airdrops
+-- One-time CELO airdrop to Privy-provisioned embedded wallets so their
+-- first tx (free play) doesn't fail for lack of gas. Only fired for users
+-- who actually signed up via Privy (detected client-side by
+-- `user.wallet.walletClientType === 'privy'`) — not for self-custody
+-- wallets (MetaMask, Rabby, MiniPay, Farcaster) which fund themselves.
+-- The email column is optional (we only have it when Privy used email
+-- login) and useful for support lookups.
+create table if not exists welcome_airdrops (
+  address      text primary key,         -- lower-case 0x address
+  email        text,
+  linked_at    timestamptz default now(),
+  amount_wei   numeric(78,0) not null,
+  tx_hash      text,
+  created_at   timestamptz not null default now()
+);
+create index if not exists welcome_airdrops_email_idx on welcome_airdrops (email);

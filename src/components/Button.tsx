@@ -6,7 +6,7 @@ import type { ComponentProps, ReactNode } from "react";
 type Variant = "primary" | "ghost" | "danger";
 
 const base =
-  "inline-flex items-center justify-center font-display text-2xl tracking-wide uppercase rounded-2xl px-6 h-14 select-none transition active:translate-y-[2px]";
+  "inline-flex items-center justify-center font-display text-2xl tracking-wide uppercase rounded-2xl px-6 h-14 select-none transition active:translate-y-[2px] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:translate-y-0 disabled:shadow-[0_4px_0_0_rgba(0,0,0,0.15)]";
 
 const styles: Record<Variant, string> = {
   primary:

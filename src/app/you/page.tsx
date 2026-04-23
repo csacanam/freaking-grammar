@@ -11,6 +11,7 @@ import {
   useWriteContract,
 } from "wagmi";
 import { useConnectModal } from "@rainbow-me/rainbowkit";
+import { useLogin } from "@privy-io/react-auth";
 import { isAddressEqual, zeroAddress } from "viem";
 import { Button } from "@/components/Button";
 import { fmtUSD } from "@/lib/format";
@@ -22,6 +23,7 @@ import { gameIdFor, type Lang } from "@/lib/i18n";
 import FreakingPotArtifact from "@/lib/contracts/FreakingPot.json";
 import { SakaLabsCredit } from "@/components/SakaLabsCredit";
 import { PlayerName } from "@/components/PlayerName";
+import { WalletSection } from "@/components/WalletSection";
 
 const FREAKING_POT_ABI = FreakingPotArtifact.abi;
 
@@ -44,6 +46,7 @@ export default function YouPage() {
   const { address: player } = useCurrentPlayer();
   const { isConnected, chainId } = useAccount();
   const { openConnectModal } = useConnectModal();
+  const { login: privyLogin } = useLogin();
   const { disconnect } = useDisconnect();
   const router = useRouter();
   const { switchChainAsync } = useSwitchChain();
@@ -152,6 +155,37 @@ export default function YouPage() {
         <SakaLabsCredit />
       </header>
 
+      {!isConnected && (
+        <section className="flex-1 flex flex-col items-center justify-center gap-5 text-center py-10">
+          <Image src="/mascot.png" alt="" width={96} height={96} priority />
+          <div>
+            <h2 className="font-display text-2xl tracking-wide">
+              {t.youSignInTitle}
+            </h2>
+            <p className="text-sm text-muted mt-2 max-w-[20rem] leading-snug">
+              {t.youSignInBlurb}
+            </p>
+          </div>
+          <div className="w-full flex flex-col gap-2">
+            <Button full onClick={() => privyLogin({ loginMethods: ["email"] })}>
+              {t.signInWithEmail}
+            </Button>
+            <div className="flex items-center gap-3 my-1">
+              <div className="flex-1 h-px bg-black/10" />
+              <span className="text-[10px] font-display tracking-[0.25em] uppercase text-muted">
+                {t.or}
+              </span>
+              <div className="flex-1 h-px bg-black/10" />
+            </div>
+            <Button full variant="ghost" onClick={() => openConnectModal?.()}>
+              {t.useYourOwnWallet}
+            </Button>
+          </div>
+        </section>
+      )}
+
+      {isConnected && (
+      <>
       <section className="grid grid-cols-3 gap-3">
         <Stat label={t.gamesPlayed} value={stats?.gamesPlayed ?? "—"} accent="bg-blue/10" />
         <Stat label={t.wins} value={stats?.wins ?? "—"} accent="bg-yellow/40" />
@@ -167,7 +201,7 @@ export default function YouPage() {
         {unclaimed === null && <div className="h-24 rounded-2xl bg-black/5 animate-pulse" />}
         {unclaimed?.length === 0 && (
           <div className="rounded-2xl bg-white border border-dashed border-black/10 p-6 text-center text-muted">
-            🎯  No pending wins. Go play.
+            {t.noPendingWins}
           </div>
         )}
         {unclaimed && unclaimed.length > 0 && (
@@ -194,14 +228,14 @@ export default function YouPage() {
                     <div className="font-display text-2xl">{fmtUSD(w.amountUSD)}</div>
                   </div>
                   <span className="text-xs font-display tracking-wider uppercase text-teal">
-                    ready
+                    {t.readyBadge}
                   </span>
                 </li>
               ))}
             </ul>
             <div className="p-3 bg-black/[0.02] flex flex-col gap-2">
               <Button full disabled={claiming} onClick={handleClaimAll}>
-                {claiming ? "Claiming…" : `${t.claimAll}  ·  ${fmtUSD(total)}`}
+                {claiming ? t.claimingStatus : `${t.claimAll}  ·  ${fmtUSD(total)}`}
               </Button>
               {claimError && (
                 <p className="text-xs text-red text-center font-mono">{claimError}</p>
@@ -210,6 +244,10 @@ export default function YouPage() {
           </div>
         )}
       </section>
+      </>
+      )}
+
+      {isConnected && <WalletSection />}
 
       {isConnected && (
         <section className="mt-auto pt-4 pb-6">
@@ -220,10 +258,10 @@ export default function YouPage() {
             }}
             className="w-full rounded-2xl border border-black/10 bg-white px-5 h-12 font-display text-sm tracking-widest uppercase text-muted hover:text-red hover:border-red/30 transition shadow-[0_2px_0_0_rgba(0,0,0,0.04)]"
           >
-            Disconnect wallet
+            {t.disconnectWallet}
           </button>
           <p className="text-[11px] text-muted text-center mt-2">
-            Switch to a different wallet to play from another account.
+            {t.disconnectHint}
           </p>
         </section>
       )}

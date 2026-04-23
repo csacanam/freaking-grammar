@@ -93,8 +93,8 @@ export function PotCard({
             className="rounded-2xl bg-yellow/40 border border-yellow/60 px-4 py-3 flex flex-col gap-1"
           >
             <div className="flex items-baseline justify-between gap-3">
-              <div className="font-display text-[11px] tracking-[0.2em] uppercase text-ink/70 leading-tight">
-                Extra prize
+              <div className="font-display text-sm tracking-[0.15em] uppercase text-ink/70 leading-tight">
+                {t.extraPrize}
               </div>
               <div className="text-ink leading-none flex items-baseline gap-1 font-sans">
                 <span className="text-2xl font-bold tabular-nums">
@@ -106,8 +106,8 @@ export function PotCard({
               </div>
             </div>
             <div className="text-right leading-tight">
-              <span className="text-[11px] text-ink/60">Sponsored by </span>
-              <span className="font-display text-sm tracking-wider text-ink">
+              <span className="text-xs text-ink/60">{t.sponsoredBy} </span>
+              <span className="font-display text-base tracking-wider text-ink">
                 {b.sponsor}
               </span>
             </div>
@@ -147,7 +147,7 @@ export function PotCard({
           href={`/sponsor?game=${game}`}
           className={`text-center text-xs font-display tracking-widest uppercase ${meta.sponsorText} hover:underline -mt-1`}
         >
-          Sponsor this pot →
+          {t.sponsorThisPot}
         </Link>
       </div>
     </div>
