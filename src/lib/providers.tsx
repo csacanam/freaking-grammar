@@ -8,7 +8,29 @@ import "@rainbow-me/rainbowkit/styles.css";
 import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { useAccount, useConnect, useConnectors } from "wagmi";
 import { celo, base, mainnet } from "viem/chains";
+import { CELO_RPC_URL, MAINNET_RPC_URL } from "./chain";
 import { wagmiConfig } from "./wagmi";
+
+// Privy uses `chain.rpcUrls.default.http[0]` when the embedded wallet
+// sends transactions. If we hand it plain `celo` from viem/chains, it
+// talks to Forno (the public default) and we've seen "RPC unknown
+// error" under load there. Override with our Alchemy URL — same one
+// wagmi's transport uses — so embedded-wallet plays never hit a
+// flakey public endpoint.
+const CELO_WITH_RPC = {
+  ...celo,
+  rpcUrls: {
+    ...celo.rpcUrls,
+    default: { http: [CELO_RPC_URL] },
+  },
+};
+const MAINNET_WITH_RPC = {
+  ...mainnet,
+  rpcUrls: {
+    ...mainnet.rpcUrls,
+    default: { http: [MAINNET_RPC_URL] },
+  },
+};
 import { LangProvider } from "./lang-provider";
 import { useMiniPayAutoConnect } from "./minipay";
 import { WelcomeGasBridge } from "@/components/WelcomeGasBridge";
@@ -118,8 +140,8 @@ export function Providers({ children }: { children: ReactNode }) {
         loginMethods: ["email"],
         // defaultChain must match wagmi's primary chain so the embedded
         // wallet is provisioned on Celo, not Ethereum.
-        defaultChain: celo,
-        supportedChains: [celo, base, mainnet],
+        defaultChain: CELO_WITH_RPC,
+        supportedChains: [CELO_WITH_RPC, base, MAINNET_WITH_RPC],
         embeddedWallets: {
           showWalletUIs: false,
           ethereum: {
