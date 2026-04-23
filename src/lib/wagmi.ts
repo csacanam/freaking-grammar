@@ -2,7 +2,14 @@
 
 import { http } from "viem";
 import { celo, base, mainnet } from "viem/chains";
-import { createConfig } from "@privy-io/wagmi";
+// IMPORTANT: import createConfig from `wagmi`, NOT `@privy-io/wagmi`.
+// Privy's createConfig silently drops every non-mock connector and turns
+// off EIP-6963 discovery — it's designed for apps where Privy is the ONLY
+// wallet entrypoint. We want RainbowKit's wallet picker too, so we use
+// wagmi's createConfig directly and let Privy's WagmiProvider (still
+// used in providers.tsx) inject the embedded-wallet connector at runtime
+// via useSyncPrivyWallets.
+import { createConfig } from "wagmi";
 import { farcasterMiniApp } from "@farcaster/miniapp-wagmi-connector";
 import { connectorsForWallets } from "@rainbow-me/rainbowkit";
 import {
@@ -54,4 +61,5 @@ export const wagmiConfig = createConfig({
     [mainnet.id]: http(MAINNET_RPC_URL),
   },
   connectors: [farcasterMiniApp(), ...rainbowKitConnectors],
+  ssr: true,
 });
