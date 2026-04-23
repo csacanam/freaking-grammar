@@ -13,8 +13,6 @@ import { useMiniPayAutoConnect } from "./minipay";
 import { WelcomeGasBridge } from "@/components/WelcomeGasBridge";
 
 const PRIVY_APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID || "";
-const WALLETCONNECT_PROJECT_ID =
-  process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "";
 
 // Must live inside WagmiProvider so the wagmi hooks have a client.
 function MiniPayBridge() {
@@ -42,7 +40,7 @@ export function Providers({ children }: { children: ReactNode }) {
     <PrivyProvider
       appId={PRIVY_APP_ID}
       config={{
-        loginMethods: ["email", "wallet"],
+        loginMethods: ["email"],
         embeddedWallets: {
           ethereum: {
             createOnLogin: "users-without-wallets",
@@ -53,9 +51,7 @@ export function Providers({ children }: { children: ReactNode }) {
         appearance: {
           theme: "light",
           accentColor: "#68c3a0",
-          walletChainType: "ethereum-only",
         },
-        walletConnectCloudProjectId: WALLETCONNECT_PROJECT_ID || undefined,
       }}
     >
       <QueryClientProvider client={qc}>
