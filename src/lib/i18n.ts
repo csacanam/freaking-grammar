@@ -102,6 +102,12 @@ export const dict = {
     // Disconnect
     disconnectWallet: "Disconnect wallet",
     disconnectHint: "Switch to a different wallet to play from another account.",
+    // Play stages (button label while a tx is in flight)
+    stageSwitching: "Switching network…",
+    stageApproving: "Approving USDT…",
+    stageSigning: "Signing play…",
+    stagePaying: "Paying $0.10…",
+    stageStarting: "Starting…",
     // Resume banner
     resumeOne: "You have a paid play ready to start",
     resumeMany: "You have {n} paid plays ready to start",
@@ -246,6 +252,12 @@ export const dict = {
     // Disconnect
     disconnectWallet: "Desconectar wallet",
     disconnectHint: "Cambia a otra wallet para jugar desde otra cuenta.",
+    // Play stages (button label while a tx is in flight)
+    stageSwitching: "Cambiando red…",
+    stageApproving: "Autorizando USDT…",
+    stageSigning: "Firmando jugada…",
+    stagePaying: "Pagando $0.10…",
+    stageStarting: "Iniciando…",
     // Resume banner
     resumeOne: "Tienes un turno pagado listo",
     resumeMany: "Tienes {n} turnos pagados listos",

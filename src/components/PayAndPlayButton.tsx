@@ -29,7 +29,7 @@ import {
   STABLECOIN,
 } from "@/lib/chain";
 import { useLang } from "@/lib/lang-provider";
-import { gameIdFor, type Lang } from "@/lib/i18n";
+import { gameIdFor, type Lang, type Strings } from "@/lib/i18n";
 import FreakingPotArtifact from "@/lib/contracts/FreakingPot.json";
 
 const FREAKING_POT_ABI = FreakingPotArtifact.abi;
@@ -191,7 +191,7 @@ export function PayAndPlayButton({
   const needsConnect = !isConnected || !address;
   const paidVerb = replay ? t.playAgain : t.playPaid;
   const playLabel = busy
-    ? stageLabel(stage)
+    ? stageLabel(stage, t)
     : isLocked
     ? t.freePlayUsed
     : isPaid
@@ -327,18 +327,18 @@ export function WalletIcon() {
   );
 }
 
-function stageLabel(s: Stage): string {
+function stageLabel(s: Stage, t: Strings): string {
   switch (s) {
     case "switching":
-      return "Switching network…";
+      return t.stageSwitching;
     case "approving":
-      return "Approving USDT…";
+      return t.stageApproving;
     case "signing":
-      return "Signing play…";
+      return t.stageSigning;
     case "paying":
-      return "Paying $0.10…";
+      return t.stagePaying;
     case "starting":
-      return "Starting…";
+      return t.stageStarting;
     default:
       return "…";
   }

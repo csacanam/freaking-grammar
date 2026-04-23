@@ -11,7 +11,7 @@ import {
   useWriteContract,
 } from "wagmi";
 import { useConnectModal } from "@rainbow-me/rainbowkit";
-import { useLogin } from "@privy-io/react-auth";
+import { useLogin, useLogout, usePrivy } from "@privy-io/react-auth";
 import { isAddressEqual, zeroAddress } from "viem";
 import { Button } from "@/components/Button";
 import { MailIcon, WalletIcon } from "@/components/PayAndPlayButton";
@@ -48,6 +48,8 @@ export default function YouPage() {
   const { isConnected, chainId } = useAccount();
   const { openConnectModal } = useConnectModal();
   const { login: privyLogin } = useLogin();
+  const { logout: privyLogout } = useLogout();
+  const { authenticated: privyAuthenticated } = usePrivy();
   const { disconnect } = useDisconnect();
   const router = useRouter();
   const { switchChainAsync } = useSwitchChain();
@@ -259,7 +261,17 @@ export default function YouPage() {
       {isConnected && (
         <section className="mt-auto pt-4 pb-6">
           <button
-            onClick={() => {
+            onClick={async () => {
+              // Privy session must be cleared first — otherwise useWallets()
+              // still reports the embedded wallet and PrivyEmbeddedBridge
+              // auto-reconnects right after disconnect().
+              if (privyAuthenticated) {
+                try {
+                  await privyLogout();
+                } catch {
+                  // fall through — still attempt wagmi disconnect
+                }
+              }
               disconnect();
               router.push("/");
             }}

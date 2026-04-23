@@ -77,14 +77,20 @@ function PrivyEmbeddedBridge() {
   }, [wallets, ready]);
 
   // Step 3: once wagmi sees the Privy connector, auto-connect.
+  // The `wallets` check matters: after a user logs out of Privy, wagmi
+  // still has the EIP-6963-registered connector cached, and `disconnect()`
+  // would otherwise immediately get undone by this effect. Skipping when
+  // Privy has no wallets keeps disconnect sticky.
   useEffect(() => {
     if (address) return;
+    const privyWallet = wallets.find((w) => w.walletClientType === "privy");
+    if (!privyWallet) return;
     const privyConnector = connectors.find((c) => c.id === "io.privy.wallet");
     if (!privyConnector) return;
     connectAsync({ connector: privyConnector }).catch((e) => {
       console.error("PrivyEmbeddedBridge: connect failed", e);
     });
-  }, [connectors, address, connectAsync]);
+  }, [connectors, address, connectAsync, wallets]);
 
   return null;
 }
