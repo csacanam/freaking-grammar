@@ -18,6 +18,7 @@ import {
   readTreasuryState,
 } from "@/lib/onchain";
 import { supabase, TOKEN_DECIMALS } from "@/lib/supabase";
+import { sendTelegramMessage } from "@/lib/telegram";
 
 export const dynamic = "force-dynamic";
 
@@ -52,9 +53,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const botToken = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID;
-  if (!botToken || !chatId) {
+  if (!process.env.TELEGRAM_BOT_TOKEN || !process.env.TELEGRAM_CHAT_ID) {
     return Response.json(
       { error: "telegram-not-configured" },
       { status: 503 },
@@ -82,6 +81,19 @@ export async function GET(req: NextRequest) {
     } catch (e) {
       fundReport = { ran: true, error: (e as Error).message };
     }
+  }
+
+  // Forno is a load-balanced RPC — after a fundTreasury tx is mined, a
+  // follow-up eth_call routed to a different node may still return the
+  // pre-tx state for a beat. Pause briefly so the read below reflects the
+  // freshly-funded treasury.
+  if (
+    fundReport.ran &&
+    "txHashes" in fundReport &&
+    fundReport.txHashes &&
+    Object.keys(fundReport.txHashes).length > 0
+  ) {
+    await new Promise((r) => setTimeout(r, 2500));
   }
 
   const states: GameState[] = await Promise.all(
@@ -114,25 +126,11 @@ export async function GET(req: NextRequest) {
     baseUrl,
   });
 
-  const res = await fetch(
-    `https://api.telegram.org/bot${botToken}/sendMessage`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text,
-        parse_mode: "Markdown",
-        disable_web_page_preview: true,
-      }),
-    },
-  );
-  const tg = await res.json().catch(() => ({}));
+  const sent = await sendTelegramMessage(text);
   return Response.json({
-    sent: res.ok,
+    sent,
     states,
     fund: serializeFund(fundReport),
-    tg,
   });
 }
 

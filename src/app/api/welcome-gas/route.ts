@@ -21,6 +21,7 @@ import { celo } from "viem/chains";
 import { supabase } from "@/lib/supabase";
 import { CELO_RPC_URL } from "@/lib/chain";
 import { celoClient } from "@/lib/onchain";
+import { sendTelegramMessage } from "@/lib/telegram";
 
 export const dynamic = "force-dynamic";
 
@@ -114,9 +115,52 @@ export async function POST(req: NextRequest) {
     tx_hash: txHash,
   });
 
+  // Fire a Telegram ping so we can eyeball onboarding volume + catch a
+  // draining operator before the treasury-alert cycles around. Best-effort;
+  // notification failure doesn't rollback the airdrop.
+  notifyAirdrop({
+    address,
+    email,
+    txHash,
+    operator: account.address,
+  }).catch((e) => console.error("welcome-gas notify failed:", e));
+
   return Response.json({
     status: "airdropped",
     amount: AIRDROP_AMOUNT_WEI.toString(),
     txHash,
   });
+}
+
+async function notifyAirdrop(args: {
+  address: string;
+  email: string | null;
+  txHash: Hex;
+  operator: `0x${string}`;
+}) {
+  const [operatorBal, totalAirdrops] = await Promise.all([
+    celoClient.getBalance({ address: args.operator }).catch(() => 0n),
+    (async () => {
+      try {
+        const { count } = await supabase!
+          .from("welcome_airdrops")
+          .select("*", { count: "exact", head: true })
+          .not("tx_hash", "is", null);
+        return count ?? 0;
+      } catch {
+        return 0;
+      }
+    })(),
+  ]);
+  const operatorCELO = Number(operatorBal) / 1e18;
+  const remainingAirdrops = Math.floor(operatorCELO / 0.1);
+  const lines = [
+    "*🎁 Welcome gas sent*",
+    `→ \`${args.address}\``,
+    args.email ? `📧 ${args.email}` : null,
+    `💸 0.1 CELO · tx \`${args.txHash.slice(0, 10)}…\``,
+    `🧾 ${totalAirdrops} onboardings total`,
+    `⛽ Operator: ${operatorCELO.toFixed(3)} CELO (~${remainingAirdrops} airdrops left)`,
+  ].filter((s): s is string => s !== null);
+  await sendTelegramMessage(lines.join("\n"));
 }
