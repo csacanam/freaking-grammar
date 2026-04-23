@@ -217,7 +217,10 @@ export function PayAndPlayButton({
           onClick={() => privyLogin({ loginMethods: ["email"] })}
           disabled={!contractLive}
         >
-          {t.signInWithEmail}
+          <span className="inline-flex items-center gap-2">
+            <MailIcon />
+            {t.signInWithEmail}
+          </span>
         </Button>
         <div className="flex items-center gap-3 my-1">
           <div className="flex-1 h-px bg-black/10" />
@@ -232,7 +235,10 @@ export function PayAndPlayButton({
           onClick={() => openConnectModal?.()}
           disabled={!contractLive}
         >
-          {t.useYourOwnWallet}
+          <span className="inline-flex items-center gap-2">
+            <WalletIcon />
+            {t.useYourOwnWallet}
+          </span>
         </Button>
       </div>
     );
@@ -281,6 +287,43 @@ export function PayAndPlayButton({
         onClose={() => setNeedFunds(null)}
       />
     </div>
+  );
+}
+
+export function MailIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      className="h-[1em] w-[1em] shrink-0"
+    >
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="m3 7 9 6 9-6" />
+    </svg>
+  );
+}
+
+export function WalletIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      className="h-[1em] w-[1em] shrink-0"
+    >
+      <path d="M3 7a2 2 0 0 1 2-2h14v4" />
+      <path d="M3 7v12a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-3" />
+      <path d="M21 12v4h-4a2 2 0 0 1 0-4h4z" />
+    </svg>
   );
 }
 

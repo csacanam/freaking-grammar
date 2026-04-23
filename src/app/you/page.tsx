@@ -14,6 +14,7 @@ import { useConnectModal } from "@rainbow-me/rainbowkit";
 import { useLogin } from "@privy-io/react-auth";
 import { isAddressEqual, zeroAddress } from "viem";
 import { Button } from "@/components/Button";
+import { MailIcon, WalletIcon } from "@/components/PayAndPlayButton";
 import { fmtUSD } from "@/lib/format";
 import { getStats, getUnclaimed, type UnclaimedWin } from "@/lib/api";
 import { useCurrentPlayer } from "@/lib/wallet";
@@ -168,7 +169,10 @@ export default function YouPage() {
           </div>
           <div className="w-full flex flex-col gap-2">
             <Button full onClick={() => privyLogin({ loginMethods: ["email"] })}>
-              {t.signInWithEmail}
+              <span className="inline-flex items-center gap-2">
+                <MailIcon />
+                {t.signInWithEmail}
+              </span>
             </Button>
             <div className="flex items-center gap-3 my-1">
               <div className="flex-1 h-px bg-black/10" />
@@ -178,7 +182,10 @@ export default function YouPage() {
               <div className="flex-1 h-px bg-black/10" />
             </div>
             <Button full variant="ghost" onClick={() => openConnectModal?.()}>
-              {t.useYourOwnWallet}
+              <span className="inline-flex items-center gap-2">
+                <WalletIcon />
+                {t.useYourOwnWallet}
+              </span>
             </Button>
           </div>
         </section>
