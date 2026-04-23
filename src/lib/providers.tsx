@@ -36,6 +36,42 @@ export function Providers({ children }: { children: ReactNode }) {
     })();
   }, []);
 
+  // Diagnostic: dump every EIP-6963 provider announcement so we can identify
+  // the one whose non-string icon makes Privy's internal `.icon.replace(...)`
+  // crash. Logs only — if you see a wallet here with `icon_type !== 'string'`
+  // that's our culprit.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handler = (event: Event) => {
+      const e = event as CustomEvent<{
+        info?: {
+          uuid?: string;
+          rdns?: string;
+          name?: string;
+          icon?: unknown;
+        };
+      }>;
+      const info = e.detail?.info;
+      if (!info) return;
+      const icon = info.icon;
+      const iconType = typeof icon;
+      console.log("[EIP-6963]", {
+        uuid: info.uuid,
+        rdns: info.rdns,
+        name: info.name,
+        iconType,
+        iconPreview:
+          iconType === "string"
+            ? (icon as string).slice(0, 80)
+            : icon,
+      });
+    };
+    window.addEventListener("eip6963:announceProvider", handler);
+    window.dispatchEvent(new Event("eip6963:requestProvider"));
+    return () =>
+      window.removeEventListener("eip6963:announceProvider", handler);
+  }, []);
+
   return (
     <PrivyProvider
       appId={PRIVY_APP_ID}
