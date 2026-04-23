@@ -77,8 +77,12 @@ export function Providers({ children }: { children: ReactNode }) {
       config={{
         loginMethods: ["email"],
         embeddedWallets: {
+          showWalletUIs: false,
           ethereum: {
             createOnLogin: "users-without-wallets",
+          },
+          solana: {
+            createOnLogin: "off",
           },
         },
       }}
