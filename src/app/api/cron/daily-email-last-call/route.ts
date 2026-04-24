@@ -8,6 +8,11 @@
 //   ?dry=1           — simulates everything (subscriber filter,
 //                      data fetch, render) without calling Resend
 //   ?only=<email>    — sends real, but only to that one address
+//   ?force=1         — skips the "already played today" filter so
+//                      you can preview the template on yourself even
+//                      after you've used your free play. Only useful
+//                      with ?only=, so cron-job.org unfiltered calls
+//                      keep respecting engagement state.
 
 import type { NextRequest } from "next/server";
 import { supabase, todayUtc } from "@/lib/supabase";
@@ -38,6 +43,7 @@ export async function GET(req: NextRequest) {
 
   const dryRun = req.nextUrl.searchParams.get("dry") === "1";
   const only = req.nextUrl.searchParams.get("only")?.toLowerCase() ?? null;
+  const force = req.nextUrl.searchParams.get("force") === "1";
 
   const day = todayUtc();
 
@@ -68,14 +74,17 @@ export async function GET(req: NextRequest) {
     ),
   );
 
-  let subscribers = ((subs ?? []) as Array<{
+  const allSubs = (subs ?? []) as Array<{
     address: string;
     email: string;
     lang: Lang | null;
-  }>).filter((s) => !playedSet.has(s.address.toLowerCase()));
+  }>;
+  let subscribers = force
+    ? allSubs
+    : allSubs.filter((s) => !playedSet.has(s.address.toLowerCase()));
 
-  const totalSubs = (subs ?? []).length;
-  const skippedBecausePlayed = totalSubs - subscribers.length;
+  const totalSubs = allSubs.length;
+  const skippedBecausePlayed = force ? 0 : totalSubs - subscribers.length;
 
   if (only) {
     subscribers = subscribers.filter((s) => s.email.toLowerCase() === only);
