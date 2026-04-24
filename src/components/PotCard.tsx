@@ -159,6 +159,7 @@ function Row({
 }: {
   r: { rank: number; player: string; score: number; isMe?: boolean };
 }) {
+  const { t } = useLang();
   return (
     <li
       className={`flex items-center gap-3 py-2.5 ${
@@ -186,7 +187,7 @@ function Row({
         <PlayerName address={r.player} />
         {r.isMe && (
           <span className="ml-2 text-[10px] text-teal font-display tracking-widest uppercase">
-            you
+            {t.youTag}
           </span>
         )}
       </span>

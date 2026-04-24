@@ -36,19 +36,6 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "tx-required" }, { status: 400 });
   }
 
-  // First-play-ever tutorial: the first question of a player's first
-  // finished run gets no time pressure — lets brand-new users absorb
-  // the mechanic instead of losing on Q1 because the 5s clock caught
-  // them reading. Computed once here; the currently-inserted run is
-  // either absent (new) or still `open` (dup replay), so filtering on
-  // `status = 'finished'` excludes it from the count either way.
-  const { count: prevFinishedCount } = await supabase
-    .from("runs")
-    .select("*", { count: "exact", head: true })
-    .eq("player", player)
-    .eq("status", "finished");
-  const isFirstPlayEver = (prevFinishedCount ?? 0) === 0;
-
   const day = todayUtc();
 
   // Every play must be backed by a real on-chain play() call — prevents
@@ -105,7 +92,6 @@ export async function POST(req: NextRequest) {
     return Response.json({
       runId: dupId,
       question: { phrase: q.phrase, correct: q.correct, wrong: q.wrong },
-      isFirstPlayEver,
     });
   }
 
@@ -167,6 +153,5 @@ export async function POST(req: NextRequest) {
       correct: pick.correct,
       wrong: pick.wrong,
     },
-    isFirstPlayEver,
   });
 }

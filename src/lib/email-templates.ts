@@ -3,7 +3,7 @@
 // outer HTML shell and List-Unsubscribe plumbing live in src/lib/email.ts —
 // this file is pure string building so it's easy to unit-test / preview.
 //
-// Design intent (agreed with Camilo):
+// Layout notes:
 //  - Subjects reference "Freaking Grammar" so the brand lands even in
 //    crowded inboxes where the From line gets truncated.
 //  - Preheaders show TOTALS across both games — one scan-friendly line.
@@ -11,6 +11,9 @@
 //  - Prize units shown natively (e.g. `2.40 USDT + 4,000 COPm`) rather
 //    than converted to a single USD figure, so players know exactly
 //    what tokens land in their wallet if they win.
+//  - Last-call body uses divider-separated blocks per game instead of
+//    a single paragraph with <br>, so prize lines that wrap on mobile
+//    stay readable instead of forming a wall of text.
 //  - No "pot" / "UTC" / shame-based copy. Cold open, no greeting.
 
 import type { Lang } from "./i18n";
@@ -82,17 +85,17 @@ export function renderOpenEmail(
   if (lang === "es") {
     return {
       subject: "Tienes una jugada disponible en Freaking Grammar",
-      preheader: `Nueva ronda. ${total} para ganar.`,
+      preheader: `Ronda de hoy. ${total} para ganar.`,
       bodyHtml: [
-        `<p style="margin:0 0 16px;">Acaba de iniciar una nueva ronda. Tu jugada gratis te espera.</p>`,
-        `<p style="margin:0 0 16px;">Hoy se entregan ${total} en premios entre los dos juegos — y crece a medida que otros juegan.</p>`,
+        `<p style="margin:0 0 16px;">Hoy hay nueva ronda. Tu jugada gratis te espera.</p>`,
+        `<p style="margin:0 0 24px;"><strong>${total}</strong> en premios entre los dos juegos — y sigue creciendo con cada jugada.</p>`,
         `<p style="margin:0 0 24px;"><a href="__APP__" style="color:#1a8060;font-weight:600;">Juega →</a></p>`,
         `<p style="margin:0;">— Freaking Grammar</p>`,
       ].join(""),
       text: [
-        `Acaba de iniciar una nueva ronda. Tu jugada gratis te espera.`,
+        `Hoy hay nueva ronda. Tu jugada gratis te espera.`,
         ``,
-        `Hoy se entregan ${total} en premios entre los dos juegos — y crece a medida que otros juegan.`,
+        `${total} en premios entre los dos juegos — y sigue creciendo con cada jugada.`,
         ``,
         `Juega: __APP__`,
         ``,
@@ -103,17 +106,17 @@ export function renderOpenEmail(
 
   return {
     subject: "You have a play available in Freaking Grammar",
-    preheader: `New round. ${total} in prizes.`,
+    preheader: `Today's round. ${total} in prizes.`,
     bodyHtml: [
-      `<p style="margin:0 0 16px;">New round just started. Your free play is waiting.</p>`,
-      `<p style="margin:0 0 16px;">${total} up for grabs today across both games — and it grows as people play.</p>`,
+      `<p style="margin:0 0 16px;">Today's round is open. Your free play is waiting.</p>`,
+      `<p style="margin:0 0 24px;"><strong>${total}</strong> up for grabs across both games — still growing with every play.</p>`,
       `<p style="margin:0 0 24px;"><a href="__APP__" style="color:#1a8060;font-weight:600;">Play →</a></p>`,
       `<p style="margin:0;">— Freaking Grammar</p>`,
     ].join(""),
     text: [
-      `New round just started. Your free play is waiting.`,
+      `Today's round is open. Your free play is waiting.`,
       ``,
-      `${total} up for grabs today across both games — and it grows as people play.`,
+      `${total} up for grabs across both games — still growing with every play.`,
       ``,
       `Play: __APP__`,
       ``,
@@ -123,43 +126,77 @@ export function renderOpenEmail(
 }
 
 // --- LAST CALL EMAIL (sent 2 hours before close, to non-players)
+
+type GameBlockLabels = {
+  title: string;
+  topScore: string;
+  wideOpen: string;
+  prize: string;
+};
+
+function renderGameBlock(
+  data: EmailData,
+  game: "en" | "es",
+  labels: GameBlockLabels,
+): { html: string; text: string } {
+  const prize = prizeLineForGame(data, game);
+  const score = data.pots[game].topScore;
+  const scoreLine =
+    score === null ? labels.wideOpen : `${labels.topScore}: ${score}`;
+
+  const html = [
+    `<div style="border-top:1px solid #eeeaea;padding:14px 0;">`,
+    `<div style="font-weight:600;margin-bottom:4px;">${labels.title}</div>`,
+    `<div style="color:#4a4a4a;margin-bottom:2px;">${scoreLine}</div>`,
+    `<div><strong>${labels.prize}: ${prize}</strong></div>`,
+    `</div>`,
+  ].join("");
+
+  const text = [
+    labels.title,
+    `  ${scoreLine}`,
+    `  ${labels.prize}: ${prize}`,
+  ].join("\n");
+
+  return { html, text };
+}
+
 export function renderLastCallEmail(
   lang: Lang,
   data: EmailData,
 ): RenderedEmail {
   const total = totalPrizeLabel(data);
-  const enPrize = prizeLineForGame(data, "en");
-  const esPrize = prizeLineForGame(data, "es");
-
-  const enScoreLine = (score: number | null, label: string, openLabel: string) =>
-    score === null
-      ? `${openLabel} · ${label}`
-      : `${label === "Prize" ? "Top score" : "Puntaje a batir"}: ${score} · ${label}`;
 
   if (lang === "es") {
-    const enLine =
-      data.pots.en.topScore === null
-        ? `Tablero libre · Premio: ${enPrize}`
-        : `Puntaje a batir: ${data.pots.en.topScore} · Premio: ${enPrize}`;
-    const esLine =
-      data.pots.es.topScore === null
-        ? `Tablero libre · Premio: ${esPrize}`
-        : `Puntaje a batir: ${data.pots.es.topScore} · Premio: ${esPrize}`;
+    const enBlock = renderGameBlock(data, "en", {
+      title: "Inglés",
+      topScore: "Puntaje a batir",
+      wideOpen: "Tablero libre",
+      prize: "Premio",
+    });
+    const esBlock = renderGameBlock(data, "es", {
+      title: "Español",
+      topScore: "Puntaje a batir",
+      wideOpen: "Tablero libre",
+      prize: "Premio",
+    });
 
     return {
       subject: "Quedan 2 horas para ganar en Freaking Grammar",
       preheader: `${total} en premios hoy.`,
       bodyHtml: [
-        `<p style="margin:0 0 16px;">La ronda cierra en 2 horas.</p>`,
-        `<p style="margin:0 0 16px;">Inglés — ${enLine}<br>Español — ${esLine}</p>`,
-        `<p style="margin:0 0 24px;"><a href="__APP__" style="color:#1a8060;font-weight:600;">Tu turno →</a></p>`,
+        `<p style="margin:0 0 8px;">La ronda cierra en 2 horas.</p>`,
+        enBlock.html,
+        esBlock.html,
+        `<p style="margin:20px 0 24px;"><a href="__APP__" style="color:#1a8060;font-weight:600;">Tu turno →</a></p>`,
         `<p style="margin:0;">— Freaking Grammar</p>`,
       ].join(""),
       text: [
         `La ronda cierra en 2 horas.`,
         ``,
-        `Inglés — ${enLine}`,
-        `Español — ${esLine}`,
+        enBlock.text,
+        ``,
+        esBlock.text,
         ``,
         `Tu turno: __APP__`,
         ``,
@@ -168,31 +205,35 @@ export function renderLastCallEmail(
     };
   }
 
-  const enLine =
-    data.pots.en.topScore === null
-      ? `Board wide open · Prize: ${enPrize}`
-      : `Top score: ${data.pots.en.topScore} · Prize: ${enPrize}`;
-  const esLine =
-    data.pots.es.topScore === null
-      ? `Board wide open · Prize: ${esPrize}`
-      : `Top score: ${data.pots.es.topScore} · Prize: ${esPrize}`;
-
-  void enScoreLine;
+  const enBlock = renderGameBlock(data, "en", {
+    title: "English",
+    topScore: "Top score",
+    wideOpen: "Board wide open",
+    prize: "Prize",
+  });
+  const esBlock = renderGameBlock(data, "es", {
+    title: "Spanish",
+    topScore: "Top score",
+    wideOpen: "Board wide open",
+    prize: "Prize",
+  });
 
   return {
     subject: "2 hours left to win in Freaking Grammar",
     preheader: `${total} in prizes today.`,
     bodyHtml: [
-      `<p style="margin:0 0 16px;">Round closes in 2 hours.</p>`,
-      `<p style="margin:0 0 16px;">English — ${enLine}<br>Spanish — ${esLine}</p>`,
-      `<p style="margin:0 0 24px;"><a href="__APP__" style="color:#1a8060;font-weight:600;">Take your shot →</a></p>`,
+      `<p style="margin:0 0 8px;">Round closes in 2 hours.</p>`,
+      enBlock.html,
+      esBlock.html,
+      `<p style="margin:20px 0 24px;"><a href="__APP__" style="color:#1a8060;font-weight:600;">Take your shot →</a></p>`,
       `<p style="margin:0;">— Freaking Grammar</p>`,
     ].join(""),
     text: [
       `Round closes in 2 hours.`,
       ``,
-      `English — ${enLine}`,
-      `Spanish — ${esLine}`,
+      enBlock.text,
+      ``,
+      esBlock.text,
       ``,
       `Take your shot: __APP__`,
       ``,

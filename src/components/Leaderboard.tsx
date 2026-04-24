@@ -69,6 +69,7 @@ export function Leaderboard({
 }
 
 function RowItem({ r, showTrophy }: { r: Row; showTrophy: boolean }) {
+  const { t } = useLang();
   return (
     <li className={`flex items-center gap-3 py-3 ${r.isMe ? "font-semibold" : ""}`}>
       <span
@@ -91,7 +92,7 @@ function RowItem({ r, showTrophy }: { r: Row; showTrophy: boolean }) {
       <span className="flex-1 text-sm text-ink truncate">
         <PlayerName address={r.player} />
         {r.isMe && (
-          <span className="ml-2 text-xs text-teal font-display uppercase">you</span>
+          <span className="ml-2 text-xs text-teal font-display uppercase">{t.youTag}</span>
         )}
       </span>
       <span className="font-display text-xl tabular-nums">{r.score}</span>

@@ -35,12 +35,6 @@ function GameInner() {
   const [score, setScore] = useState(0);
   const [qIndex, setQIndex] = useState(0);
   const [question, setQuestion] = useState<RunQuestion | null>(null);
-  // Tutorial flag for brand-new players: the very first question of
-  // their very first finished run has no timer pressure, so they can
-  // read the mechanic instead of losing on Q1 because the clock caught
-  // them. Comes from /api/runs POST response. After the first tap the
-  // regular 5s countdown kicks in and this flag is effectively inert.
-  const [isFirstPlayEver, setIsFirstPlayEver] = useState(false);
   const [palette, setPalette] = useState(() => pickPalette(0));
   const [leftIsCorrect, setLeftIsCorrect] = useState(true);
   const [secondsLeft, setSecondsLeft] = useState(QUESTION_SECONDS);
@@ -80,7 +74,6 @@ function GameInner() {
           const res = await startRun(game, address, txHash);
           setRunId(res.runId);
           setQuestion(res.question);
-          setIsFirstPlayEver(res.isFirstPlayEver === true);
           setLeftIsCorrect(Math.random() < 0.5);
           setPalette(pickPalette(0));
           setSecondsLeft(QUESTION_SECONDS);
@@ -104,13 +97,15 @@ function GameInner() {
     return () => clearTimeout(id);
   }, [readyCount, readyStarted, router, address, txHash, game]);
 
-  // per-question countdown — paused for Q1 when this is the player's
-  // first finished run ever (tutorial mode). qIndex > 0 means they've
-  // already answered at least once, so pressure resumes normally.
-  const tutorialQ0 = isFirstPlayEver && qIndex === 0;
+  // Every run's first question has no timer — players get a moment to
+  // read the mechanic + the phrase before the 5s clock kicks in on Q2.
+  // Same rule for everyone, every play, so the minimum score is
+  // reliably 1 across the board and there's no edge-case stress on
+  // the very first tap.
+  const noTimerThisQuestion = qIndex === 0;
   useEffect(() => {
     if (outcome !== "playing") return;
-    if (tutorialQ0) return;
+    if (noTimerThisQuestion) return;
     tickRef.current = setInterval(() => {
       setSecondsLeft((s) =>
         s <= 0.05 ? 0 : Math.max(0, +(s - 0.1).toFixed(2)),
@@ -119,7 +114,7 @@ function GameInner() {
     return () => {
       if (tickRef.current) clearInterval(tickRef.current);
     };
-  }, [outcome, qIndex, tutorialQ0]);
+  }, [outcome, qIndex, noTimerThisQuestion]);
 
   // timeout → finish run on the server, navigate to over
   useEffect(() => {
@@ -269,7 +264,7 @@ function GameInner() {
             {score}
           </span>
         </div>
-        {tutorialQ0 ? <TutorialBadge label={t.firstPlayBadge} /> : <Timer secondsLeft={secondsLeft} />}
+        {noTimerThisQuestion ? <TutorialBadge label={t.firstPlayBadge} /> : <Timer secondsLeft={secondsLeft} />}
       </div>
 
       <div className="absolute inset-x-4 top-[23%] z-10 pointer-events-none">
@@ -282,7 +277,7 @@ function GameInner() {
               becomes easy to miss. Hidden on the tutorial Q1 — there's
               no clock to show, and the static bar would be misleading. */}
           <div className="h-1 bg-black/5">
-            {!tutorialQ0 && (
+            {!noTimerThisQuestion && (
               <div
                 className={`h-full transition-[width,background-color] duration-100 ease-linear ${
                   secondsLeft < 1
@@ -314,7 +309,7 @@ function GameInner() {
             ))}
           </p>
         </div>
-        {tutorialQ0 && (
+        {noTimerThisQuestion && (
           <p className="text-center text-white/90 text-xs font-display tracking-widest uppercase mt-3 drop-shadow-sm">
             {t.firstPlayHint}
           </p>
