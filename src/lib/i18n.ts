@@ -36,6 +36,9 @@ export const dict = {
     rulesMiss: "One mistake ends the game",
     imReady: "I'm ready",
     rulesHint: "5s per question · top score wins",
+    // Tutorial Q1 (first run ever)
+    firstPlayBadge: "No clock",
+    firstPlayHint: "First question — tap when you're ready. The 5s clock starts after.",
     signInWithEmail: "Sign in with email",
     useYourOwnWallet: "Use your own wallet",
     go: "GO!",
@@ -185,6 +188,9 @@ export const dict = {
     rulesMiss: "Un error y se acaba",
     imReady: "Estoy listo",
     rulesHint: "5s por pregunta · mayor puntaje gana",
+    // Tutorial Q1 (first run ever)
+    firstPlayBadge: "Sin reloj",
+    firstPlayHint: "Primera pregunta — toca cuando estés listo. El reloj de 5s arranca después.",
     signInWithEmail: "Entrar con correo",
     useYourOwnWallet: "Usar mi propia wallet",
     go: "¡YA!",

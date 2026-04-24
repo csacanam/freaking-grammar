@@ -89,7 +89,11 @@ export async function getOpenRuns(player?: string): Promise<OpenRun[]> {
 
 export type RunQuestion = { phrase: string; correct: string; wrong: string };
 
-export type StartRunResult = { runId: string; question: RunQuestion };
+export type StartRunResult = {
+  runId: string;
+  question: RunQuestion;
+  isFirstPlayEver?: boolean;
+};
 
 export type AnswerResult =
   | { correct: true; score: number; nextQuestion: RunQuestion }

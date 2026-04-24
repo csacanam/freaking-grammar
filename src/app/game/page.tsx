@@ -35,6 +35,12 @@ function GameInner() {
   const [score, setScore] = useState(0);
   const [qIndex, setQIndex] = useState(0);
   const [question, setQuestion] = useState<RunQuestion | null>(null);
+  // Tutorial flag for brand-new players: the very first question of
+  // their very first finished run has no timer pressure, so they can
+  // read the mechanic instead of losing on Q1 because the clock caught
+  // them. Comes from /api/runs POST response. After the first tap the
+  // regular 5s countdown kicks in and this flag is effectively inert.
+  const [isFirstPlayEver, setIsFirstPlayEver] = useState(false);
   const [palette, setPalette] = useState(() => pickPalette(0));
   const [leftIsCorrect, setLeftIsCorrect] = useState(true);
   const [secondsLeft, setSecondsLeft] = useState(QUESTION_SECONDS);
@@ -74,6 +80,7 @@ function GameInner() {
           const res = await startRun(game, address, txHash);
           setRunId(res.runId);
           setQuestion(res.question);
+          setIsFirstPlayEver(res.isFirstPlayEver === true);
           setLeftIsCorrect(Math.random() < 0.5);
           setPalette(pickPalette(0));
           setSecondsLeft(QUESTION_SECONDS);
@@ -97,9 +104,13 @@ function GameInner() {
     return () => clearTimeout(id);
   }, [readyCount, readyStarted, router, address, txHash, game]);
 
-  // per-question countdown
+  // per-question countdown — paused for Q1 when this is the player's
+  // first finished run ever (tutorial mode). qIndex > 0 means they've
+  // already answered at least once, so pressure resumes normally.
+  const tutorialQ0 = isFirstPlayEver && qIndex === 0;
   useEffect(() => {
     if (outcome !== "playing") return;
+    if (tutorialQ0) return;
     tickRef.current = setInterval(() => {
       setSecondsLeft((s) =>
         s <= 0.05 ? 0 : Math.max(0, +(s - 0.1).toFixed(2)),
@@ -108,7 +119,7 @@ function GameInner() {
     return () => {
       if (tickRef.current) clearInterval(tickRef.current);
     };
-  }, [outcome, qIndex]);
+  }, [outcome, qIndex, tutorialQ0]);
 
   // timeout → finish run on the server, navigate to over
   useEffect(() => {
@@ -258,7 +269,7 @@ function GameInner() {
             {score}
           </span>
         </div>
-        <Timer secondsLeft={secondsLeft} />
+        {tutorialQ0 ? <TutorialBadge label={t.firstPlayBadge} /> : <Timer secondsLeft={secondsLeft} />}
       </div>
 
       <div className="absolute inset-x-4 top-[23%] z-10 pointer-events-none">
@@ -268,23 +279,26 @@ function GameInner() {
               (stop). Yellow kicks in at the half-way mark so the color
               shift reads clearly — teal alone on the left edge of the
               card echoes the teal screen-half behind it and the drain
-              becomes easy to miss. */}
+              becomes easy to miss. Hidden on the tutorial Q1 — there's
+              no clock to show, and the static bar would be misleading. */}
           <div className="h-1 bg-black/5">
-            <div
-              className={`h-full transition-[width,background-color] duration-100 ease-linear ${
-                secondsLeft < 1
-                  ? "bg-red animate-pulse"
-                  : secondsLeft < 2.5
-                  ? "bg-yellow"
-                  : "bg-teal"
-              }`}
-              style={{
-                width: `${Math.max(
-                  0,
-                  Math.min(100, (secondsLeft / QUESTION_SECONDS) * 100),
-                )}%`,
-              }}
-            />
+            {!tutorialQ0 && (
+              <div
+                className={`h-full transition-[width,background-color] duration-100 ease-linear ${
+                  secondsLeft < 1
+                    ? "bg-red animate-pulse"
+                    : secondsLeft < 2.5
+                    ? "bg-yellow"
+                    : "bg-teal"
+                }`}
+                style={{
+                  width: `${Math.max(
+                    0,
+                    Math.min(100, (secondsLeft / QUESTION_SECONDS) * 100),
+                  )}%`,
+                }}
+              />
+            )}
           </div>
           <p className="font-display text-[clamp(1.1rem,5.5vw,1.6rem)] leading-tight text-ink text-center break-words px-5 py-5">
             {phraseParts.map((part, i) => (
@@ -300,6 +314,11 @@ function GameInner() {
             ))}
           </p>
         </div>
+        {tutorialQ0 && (
+          <p className="text-center text-white/90 text-xs font-display tracking-widest uppercase mt-3 drop-shadow-sm">
+            {t.firstPlayHint}
+          </p>
+        )}
       </div>
 
       <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 pointer-events-none">
@@ -390,6 +409,23 @@ function ReadyOverlay({ count }: { count: number }) {
           100% { transform: scale(1); opacity: 1; }
         }
       `}</style>
+    </div>
+  );
+}
+
+// Replaces the circular Timer on the tutorial Q1 so there's no ticking
+// number — users see a calm "tutorial" pill instead of a clock that
+// isn't running, which would feel broken.
+function TutorialBadge({ label }: { label: string }) {
+  return (
+    <div className="relative w-16 h-16 flex items-center justify-center">
+      <div
+        aria-hidden
+        className="absolute inset-0 rounded-full border-2 border-white/70"
+      />
+      <span className="relative font-display text-[10px] tracking-widest uppercase text-white text-center leading-tight px-2">
+        {label}
+      </span>
     </div>
   );
 }
