@@ -130,13 +130,16 @@ create index if not exists sponsor_payouts_winner_idx
 -- The email column is optional (we only have it when Privy used email
 -- login) and useful for support lookups.
 create table if not exists welcome_airdrops (
-  address      text primary key,         -- lower-case 0x address
-  email        text,
-  lang         text check (lang in ('en','es')),  -- ui-lang at signup; drives email template
-  linked_at    timestamptz default now(),
-  amount_wei   numeric(78,0) not null,
-  tx_hash      text,
-  created_at   timestamptz not null default now()
+  address           text primary key,         -- lower-case 0x address
+  email             text,
+  lang              text check (lang in ('en','es')),  -- ui-lang at signup; drives email template
+  email_subscribed  boolean not null default true,     -- unsubscribed users get no daily emails
+  linked_at         timestamptz default now(),
+  amount_wei        numeric(78,0) not null,
+  tx_hash           text,
+  created_at        timestamptz not null default now()
 );
 create index if not exists welcome_airdrops_email_idx on welcome_airdrops (email);
 create index if not exists welcome_airdrops_lang_idx on welcome_airdrops (lang);
+create index if not exists welcome_airdrops_subscribed_idx
+  on welcome_airdrops (email_subscribed) where email_subscribed = true;

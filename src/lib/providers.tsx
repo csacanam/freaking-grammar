@@ -158,9 +158,15 @@ export function Providers({ children }: { children: ReactNode }) {
           <RainbowKitProvider modalSize="compact">
             <MiniPayBridge />
             <PrivyEmbeddedBridge />
-            <WelcomeGasBridge />
             <Suspense>
-              <LangProvider>{children}</LangProvider>
+              {/* WelcomeGasBridge must live inside LangProvider because it
+                  reads uiLang to tell /api/welcome-gas which template the
+                  user will get for daily emails. Leaving it above the
+                  provider broke prerender of /_not-found. */}
+              <LangProvider>
+                <WelcomeGasBridge />
+                {children}
+              </LangProvider>
             </Suspense>
           </RainbowKitProvider>
         </WagmiProvider>
