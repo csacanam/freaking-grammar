@@ -43,12 +43,14 @@ export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as {
     address?: string;
     email?: string;
+    lang?: string;
   };
   const address = body.address?.toLowerCase();
   if (!address || !/^0x[0-9a-f]{40}$/.test(address)) {
     return Response.json({ error: "invalid-address" }, { status: 400 });
   }
   const email = body.email ?? null;
+  const lang = body.lang === "en" || body.lang === "es" ? body.lang : null;
 
   // Idempotency: already airdropped?
   const { data: existing } = await supabase
@@ -75,6 +77,7 @@ export async function POST(req: NextRequest) {
       await supabase.from("welcome_airdrops").insert({
         address,
         email,
+        lang,
         amount_wei: "0",
         tx_hash: null,
       });
@@ -111,6 +114,7 @@ export async function POST(req: NextRequest) {
   await supabase.from("welcome_airdrops").insert({
     address,
     email,
+    lang,
     amount_wei: AIRDROP_AMOUNT_WEI.toString(),
     tx_hash: txHash,
   });

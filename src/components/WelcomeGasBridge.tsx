@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { usePrivy } from "@privy-io/react-auth";
+import { useLang } from "@/lib/lang-provider";
 
 // When the Privy user finishes linking an embedded wallet, fire a one-shot
 // request to /api/welcome-gas so the wallet gets ~0.1 CELO for gas before
@@ -10,6 +11,7 @@ import { usePrivy } from "@privy-io/react-auth";
 // etc.) — those users fund their own gas.
 export function WelcomeGasBridge() {
   const { ready, authenticated, user } = usePrivy();
+  const { uiLang } = useLang();
   const firedRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -28,13 +30,17 @@ export function WelcomeGasBridge() {
     fetch("/api/welcome-gas", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ address: addr, email }),
+      // uiLang is the interface language the user is reading when Privy
+      // provisions the wallet — our best no-prompt signal for which
+      // language their future notifications (daily email, etc) should
+      // land in.
+      body: JSON.stringify({ address: addr, email, lang: uiLang }),
     }).catch((e) => {
       console.warn("welcome-gas request failed:", e);
       // Reset so we retry on a later render / refocus.
       firedRef.current = null;
     });
-  }, [ready, authenticated, user]);
+  }, [ready, authenticated, user, uiLang]);
 
   return null;
 }

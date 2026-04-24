@@ -265,14 +265,16 @@ function GameInner() {
         <div className="bg-white rounded-2xl shadow-[0_6px_0_0_rgba(0,0,0,0.10)] overflow-hidden">
           {/* Time-left bar glued to the top of the phrase card. Traffic-
               light progression: teal (go) → yellow (yield) → red + pulse
-              (stop). Safe now that the half palettes no longer rotate —
-              the bar never echoes the background. */}
+              (stop). Yellow kicks in at the half-way mark so the color
+              shift reads clearly — teal alone on the left edge of the
+              card echoes the teal screen-half behind it and the drain
+              becomes easy to miss. */}
           <div className="h-1 bg-black/5">
             <div
               className={`h-full transition-[width,background-color] duration-100 ease-linear ${
                 secondsLeft < 1
                   ? "bg-red animate-pulse"
-                  : secondsLeft < 2
+                  : secondsLeft < 2.5
                   ? "bg-yellow"
                   : "bg-teal"
               }`}
