@@ -88,6 +88,20 @@ type Stats = {
     daysLeft: number;
     paidOut: number;
   }>;
+  onchain: {
+    totalTxs: number;
+    plays: number;
+    rollDays: number;
+    welcomeAirdrops: number;
+    sponsorAirdrops: number;
+    claims: number;
+    activeAddresses: number;
+    daysOnChain: number;
+    usdtIn: number;
+    usdtOut: number;
+    potAddress: string;
+    operatorAddress: string | null;
+  };
 };
 
 async function loadStats(): Promise<Stats | null> {
@@ -102,14 +116,16 @@ async function loadStats(): Promise<Stats | null> {
     { data: winsData },
     { data: potsData },
     { data: airdropsData },
+    { data: sponsorPayoutsData },
   ] = await Promise.all([
     supabase
       .from("runs")
-      .select("lang,player,was_free,day_utc,score")
+      .select("lang,player,was_free,day_utc,score,paid_tx_hash")
       .eq("status", "finished"),
-    supabase.from("wins").select("lang,amount_units"),
-    supabase.from("pots").select("lang,amount_units,closed,day_utc"),
+    supabase.from("wins").select("lang,amount_units,claim_tx"),
+    supabase.from("pots").select("lang,amount_units,closed,day_utc,rolled_tx"),
     supabase.from("welcome_airdrops").select("created_at,tx_hash"),
+    supabase.from("sponsor_payouts").select("airdrop_tx_hash"),
   ]);
 
   const runs = (runsData ?? []) as Array<{
@@ -118,20 +134,26 @@ async function loadStats(): Promise<Stats | null> {
     was_free: boolean;
     day_utc: string;
     score: number;
+    paid_tx_hash: string | null;
   }>;
   const wins = (winsData ?? []) as Array<{
     lang: Lang;
     amount_units: string | number;
+    claim_tx: string | null;
   }>;
   const pots = (potsData ?? []) as Array<{
     lang: Lang;
     amount_units: string | number;
     closed: boolean;
     day_utc: string;
+    rolled_tx: string | null;
   }>;
   const airdrops = (airdropsData ?? []) as Array<{
     created_at: string;
     tx_hash: string | null;
+  }>;
+  const sponsorPayouts = (sponsorPayoutsData ?? []) as Array<{
+    airdrop_tx_hash: string | null;
   }>;
 
   // ------------------------------------------------------- TODAY
@@ -277,6 +299,39 @@ async function loadStats(): Promise<Stats | null> {
   );
   const revenueUSD = totalPaid * PROTOCOL_CUT_USD;
 
+  // ---------------------------------------------------- ON-CHAIN
+  // Each kind of operator/user tx leaves a hash in our DB. Counting
+  // them gives a faithful "activity on Celo" picture without needing
+  // to spin up The Graph or replay receipts. Free plays still call
+  // the contract — they're just charged 0 USDT — so we count every
+  // run with a tx_hash, not just paid ones.
+  const playsTxCount = runs.filter((r) => !!r.paid_tx_hash).length;
+  const rollDaysCount = pots.filter((p) => !!p.rolled_tx).length;
+  const welcomeAirdropsCount = airdrops.filter((a) => !!a.tx_hash).length;
+  const sponsorAirdropsCount = sponsorPayouts.filter(
+    (s) => !!s.airdrop_tx_hash,
+  ).length;
+  const claimsCount = wins.filter((w) => !!w.claim_tx).length;
+  const totalTxs =
+    playsTxCount +
+    rollDaysCount +
+    welcomeAirdropsCount +
+    sponsorAirdropsCount +
+    claimsCount;
+  // USDT in: every paid play moves the entry fee through the contract.
+  // Free plays don't touch USDT.
+  const usdtIn = totalPaid * ENTRY_FEE_USD;
+  const usdtOut = totalDistributedUSD;
+  // Days on-chain: from earliest finished run to today (inclusive). If
+  // there are no runs, default to 0.
+  const earliestDay = runs.length
+    ? runs.reduce((min, r) => (r.day_utc < min ? r.day_utc : min), today)
+    : today;
+  const daysOnChain = runs.length
+    ? Math.max(1, daysBetween(earliestDay, today) + 1)
+    : 0;
+  const operatorAddrPrint = await getOperatorAddressOrNull();
+
   // ---------------------------------------------------- SPONSORS
   const sponsors = await loadSponsors();
 
@@ -331,6 +386,20 @@ async function loadStats(): Promise<Stats | null> {
       daysClosed,
     },
     sponsors,
+    onchain: {
+      totalTxs,
+      plays: playsTxCount,
+      rollDays: rollDaysCount,
+      welcomeAirdrops: welcomeAirdropsCount,
+      sponsorAirdrops: sponsorAirdropsCount,
+      claims: claimsCount,
+      activeAddresses: allPlayers.size,
+      daysOnChain,
+      usdtIn,
+      usdtOut,
+      potAddress: POT_ADDRESS.toLowerCase(),
+      operatorAddress: operatorAddrPrint?.toLowerCase() ?? null,
+    },
   };
 }
 
@@ -345,6 +414,12 @@ function daysAgo(yyyymmdd: string, n: number): string {
   const d = new Date(yyyymmdd + "T00:00:00Z");
   d.setUTCDate(d.getUTCDate() - n);
   return d.toISOString().slice(0, 10);
+}
+
+function daysBetween(fromYmd: string, toYmd: string): number {
+  const from = new Date(fromYmd + "T00:00:00Z").getTime();
+  const to = new Date(toYmd + "T00:00:00Z").getTime();
+  return Math.max(0, Math.round((to - from) / 86400000));
 }
 
 async function readCurrentPotUSD(gameId: number): Promise<number> {
@@ -738,6 +813,107 @@ export default async function StatsPage() {
             />
           </section>
 
+          <SectionTitle>On-chain</SectionTitle>
+          <section className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            <Tile
+              label="Total transactions"
+              value={stats.onchain.totalTxs.toLocaleString("en-US")}
+              accent="bg-teal/20"
+              hint={`${stats.onchain.activeAddresses} active addresses`}
+            />
+            <Tile
+              label="Plays on-chain"
+              value={stats.onchain.plays.toLocaleString("en-US")}
+              accent="bg-blue/10"
+              hint="every play hits the contract"
+            />
+            <Tile
+              label="Days on-chain"
+              value={stats.onchain.daysOnChain.toString()}
+              accent="bg-orange/30"
+              hint="since first play"
+            />
+            <Tile
+              label="USDT volume in"
+              value={fmtUSD(stats.onchain.usdtIn)}
+              accent="bg-yellow/40"
+              hint="from paid entries"
+            />
+            <Tile
+              label="USDT volume out"
+              value={fmtUSD(stats.onchain.usdtOut)}
+              accent="bg-pink/20"
+              hint="to winners"
+            />
+            <Tile
+              label="Operator txs"
+              value={(
+                stats.onchain.rollDays +
+                stats.onchain.welcomeAirdrops +
+                stats.onchain.sponsorAirdrops
+              ).toLocaleString("en-US")}
+              accent="bg-purple/20"
+              hint={`${stats.onchain.welcomeAirdrops} airdrops · ${stats.onchain.rollDays} rolls`}
+            />
+          </section>
+
+          <Card title="Transactions by type">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-muted font-display text-xs tracking-widest uppercase">
+                  <th className="py-2">Type</th>
+                  <th className="py-2 text-right">Count</th>
+                  <th className="py-2 text-right">Share</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  ["Plays", stats.onchain.plays],
+                  ["Roll-days", stats.onchain.rollDays],
+                  ["Welcome airdrops", stats.onchain.welcomeAirdrops],
+                  ["Sponsor airdrops", stats.onchain.sponsorAirdrops],
+                  ["Claims", stats.onchain.claims],
+                ].map(([label, count]) => {
+                  const c = count as number;
+                  const pct =
+                    stats.onchain.totalTxs > 0
+                      ? (c / stats.onchain.totalTxs) * 100
+                      : 0;
+                  return (
+                    <tr key={label as string} className="border-t border-black/5">
+                      <td className="py-2">{label}</td>
+                      <td className="py-2 text-right tabular-nums">
+                        {c.toLocaleString("en-US")}
+                      </td>
+                      <td className="py-2 text-right tabular-nums text-muted">
+                        {pct.toFixed(1)}%
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </Card>
+
+          <Card title="Contracts">
+            <ul className="text-sm space-y-2">
+              <ContractRow
+                label="Pot"
+                address={stats.onchain.potAddress}
+              />
+              {stats.onchain.operatorAddress && (
+                <ContractRow
+                  label="Operator"
+                  address={stats.onchain.operatorAddress}
+                />
+              )}
+              <ContractRow
+                label="USDT (Celo)"
+                address="0x48065fbbe25f71c9282ddf5e1cd6d6a887483d5e"
+              />
+            </ul>
+          </Card>
+
           {stats.sponsors.length > 0 && (
             <>
               <SectionTitle>Sponsors</SectionTitle>
@@ -900,6 +1076,32 @@ function PlaysChart({
         <span>today</span>
       </div>
     </div>
+  );
+}
+
+function ContractRow({
+  label,
+  address,
+}: {
+  label: string;
+  address: string;
+}) {
+  const short = `${address.slice(0, 6)}…${address.slice(-4)}`;
+  const explorer = `https://celoscan.io/address/${address}`;
+  return (
+    <li className="flex items-center justify-between gap-3">
+      <span className="text-muted text-xs font-display tracking-widest uppercase">
+        {label}
+      </span>
+      <a
+        href={explorer}
+        target="_blank"
+        rel="noreferrer"
+        className="font-mono text-xs text-teal hover:underline"
+      >
+        {short}
+      </a>
+    </li>
   );
 }
 
