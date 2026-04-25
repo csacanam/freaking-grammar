@@ -48,18 +48,11 @@ export async function GET() {
         "Longest streak wins. Pick the right word in 5s.",
       ogImageUrl: `${SITE_URL}/opengraph-image`,
       primaryCategory: "games",
-      tags: [
-        "grammar",
-        "daily",
-        "streak",
-        "spanish",
-        "english",
-        "vocabulary",
-        "language",
-        "trivia",
-        "earn",
-        "skill",
-      ],
+      // Warpcast caps this array at 5. Picked the 5 most valuable for
+      // discovery: identity (grammar), habit signal (daily), real
+      // differentiator vs other miniapps (spanish), unique mechanic
+      // (streak), crypto angle (earn).
+      tags: ["grammar", "daily", "spanish", "streak", "earn"],
       noindex: false,
     },
   });
