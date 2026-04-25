@@ -1,6 +1,20 @@
-import { supabase, TOKEN_DECIMALS } from "@/lib/supabase";
+// Live build-in-public stats. All numbers come from supabase + a few
+// on-chain reads (current pots, treasury, operator CELO). No PostHog
+// or web analytics yet — that's the next phase if/when we decide
+// visitor-funnel data is worth the dependency. Public on purpose:
+// the whole point is showing the room what the game looks like.
+
+import { erc20Abi, isAddressEqual, zeroAddress, type Hex } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import { supabase, TOKEN_DECIMALS, todayUtc } from "@/lib/supabase";
 import { fmtUSD } from "@/lib/format";
 import { BackLink } from "@/components/BackLink";
+import {
+  celoClient,
+  FREAKING_POT_ABI,
+  readTreasuryState,
+} from "@/lib/onchain";
+import { POT_ADDRESS } from "@/lib/chain";
 
 export const dynamic = "force-dynamic";
 
@@ -8,118 +22,494 @@ const ENTRY_FEE_USD = 0.1;
 const PROTOCOL_BPS = 2000; // 20%
 const PROTOCOL_CUT_USD = (ENTRY_FEE_USD * PROTOCOL_BPS) / 10_000;
 
-type Stats = {
-  revenueUSD: number;
-  totalPlays: number;
-  paidPlays: number;
-  freePlays: number;
-  uniquePlayers: number;
-  daysClosed: number;
-  totalDistributedUSD: number;
-  biggestPotUSD: number;
-  byLang: Record<"en" | "es", {
+type Lang = "en" | "es";
+
+type ByLang = Record<
+  Lang,
+  {
     plays: number;
     paid: number;
     players: number;
     revenueUSD: number;
     distributedUSD: number;
+  }
+>;
+
+type Stats = {
+  today: {
+    dau: number;
+    plays: number;
+    paid: number;
+    free: number;
+    enPotUSDT: number;
+    esPotUSDT: number;
+    enTopScore: number | null;
+    esTopScore: number | null;
+    newSignups: number;
+  };
+  players: {
+    total: number;
+    last7d: number;
+    last30d: number;
+    wau: number;
+    mau: number;
+    distribution: Array<{ label: string; count: number }>;
+    retentionDay2: { cohort: number; returned: number; pct: number };
+    retentionDay7: { cohort: number; returned: number; pct: number };
+    paidConversionPct: number;
+  };
+  plays: {
+    total: number;
+    paid: number;
+    free: number;
+    avgScore: number;
+    perDay: Array<{ date: string; count: number }>;
+    byLang: ByLang;
+  };
+  economy: {
+    revenueUSD: number;
+    distributedUSD: number;
+    enPotUSDT: number;
+    esPotUSDT: number;
+    biggestPotUSD: number;
+    enTreasuryUSDT: number;
+    esTreasuryUSDT: number;
+    enTreasuryDays: number;
+    esTreasuryDays: number;
+    operatorCELO: number;
+    daysClosed: number;
+  };
+  sponsors: Array<{
+    name: string;
+    tokenSymbol: string;
+    balance: number;
+    dailyPerGame: number;
+    gamesCount: number;
+    daysLeft: number;
+    paidOut: number;
   }>;
 };
 
 async function loadStats(): Promise<Stats | null> {
   if (!supabase) return null;
 
+  const today = todayUtc();
+  const cutoff7 = daysAgo(today, 7);
+  const cutoff30 = daysAgo(today, 30);
+
   const [
     { data: runsData },
     { data: winsData },
     { data: potsData },
+    { data: airdropsData },
   ] = await Promise.all([
-    supabase.from("runs").select("lang,player,was_free"),
+    supabase
+      .from("runs")
+      .select("lang,player,was_free,day_utc,score")
+      .eq("status", "finished"),
     supabase.from("wins").select("lang,amount_units"),
-    supabase.from("pots").select("lang,amount_units,closed"),
+    supabase.from("pots").select("lang,amount_units,closed,day_utc"),
+    supabase.from("welcome_airdrops").select("created_at,tx_hash"),
   ]);
 
   const runs = (runsData ?? []) as Array<{
-    lang: "en" | "es";
+    lang: Lang;
     player: string;
     was_free: boolean;
+    day_utc: string;
+    score: number;
   }>;
   const wins = (winsData ?? []) as Array<{
-    lang: "en" | "es";
+    lang: Lang;
     amount_units: string | number;
   }>;
   const pots = (potsData ?? []) as Array<{
-    lang: "en" | "es";
+    lang: Lang;
     amount_units: string | number;
     closed: boolean;
+    day_utc: string;
+  }>;
+  const airdrops = (airdropsData ?? []) as Array<{
+    created_at: string;
+    tx_hash: string | null;
   }>;
 
-  const byLang: Stats["byLang"] = {
+  // ------------------------------------------------------- TODAY
+  const todayRuns = runs.filter((r) => r.day_utc === today);
+  const todayPlayers = new Set(todayRuns.map((r) => r.player));
+  const todayPaid = todayRuns.filter((r) => !r.was_free).length;
+  const todayFree = todayRuns.length - todayPaid;
+  const todayEnTop = bestScore(todayRuns.filter((r) => r.lang === "en"));
+  const todayEsTop = bestScore(todayRuns.filter((r) => r.lang === "es"));
+  const newSignupsToday = airdrops.filter(
+    (a) => a.tx_hash && a.created_at.slice(0, 10) === today,
+  ).length;
+
+  // -------------------------------------------------- ON-CHAIN POTS
+  const [
+    enPotUSDT,
+    esPotUSDT,
+    enTreasury,
+    esTreasury,
+    operatorCELO,
+  ] = await Promise.all([
+    readCurrentPotUSD(1),
+    readCurrentPotUSD(2),
+    safeTreasury(1),
+    safeTreasury(2),
+    readOperatorCELO(),
+  ]);
+
+  // ---------------------------------------------------- PLAYERS
+  const allPlayers = new Set(runs.map((r) => r.player));
+  const last7Players = new Set(
+    runs.filter((r) => r.day_utc >= cutoff7).map((r) => r.player),
+  );
+  const last30Players = new Set(
+    runs.filter((r) => r.day_utc >= cutoff30).map((r) => r.player),
+  );
+
+  const playsByPlayer = new Map<string, number>();
+  const paidByPlayer = new Map<string, number>();
+  const daysByPlayer = new Map<string, Set<string>>();
+  const firstDayByPlayer = new Map<string, string>();
+  for (const r of runs) {
+    playsByPlayer.set(r.player, (playsByPlayer.get(r.player) ?? 0) + 1);
+    if (!r.was_free) {
+      paidByPlayer.set(r.player, (paidByPlayer.get(r.player) ?? 0) + 1);
+    }
+    if (!daysByPlayer.has(r.player)) daysByPlayer.set(r.player, new Set());
+    daysByPlayer.get(r.player)!.add(r.day_utc);
+    const cur = firstDayByPlayer.get(r.player);
+    if (!cur || r.day_utc < cur) firstDayByPlayer.set(r.player, r.day_utc);
+  }
+
+  const distBuckets = { "1": 0, "2": 0, "3-5": 0, "6-10": 0, "11+": 0 };
+  for (const c of playsByPlayer.values()) {
+    if (c === 1) distBuckets["1"]++;
+    else if (c === 2) distBuckets["2"]++;
+    else if (c <= 5) distBuckets["3-5"]++;
+    else if (c <= 10) distBuckets["6-10"]++;
+    else distBuckets["11+"]++;
+  }
+
+  // Retention: of players whose FIRST play was at least N days ago, how
+  // many also played on (first-day + N)?
+  function retention(n: number) {
+    let cohort = 0;
+    let returned = 0;
+    const window = daysAgo(today, n);
+    for (const [player, firstDay] of firstDayByPlayer) {
+      if (firstDay > window) continue; // not enough time has passed
+      cohort++;
+      const target = daysAgo(firstDay, -n); // firstDay + n
+      if (daysByPlayer.get(player)!.has(target)) returned++;
+    }
+    const pct = cohort > 0 ? (returned / cohort) * 100 : 0;
+    return { cohort, returned, pct };
+  }
+  const retentionDay2 = retention(1); // day 1 → day 2 = 1 day later
+  const retentionDay7 = retention(7);
+
+  const paidConversionPct =
+    allPlayers.size > 0
+      ? (paidByPlayer.size / allPlayers.size) * 100
+      : 0;
+
+  // ------------------------------------------------------ PLAYS
+  const totalPaid = runs.filter((r) => !r.was_free).length;
+  const totalFree = runs.length - totalPaid;
+  const avgScore =
+    runs.length > 0
+      ? runs.reduce((s, r) => s + r.score, 0) / runs.length
+      : 0;
+
+  // Last 30 days bar chart, oldest → newest
+  const days30: string[] = [];
+  for (let i = 29; i >= 0; i--) days30.push(daysAgo(today, i));
+  const playsByDay = new Map<string, number>();
+  for (const r of runs) {
+    if (r.day_utc < days30[0]) continue;
+    playsByDay.set(r.day_utc, (playsByDay.get(r.day_utc) ?? 0) + 1);
+  }
+  const perDay = days30.map((d) => ({
+    date: d,
+    count: playsByDay.get(d) ?? 0,
+  }));
+
+  // ----------------------------------------------- BY-LANG TABLE
+  const byLang: ByLang = {
     en: { plays: 0, paid: 0, players: 0, revenueUSD: 0, distributedUSD: 0 },
     es: { plays: 0, paid: 0, players: 0, revenueUSD: 0, distributedUSD: 0 },
   };
-  const playersByLang: Record<"en" | "es", Set<string>> = { en: new Set(), es: new Set() };
-
-  let paidPlays = 0;
-  let freePlays = 0;
-  const allPlayers = new Set<string>();
-
+  const playersByLang: Record<Lang, Set<string>> = {
+    en: new Set(),
+    es: new Set(),
+  };
   for (const r of runs) {
     if (r.lang !== "en" && r.lang !== "es") continue;
     byLang[r.lang].plays++;
     playersByLang[r.lang].add(r.player);
-    allPlayers.add(r.player);
-    if (r.was_free) freePlays++;
-    else {
-      paidPlays++;
-      byLang[r.lang].paid++;
-    }
+    if (!r.was_free) byLang[r.lang].paid++;
   }
   for (const l of ["en", "es"] as const) {
     byLang[l].players = playersByLang[l].size;
     byLang[l].revenueUSD = byLang[l].paid * PROTOCOL_CUT_USD;
   }
-
-  let totalDistributedUSD = 0;
   for (const w of wins) {
     if (w.lang !== "en" && w.lang !== "es") continue;
-    const usd = Number(w.amount_units) / TOKEN_DECIMALS;
-    byLang[w.lang].distributedUSD += usd;
-    totalDistributedUSD += usd;
+    byLang[w.lang].distributedUSD +=
+      Number(w.amount_units) / TOKEN_DECIMALS;
   }
 
-  let daysClosed = 0;
+  // ------------------------------------------------ ECONOMY ROLLUP
   let biggestPotUSD = 0;
+  let daysClosed = 0;
   for (const p of pots) {
     if (!p.closed) continue;
     daysClosed++;
     const usd = Number(p.amount_units) / TOKEN_DECIMALS;
     if (usd > biggestPotUSD) biggestPotUSD = usd;
   }
+  const totalDistributedUSD = wins.reduce(
+    (s, w) => s + Number(w.amount_units) / TOKEN_DECIMALS,
+    0,
+  );
+  const revenueUSD = totalPaid * PROTOCOL_CUT_USD;
+
+  // ---------------------------------------------------- SPONSORS
+  const sponsors = await loadSponsors();
 
   return {
-    revenueUSD: paidPlays * PROTOCOL_CUT_USD,
-    totalPlays: runs.length,
-    paidPlays,
-    freePlays,
-    uniquePlayers: allPlayers.size,
-    daysClosed,
-    totalDistributedUSD,
-    biggestPotUSD,
-    byLang,
+    today: {
+      dau: todayPlayers.size,
+      plays: todayRuns.length,
+      paid: todayPaid,
+      free: todayFree,
+      enPotUSDT,
+      esPotUSDT,
+      enTopScore: todayEnTop,
+      esTopScore: todayEsTop,
+      newSignups: newSignupsToday,
+    },
+    players: {
+      total: allPlayers.size,
+      last7d: last7Players.size,
+      last30d: last30Players.size,
+      wau: last7Players.size,
+      mau: last30Players.size,
+      distribution: [
+        { label: "1 play", count: distBuckets["1"] },
+        { label: "2 plays", count: distBuckets["2"] },
+        { label: "3-5 plays", count: distBuckets["3-5"] },
+        { label: "6-10 plays", count: distBuckets["6-10"] },
+        { label: "11+ plays", count: distBuckets["11+"] },
+      ],
+      retentionDay2,
+      retentionDay7,
+      paidConversionPct,
+    },
+    plays: {
+      total: runs.length,
+      paid: totalPaid,
+      free: totalFree,
+      avgScore,
+      perDay,
+      byLang,
+    },
+    economy: {
+      revenueUSD,
+      distributedUSD: totalDistributedUSD,
+      enPotUSDT,
+      esPotUSDT,
+      biggestPotUSD,
+      enTreasuryUSDT: enTreasury.usdt,
+      esTreasuryUSDT: esTreasury.usdt,
+      enTreasuryDays: enTreasury.days,
+      esTreasuryDays: esTreasury.days,
+      operatorCELO,
+      daysClosed,
+    },
+    sponsors,
   };
 }
 
+// --------------------------------------------------------- helpers
+
+function bestScore(rows: Array<{ score: number }>): number | null {
+  if (rows.length === 0) return null;
+  return rows.reduce((m, r) => (r.score > m ? r.score : m), 0);
+}
+
+function daysAgo(yyyymmdd: string, n: number): string {
+  const d = new Date(yyyymmdd + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() - n);
+  return d.toISOString().slice(0, 10);
+}
+
+async function readCurrentPotUSD(gameId: number): Promise<number> {
+  if (isAddressEqual(POT_ADDRESS, zeroAddress)) return 0;
+  try {
+    const day = (await celoClient.readContract({
+      address: POT_ADDRESS,
+      abi: FREAKING_POT_ABI,
+      functionName: "currentDay",
+      args: [BigInt(gameId)],
+    })) as bigint;
+    const amount = (await celoClient.readContract({
+      address: POT_ADDRESS,
+      abi: FREAKING_POT_ABI,
+      functionName: "viewPot",
+      args: [BigInt(gameId), day],
+    })) as bigint;
+    return Number(amount) / TOKEN_DECIMALS;
+  } catch {
+    return 0;
+  }
+}
+
+async function safeTreasury(
+  gameId: number,
+): Promise<{ usdt: number; days: number }> {
+  if (isAddressEqual(POT_ADDRESS, zeroAddress)) {
+    return { usdt: 0, days: 0 };
+  }
+  try {
+    const { treasury, dailySeed } = await readTreasuryState(gameId);
+    const usdt = Number(treasury) / TOKEN_DECIMALS;
+    const seed = Number(dailySeed) / TOKEN_DECIMALS;
+    const days = seed > 0 ? usdt / seed : 0;
+    return { usdt, days };
+  } catch {
+    return { usdt: 0, days: 0 };
+  }
+}
+
+async function readOperatorCELO(): Promise<number> {
+  const pk = process.env.OPERATOR_PRIVATE_KEY;
+  if (!pk) return 0;
+  try {
+    const account = privateKeyToAccount(
+      (pk.startsWith("0x") ? pk : `0x${pk}`) as Hex,
+    );
+    const wei = await celoClient.getBalance({ address: account.address });
+    return Number(wei) / 1e18;
+  } catch {
+    return 0;
+  }
+}
+
+async function loadSponsors(): Promise<Stats["sponsors"]> {
+  if (!supabase) return [];
+  type Row = {
+    id: string;
+    name: string;
+    token_address: string;
+    token_symbol: string;
+    token_decimals: number;
+    games: string[];
+    daily_amount_per_game_units: string;
+    total_budget_units: string;
+  };
+  const { data: campaignsData } = await supabase
+    .from("sponsor_campaigns")
+    .select(
+      "id,name,token_address,token_symbol,token_decimals,games,daily_amount_per_game_units::text,total_budget_units::text",
+    )
+    .eq("active", true);
+  const campaigns = (campaignsData ?? []) as Row[];
+  if (campaigns.length === 0) return [];
+
+  const { data: spentData } = await supabase
+    .from("sponsor_payouts")
+    .select("campaign_id,amount_units::text")
+    .in(
+      "campaign_id",
+      campaigns.map((c) => c.id),
+    );
+  const spentByCampaign = new Map<string, bigint>();
+  for (const p of (spentData ?? []) as Array<{
+    campaign_id: string;
+    amount_units: string;
+  }>) {
+    const prev = spentByCampaign.get(p.campaign_id) ?? 0n;
+    spentByCampaign.set(p.campaign_id, prev + BigInt(p.amount_units));
+  }
+
+  const operatorAddr = await getOperatorAddressOrNull();
+  const balances = new Map<string, bigint>();
+
+  const out: Stats["sponsors"] = [];
+  for (const c of campaigns) {
+    let balanceRaw: bigint = 0n;
+    if (operatorAddr) {
+      const key = c.token_address.toLowerCase();
+      let b = balances.get(key);
+      if (b === undefined) {
+        try {
+          b = (await celoClient.readContract({
+            address: c.token_address as `0x${string}`,
+            abi: erc20Abi,
+            functionName: "balanceOf",
+            args: [operatorAddr],
+          })) as bigint;
+          balances.set(key, b);
+        } catch {
+          b = 0n;
+        }
+      }
+      balanceRaw = b;
+    }
+    const dailyRaw = BigInt(c.daily_amount_per_game_units);
+    const totalRaw = BigInt(c.total_budget_units);
+    const spentRaw = spentByCampaign.get(c.id) ?? 0n;
+    const remainingBudgetRaw = totalRaw - spentRaw;
+    const dailyPerDayRaw = dailyRaw * BigInt(c.games.length);
+    const factor = 10 ** c.token_decimals;
+    const balance = Number(balanceRaw) / factor;
+    const dailyPerGame = Number(dailyRaw) / factor;
+    const dailyPerDay = Number(dailyPerDayRaw) / factor;
+    const remainingBudget = Number(remainingBudgetRaw) / factor;
+    const walletDays =
+      dailyPerDay > 0 ? Math.floor(balance / dailyPerDay) : 0;
+    const budgetDays =
+      dailyPerDay > 0 ? Math.floor(remainingBudget / dailyPerDay) : 0;
+    out.push({
+      name: c.name,
+      tokenSymbol: c.token_symbol,
+      balance,
+      dailyPerGame,
+      gamesCount: c.games.length,
+      daysLeft: Math.min(walletDays, budgetDays),
+      paidOut: Number(spentRaw) / factor,
+    });
+  }
+  return out;
+}
+
+async function getOperatorAddressOrNull(): Promise<`0x${string}` | null> {
+  const pk = process.env.OPERATOR_PRIVATE_KEY;
+  if (!pk) return null;
+  try {
+    return privateKeyToAccount(
+      (pk.startsWith("0x") ? pk : `0x${pk}`) as Hex,
+    ).address;
+  } catch {
+    return null;
+  }
+}
+
+// =============================================================== PAGE
 export default async function StatsPage() {
   const stats = await loadStats();
 
   return (
-    <div className="flex-1 flex flex-col px-5 pt-6 pb-10 max-w-3xl mx-auto w-full gap-6">
+    <div className="flex-1 flex flex-col px-5 pt-6 pb-10 max-w-3xl mx-auto w-full gap-5">
       <header className="flex flex-col gap-2">
         <BackLink />
         <h1 className="font-display text-4xl tracking-wider">Stats</h1>
         <p className="text-xs font-mono text-muted">
-          Live from Supabase · refresh to update
+          Live · refresh to update
         </p>
       </header>
 
@@ -129,17 +519,155 @@ export default async function StatsPage() {
         </div>
       ) : (
         <>
+          <SectionTitle>Today</SectionTitle>
           <section className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            <Tile label="Revenue" value={fmtUSD(stats.revenueUSD)} accent="bg-teal/20" />
-            <Tile label="Pot paid out" value={fmtUSD(stats.totalDistributedUSD)} accent="bg-yellow/40" />
-            <Tile label="Biggest pot" value={fmtUSD(stats.biggestPotUSD)} accent="bg-orange/30" />
-            <Tile label="Total plays" value={stats.totalPlays.toString()} accent="bg-blue/10" />
-            <Tile label="Paid plays" value={stats.paidPlays.toString()} accent="bg-purple/20" />
-            <Tile label="Unique players" value={stats.uniquePlayers.toString()} accent="bg-pink/20" />
+            <Tile
+              label="DAU"
+              value={stats.today.dau.toString()}
+              accent="bg-teal/20"
+            />
+            <Tile
+              label="Plays today"
+              value={stats.today.plays.toString()}
+              accent="bg-blue/10"
+              hint={`${stats.today.paid} paid · ${stats.today.free} free`}
+            />
+            <Tile
+              label="New email signups"
+              value={stats.today.newSignups.toString()}
+              accent="bg-pink/20"
+            />
+            <Tile
+              label="EN pot"
+              value={fmtUSD(stats.today.enPotUSDT)}
+              accent="bg-yellow/40"
+              hint={
+                stats.today.enTopScore !== null
+                  ? `top score ${stats.today.enTopScore}`
+                  : "no plays yet"
+              }
+            />
+            <Tile
+              label="ES pot"
+              value={fmtUSD(stats.today.esPotUSDT)}
+              accent="bg-purple/20"
+              hint={
+                stats.today.esTopScore !== null
+                  ? `top score ${stats.today.esTopScore}`
+                  : "no plays yet"
+              }
+            />
+            <Tile
+              label="Operator gas"
+              value={`${stats.economy.operatorCELO.toFixed(3)} CELO`}
+              accent="bg-orange/30"
+              hint={`~${Math.floor(stats.economy.operatorCELO / 0.1)} airdrops left`}
+            />
           </section>
 
-          <section className="rounded-3xl bg-white border border-black/5 p-5 shadow-[0_4px_0_0_rgba(0,0,0,0.04)]">
-            <h2 className="font-display text-2xl mb-3">By language</h2>
+          <SectionTitle>Players</SectionTitle>
+          <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <Tile
+              label="Total"
+              value={stats.players.total.toString()}
+              accent="bg-teal/20"
+            />
+            <Tile
+              label="WAU"
+              value={stats.players.wau.toString()}
+              accent="bg-blue/10"
+              hint="last 7 days"
+            />
+            <Tile
+              label="MAU"
+              value={stats.players.mau.toString()}
+              accent="bg-purple/20"
+              hint="last 30 days"
+            />
+            <Tile
+              label="Paid conversion"
+              value={`${stats.players.paidConversionPct.toFixed(0)}%`}
+              accent="bg-yellow/40"
+              hint="ever paid"
+            />
+          </section>
+
+          <Card title="Plays per player">
+            <div className="space-y-1">
+              {stats.players.distribution.map((d) => (
+                <DistributionRow
+                  key={d.label}
+                  label={d.label}
+                  count={d.count}
+                  total={stats.players.total}
+                />
+              ))}
+            </div>
+          </Card>
+
+          <Card title="Retention">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-muted font-display text-xs tracking-widest uppercase">
+                  <th className="py-2">Cohort</th>
+                  <th className="py-2 text-right">Returned</th>
+                  <th className="py-2 text-right">Rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="border-t border-black/5">
+                  <td className="py-2">Day 1 → Day 2</td>
+                  <td className="py-2 text-right tabular-nums">
+                    {stats.players.retentionDay2.returned} /{" "}
+                    {stats.players.retentionDay2.cohort}
+                  </td>
+                  <td className="py-2 text-right tabular-nums font-display">
+                    {stats.players.retentionDay2.pct.toFixed(0)}%
+                  </td>
+                </tr>
+                <tr className="border-t border-black/5">
+                  <td className="py-2">Day 1 → Day 7</td>
+                  <td className="py-2 text-right tabular-nums">
+                    {stats.players.retentionDay7.returned} /{" "}
+                    {stats.players.retentionDay7.cohort}
+                  </td>
+                  <td className="py-2 text-right tabular-nums font-display">
+                    {stats.players.retentionDay7.pct.toFixed(0)}%
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </Card>
+
+          <SectionTitle>Plays</SectionTitle>
+          <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <Tile
+              label="Total plays"
+              value={stats.plays.total.toString()}
+              accent="bg-blue/10"
+            />
+            <Tile
+              label="Paid"
+              value={stats.plays.paid.toString()}
+              accent="bg-teal/20"
+            />
+            <Tile
+              label="Free"
+              value={stats.plays.free.toString()}
+              accent="bg-pink/20"
+            />
+            <Tile
+              label="Avg score"
+              value={stats.plays.avgScore.toFixed(1)}
+              accent="bg-yellow/40"
+            />
+          </section>
+
+          <Card title="Plays — last 30 days">
+            <PlaysChart data={stats.plays.perDay} />
+          </Card>
+
+          <Card title="By language">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-muted font-display text-xs tracking-widest uppercase">
@@ -155,20 +683,94 @@ export default async function StatsPage() {
                 {(["en", "es"] as const).map((l) => (
                   <tr key={l} className="border-t border-black/5">
                     <td className="py-2 font-display uppercase">{l}</td>
-                    <td className="py-2 text-right tabular-nums">{stats.byLang[l].plays}</td>
-                    <td className="py-2 text-right tabular-nums">{stats.byLang[l].paid}</td>
-                    <td className="py-2 text-right tabular-nums">{stats.byLang[l].players}</td>
-                    <td className="py-2 text-right tabular-nums">{fmtUSD(stats.byLang[l].revenueUSD)}</td>
-                    <td className="py-2 text-right tabular-nums">{fmtUSD(stats.byLang[l].distributedUSD)}</td>
+                    <td className="py-2 text-right tabular-nums">
+                      {stats.plays.byLang[l].plays}
+                    </td>
+                    <td className="py-2 text-right tabular-nums">
+                      {stats.plays.byLang[l].paid}
+                    </td>
+                    <td className="py-2 text-right tabular-nums">
+                      {stats.plays.byLang[l].players}
+                    </td>
+                    <td className="py-2 text-right tabular-nums">
+                      {fmtUSD(stats.plays.byLang[l].revenueUSD)}
+                    </td>
+                    <td className="py-2 text-right tabular-nums">
+                      {fmtUSD(stats.plays.byLang[l].distributedUSD)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </Card>
+
+          <SectionTitle>Economy</SectionTitle>
+          <section className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            <Tile
+              label="Revenue"
+              value={fmtUSD(stats.economy.revenueUSD)}
+              accent="bg-teal/20"
+              hint="protocol fees"
+            />
+            <Tile
+              label="Paid out"
+              value={fmtUSD(stats.economy.distributedUSD)}
+              accent="bg-yellow/40"
+              hint="to winners"
+            />
+            <Tile
+              label="Biggest pot"
+              value={fmtUSD(stats.economy.biggestPotUSD)}
+              accent="bg-orange/30"
+              hint={`${stats.economy.daysClosed} days closed`}
+            />
+            <Tile
+              label="EN treasury"
+              value={fmtUSD(stats.economy.enTreasuryUSDT)}
+              accent="bg-yellow/20"
+              hint={`${stats.economy.enTreasuryDays.toFixed(0)}d runway`}
+            />
+            <Tile
+              label="ES treasury"
+              value={fmtUSD(stats.economy.esTreasuryUSDT)}
+              accent="bg-purple/10"
+              hint={`${stats.economy.esTreasuryDays.toFixed(0)}d runway`}
+            />
           </section>
 
+          {stats.sponsors.length > 0 && (
+            <>
+              <SectionTitle>Sponsors</SectionTitle>
+              {stats.sponsors.map((s, i) => (
+                <Card key={i} title={s.name}>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                    <KV
+                      label="Balance"
+                      value={`${formatAmount(s.balance)} ${s.tokenSymbol}`}
+                    />
+                    <KV
+                      label="Daily / game"
+                      value={`${formatAmount(s.dailyPerGame)} ${s.tokenSymbol}`}
+                    />
+                    <KV
+                      label="Paid out"
+                      value={`${formatAmount(s.paidOut)} ${s.tokenSymbol}`}
+                    />
+                    <KV
+                      label="Runway"
+                      value={`${s.daysLeft}d left`}
+                    />
+                  </div>
+                </Card>
+              ))}
+            </>
+          )}
+
           <section className="text-xs text-muted font-mono">
-            <p>Entry fee: {fmtUSD(ENTRY_FEE_USD)} · Protocol cut: 20% ({fmtUSD(PROTOCOL_CUT_USD)}/play)</p>
-            <p>Days closed: {stats.daysClosed} · Free plays: {stats.freePlays}</p>
+            <p>
+              Entry fee: {fmtUSD(ENTRY_FEE_USD)} · Protocol cut: 20% (
+              {fmtUSD(PROTOCOL_CUT_USD)}/play)
+            </p>
           </section>
         </>
       )}
@@ -176,13 +778,133 @@ export default async function StatsPage() {
   );
 }
 
-function Tile({ label, value, accent }: { label: string; value: string; accent: string }) {
+// ============================================================ COMPONENTS
+
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <h2 className="font-display text-2xl tracking-wider mt-3">{children}</h2>
+  );
+}
+
+function Tile({
+  label,
+  value,
+  accent,
+  hint,
+}: {
+  label: string;
+  value: string;
+  accent: string;
+  hint?: string;
+}) {
   return (
     <div className={`${accent} rounded-2xl px-4 py-4`}>
       <div className="text-[10px] font-display tracking-widest uppercase text-muted leading-tight">
         {label}
       </div>
       <div className="font-display text-3xl mt-1 tabular-nums">{value}</div>
+      {hint && (
+        <div className="text-[11px] text-muted mt-1 leading-tight">{hint}</div>
+      )}
     </div>
   );
+}
+
+function Card({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-3xl bg-white border border-black/5 p-5 shadow-[0_4px_0_0_rgba(0,0,0,0.04)]">
+      <h3 className="font-display text-lg mb-3">{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+function KV({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-[10px] font-display tracking-widest uppercase text-muted">
+        {label}
+      </div>
+      <div className="font-display text-lg tabular-nums">{value}</div>
+    </div>
+  );
+}
+
+function DistributionRow({
+  label,
+  count,
+  total,
+}: {
+  label: string;
+  count: number;
+  total: number;
+}) {
+  const pct = total > 0 ? (count / total) * 100 : 0;
+  return (
+    <div className="flex items-center gap-3 py-1.5 text-sm">
+      <span className="w-20 text-muted">{label}</span>
+      <div className="flex-1 h-3 bg-black/[0.04] rounded-full overflow-hidden">
+        <div
+          className="h-full bg-teal"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <span className="w-20 text-right tabular-nums text-muted">
+        {count}{" "}
+        <span className="text-[11px]">({pct.toFixed(0)}%)</span>
+      </span>
+    </div>
+  );
+}
+
+function PlaysChart({
+  data,
+}: {
+  data: Array<{ date: string; count: number }>;
+}) {
+  const max = Math.max(...data.map((d) => d.count), 1);
+  const width = 600;
+  const height = 90;
+  const barWidth = width / data.length;
+  return (
+    <div>
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="w-full"
+        preserveAspectRatio="none"
+      >
+        {data.map((d, i) => {
+          const h = (d.count / max) * (height - 8);
+          return (
+            <rect
+              key={d.date}
+              x={i * barWidth + 1}
+              y={height - h}
+              width={barWidth - 2}
+              height={Math.max(h, 1)}
+              fill={d.count > 0 ? "#68c3a0" : "#eaeaea"}
+              rx={2}
+            />
+          );
+        })}
+      </svg>
+      <div className="flex justify-between text-[10px] text-muted mt-1 font-mono">
+        <span>{data[0].date.slice(5)}</span>
+        <span>peak {max}/d</span>
+        <span>today</span>
+      </div>
+    </div>
+  );
+}
+
+function formatAmount(n: number): string {
+  if (n >= 1000) return n.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  if (n >= 1) return n.toFixed(2);
+  return n.toFixed(4);
 }
