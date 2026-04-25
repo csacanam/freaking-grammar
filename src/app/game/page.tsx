@@ -12,6 +12,7 @@ import {
 } from "@/lib/api";
 import { useCurrentPlayer } from "@/lib/wallet";
 import { useLang } from "@/lib/lang-provider";
+import { posthog } from "@/lib/posthog-provider";
 
 const QUESTION_SECONDS = 5;
 
@@ -79,6 +80,7 @@ function GameInner() {
           setSecondsLeft(QUESTION_SECONDS);
           setOutcome("playing");
           setReadyCount(null);
+          posthog.capture("play_started", { game, run_id: res.runId });
         } catch (e) {
           // Don't yeet the user back home on server errors — they paid for
           // this turn. Surface the error and let them retry from the
@@ -123,6 +125,13 @@ function GameInner() {
     (async () => {
       try {
         const res = await finishRun(runId, "timeout");
+        posthog.capture("play_finished", {
+          game,
+          run_id: runId,
+          score: res.score,
+          rank: res.rank,
+          reason: "timeout",
+        });
         transitionRef.current = setTimeout(() => {
           router.replace(
             `/game/over?score=${res.score}&rank=${res.rank}&reason=timeout&game=${game}`,
@@ -150,6 +159,13 @@ function GameInner() {
       try {
         const [res] = await Promise.all([submitAnswer(runId, pickedWord), minDelay]);
         if ("ended" in res && res.ended) {
+          posthog.capture("play_finished", {
+            game,
+            run_id: runId,
+            score: res.score,
+            rank: res.rank,
+            reason: res.reason,
+          });
           router.replace(
             `/game/over?score=${res.score}&rank=${res.rank}&reason=${res.reason}&game=${game}`,
           );

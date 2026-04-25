@@ -10,6 +10,8 @@ import { useAccount, useConnect, useConnectors } from "wagmi";
 import { celo, base, mainnet } from "viem/chains";
 import { CELO_RPC_URL, MAINNET_RPC_URL } from "./chain";
 import { wagmiConfig } from "./wagmi";
+import { PostHogProvider } from "./posthog-provider";
+import { PostHogIdentifyBridge } from "@/components/PostHogIdentifyBridge";
 
 // Privy uses `chain.rpcUrls.default.http[0]` when the embedded wallet
 // sends transactions. If we hand it plain `celo` from viem/chains, it
@@ -156,18 +158,20 @@ export function Providers({ children }: { children: ReactNode }) {
       <QueryClientProvider client={qc}>
         <WagmiProvider config={wagmiConfig}>
           <RainbowKitProvider modalSize="compact">
-            <MiniPayBridge />
-            <PrivyEmbeddedBridge />
-            <Suspense>
-              {/* WelcomeGasBridge must live inside LangProvider because it
-                  reads uiLang to tell /api/welcome-gas which template the
-                  user will get for daily emails. Leaving it above the
-                  provider broke prerender of /_not-found. */}
-              <LangProvider>
-                <WelcomeGasBridge />
-                {children}
-              </LangProvider>
-            </Suspense>
+            <PostHogProvider>
+              <MiniPayBridge />
+              <PrivyEmbeddedBridge />
+              <Suspense>
+                {/* WelcomeGasBridge + PostHogIdentifyBridge both read
+                    useLang(), so they must live inside LangProvider.
+                    Keeping them above broke prerender of /_not-found. */}
+                <LangProvider>
+                  <WelcomeGasBridge />
+                  <PostHogIdentifyBridge />
+                  {children}
+                </LangProvider>
+              </Suspense>
+            </PostHogProvider>
           </RainbowKitProvider>
         </WagmiProvider>
       </QueryClientProvider>

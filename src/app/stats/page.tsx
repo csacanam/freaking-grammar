@@ -15,6 +15,11 @@ import {
   readTreasuryState,
 } from "@/lib/onchain";
 import { POT_ADDRESS } from "@/lib/chain";
+import {
+  fetchPostHogStats,
+  countryFlag,
+  type PostHogStats,
+} from "@/lib/posthog-server";
 
 export const dynamic = "force-dynamic";
 
@@ -102,6 +107,7 @@ type Stats = {
     potAddress: string;
     operatorAddress: string | null;
   };
+  posthog: PostHogStats | null;
 };
 
 async function loadStats(): Promise<Stats | null> {
@@ -335,6 +341,12 @@ async function loadStats(): Promise<Stats | null> {
   // ---------------------------------------------------- SPONSORS
   const sponsors = await loadSponsors();
 
+  // ---------------------------------------------------- POSTHOG
+  // Optional: only renders if POSTHOG_PROJECT_ID + POSTHOG_PERSONAL_API_KEY
+  // are configured. fetchPostHogStats handles its own caching (1h) and
+  // gracefully returns null on auth/network failure.
+  const posthog = await fetchPostHogStats();
+
   return {
     today: {
       dau: todayPlayers.size,
@@ -386,6 +398,7 @@ async function loadStats(): Promise<Stats | null> {
       daysClosed,
     },
     sponsors,
+    posthog,
     onchain: {
       totalTxs,
       plays: playsTxCount,
@@ -942,6 +955,109 @@ export default async function StatsPage() {
             </>
           )}
 
+          {stats.posthog && stats.posthog.visitors30d > 0 && (
+            <>
+              <SectionTitle>Web analytics</SectionTitle>
+              <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <Tile
+                  label="Visitors 7d"
+                  value={stats.posthog.visitors7d.toLocaleString("en-US")}
+                  accent="bg-teal/20"
+                />
+                <Tile
+                  label="Visitors 30d"
+                  value={stats.posthog.visitors30d.toLocaleString("en-US")}
+                  accent="bg-blue/10"
+                />
+                <Tile
+                  label="Sessions"
+                  value={stats.posthog.sessions30d.toLocaleString("en-US")}
+                  accent="bg-purple/20"
+                  hint="last 30 days"
+                />
+                <Tile
+                  label="Connect rate"
+                  value={pctString(
+                    stats.posthog.funnel.identified,
+                    stats.posthog.funnel.visitors,
+                  )}
+                  accent="bg-yellow/40"
+                  hint="of visitors"
+                />
+              </section>
+
+              {stats.posthog.countries.length > 0 && (
+                <Card title="Top countries (last 30 days)">
+                  <div className="space-y-1">
+                    {stats.posthog.countries.map((c) => (
+                      <DistributionRow
+                        key={`${c.code ?? c.name}`}
+                        label={`${countryFlag(c.code)} ${c.name}`.trim()}
+                        count={c.visitors}
+                        total={stats.posthog!.visitors30d}
+                      />
+                    ))}
+                  </div>
+                </Card>
+              )}
+
+              <Card title="Funnel (last 30 days)">
+                <div className="space-y-1">
+                  <DistributionRow
+                    label="Visitors"
+                    count={stats.posthog.funnel.visitors}
+                    total={stats.posthog.funnel.visitors}
+                  />
+                  <DistributionRow
+                    label="Wallet connected"
+                    count={stats.posthog.funnel.identified}
+                    total={stats.posthog.funnel.visitors}
+                  />
+                  <DistributionRow
+                    label="Started a play"
+                    count={stats.posthog.funnel.played}
+                    total={stats.posthog.funnel.visitors}
+                  />
+                  <DistributionRow
+                    label="Finished a play"
+                    count={stats.posthog.funnel.finished}
+                    total={stats.posthog.funnel.visitors}
+                  />
+                </div>
+              </Card>
+
+              {stats.posthog.devices.length > 0 && (
+                <Card title="Devices">
+                  <div className="space-y-1">
+                    {stats.posthog.devices.map((d) => (
+                      <DistributionRow
+                        key={d.device}
+                        label={d.device}
+                        count={d.visitors}
+                        total={stats.posthog!.visitors30d}
+                      />
+                    ))}
+                  </div>
+                </Card>
+              )}
+
+              {stats.posthog.sources.length > 0 && (
+                <Card title="Top traffic sources">
+                  <div className="space-y-1">
+                    {stats.posthog.sources.map((s) => (
+                      <DistributionRow
+                        key={s.source}
+                        label={s.source}
+                        count={s.visitors}
+                        total={stats.posthog!.visitors30d}
+                      />
+                    ))}
+                  </div>
+                </Card>
+              )}
+            </>
+          )}
+
           <section className="text-xs text-muted font-mono">
             <p>
               Entry fee: {fmtUSD(ENTRY_FEE_USD)} · Protocol cut: 20% (
@@ -1103,6 +1219,11 @@ function ContractRow({
       </a>
     </li>
   );
+}
+
+function pctString(part: number, total: number): string {
+  if (total <= 0) return "—";
+  return `${((part / total) * 100).toFixed(0)}%`;
 }
 
 function formatAmount(n: number): string {
