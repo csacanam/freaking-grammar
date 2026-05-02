@@ -203,7 +203,11 @@ function obfuscateEmail(email: string | null): string {
   if (!email) return "(no email)";
   const [user, domain] = email.split("@");
   if (!domain) return email;
-  return `${user.slice(0, 3)}***@${domain}`;
+  // Telegram Markdown parses `*` as bold delimiter; three asterisks
+  // in a row break the parser ("can't find end of entity"), and the
+  // entire send fails. Use ellipsis instead — same visual obfuscation
+  // intent, no markdown collision.
+  return `${user.slice(0, 3)}…@${domain}`;
 }
 
 function daysAgoUtc(days: number): string {
