@@ -143,3 +143,19 @@ create index if not exists welcome_airdrops_email_idx on welcome_airdrops (email
 create index if not exists welcome_airdrops_lang_idx on welcome_airdrops (lang);
 create index if not exists welcome_airdrops_subscribed_idx
   on welcome_airdrops (email_subscribed) where email_subscribed = true;
+
+-- ----------------------------------------------- gas_refills
+-- Audit log of every CELO refill the operator sends to a Privy
+-- embedded wallet after the welcome-gas top-up. Used by the gas
+-- report cron to enforce a per-user cooldown so we don't double-
+-- refill within the same day, and to expose a manual history if a
+-- user ever asks "did you guys refill me?".
+create table if not exists gas_refills (
+  tx_hash      text primary key,
+  address      text not null,
+  amount_wei   numeric(78,0) not null,
+  refilled_at  timestamptz not null default now(),
+  trigger      text not null default 'auto-cron'  -- auto-cron | manual | other
+);
+create index if not exists gas_refills_address_idx
+  on gas_refills (address, refilled_at desc);
