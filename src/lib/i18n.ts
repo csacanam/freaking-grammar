@@ -112,8 +112,8 @@ export const dict = {
     stagePaying: "Paying $0.10…",
     stageStarting: "Starting…",
     // Resume banner
-    resumeOne: "You have a paid play ready to start",
-    resumeMany: "You have {n} paid plays ready to start",
+    resumeOne: "You have a play ready to resume",
+    resumeMany: "You have {n} plays ready to resume",
     resumeTapHint: "tap to resume",
     resumeMoreAfter: "+{n} more after",
     resume: "Resume →",
@@ -265,8 +265,8 @@ export const dict = {
     stagePaying: "Pagando $0.10…",
     stageStarting: "Iniciando…",
     // Resume banner
-    resumeOne: "Tienes un turno pagado listo",
-    resumeMany: "Tienes {n} turnos pagados listos",
+    resumeOne: "Tienes una jugada lista para retomar",
+    resumeMany: "Tienes {n} jugadas listas para retomar",
     resumeTapHint: "toca para retomar",
     resumeMoreAfter: "+{n} más después",
     resume: "Retomar →",

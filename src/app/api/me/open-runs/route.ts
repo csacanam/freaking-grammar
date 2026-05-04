@@ -1,8 +1,13 @@
-// Surfaces paid plays the user has made on-chain today that were never
-// completed client-side (bug, tab close, network hiccup, whatever). The Home
-// turns this into a "Resume →" banner so nobody eats a paid turn. Strictly
-// scoped to today UTC — yesterday's pot is already closed and distributed,
-// so surfacing those would only be noise without action.
+// Surfaces plays the user fired on-chain today that never completed
+// client-side (bug, tab close, Farcaster mini-app frame dropping during
+// the receipt wait, whatever). Home turns this into a "Resume →" banner
+// so nobody loses a turn — paid OR free. Originally the recovery was
+// scoped to paid plays only on the theory that free turns weren't worth
+// surfacing, but a Farcaster user reported losing a free play after a
+// "Transaction rejected" UI glitch despite the tx confirming on-chain.
+// A free turn that's already burned in the contract is just as wasted
+// as a paid one. Scoped to today UTC — yesterday's pot is already
+// closed and distributed.
 
 import type { NextRequest } from "next/server";
 import { createPublicClient, http, parseAbiItem } from "viem";
@@ -91,11 +96,10 @@ export async function GET(req: NextRequest) {
       }
     }
     if (blockTime < start || blockTime >= end) continue;
-    // Paid plays only — free plays don't hold any USDT, so surfacing them as
-    // "paid but unplayed" would be misleading. Still worth recovering free
-    // plays in principle, but that's a different UX bucket (TODO if users
-    // complain). For now: strictly paid.
-    if (ev.args.wasFree) continue;
+    // Both paid and free plays are recoverable — the contract burned the
+    // turn either way, so an unfinished run is a real loss the user
+    // should be able to pick back up. Banner copy is generic ("a play"),
+    // so the same UI works for both buckets.
     playedToday.push({
       txHash: ev.transactionHash,
       gameId: Number(ev.args.gameId),
