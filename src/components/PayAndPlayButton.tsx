@@ -166,7 +166,19 @@ export function PayAndPlayButton({
       functionName: "play",
       args: [BigInt(gameId)],
     });
-    await publicClient.waitForTransactionReceipt({ hash: playHash });
+    // Once writeContractAsync returns a hash, the wallet broadcast the tx
+    // — the contract has either already used the free play or charged
+    // USDT, regardless of what happens next. So if the receipt wait
+    // fails (RPC hiccup, mini-app frame dropping), we still navigate to
+    // /game with the hash; the game page will pick up the run server-
+    // side and the user gets to play. Treating this as a "rejected"
+    // would silently lose their free play even though the chain
+    // already counted it.
+    try {
+      await publicClient.waitForTransactionReceipt({ hash: playHash });
+    } catch (e) {
+      console.warn("waitForTransactionReceipt failed (tx already broadcast):", e);
+    }
 
     setStage("starting");
     router.push(`/game?tx=${playHash}&game=${game}`);
@@ -181,9 +193,16 @@ export function PayAndPlayButton({
     try {
       await runPlayFlow(address);
     } catch (e) {
+      // Always log the raw error to console for debugging — friendlyError()
+      // collapses everything to short user-facing text and we lose the
+      // wallet/SDK signal in the process. Keeps "Transaction rejected"
+      // diagnosable next time it shows up.
       console.error("pay-and-play failed:", e);
+      const err = e as Error;
+      console.error("pay-and-play raw message:", err?.message);
+      console.error("pay-and-play stack:", err?.stack);
       // Insufficient-funds cases are already surfaced via NeedFundsModal.
-      const msg = (e as Error)?.message;
+      const msg = err?.message;
       if (msg !== "insufficient-usdt" && msg !== "insufficient-celo") {
         setError(friendlyError(e, 120));
       }
