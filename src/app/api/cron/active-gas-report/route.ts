@@ -15,17 +15,20 @@
 //
 // "Active" = ≥1 finished run in the last 7 days.
 //
-// Threshold calibration. We measured the on-chain cost of plays:
-//   - free play:  ≈ 0.0034 CELO settled
-//   - paid play:  ≈ 0.0080 CELO settled
-// BUT the wallet pre-flight check (`balance ≥ gas_limit × max_fee`)
-// uses the worst-case max_fee, which is roughly 2x the effective
-// fee. Real-world: a Privy user at 0.00572 CELO couldn't even fire
-// a free play — the wallet bailed before submitting. So thresholds
-// are deliberately conservative to match what wallets actually
-// require, not what the chain ultimately charges.
-//   RED    = 0.020 CELO  → even a free play might be rejected here
-//   YELLOW = 0.050 CELO  → ~5 paid plays of buffer left
+// Threshold calibration. Measured settled costs are tiny:
+//   - free play:  ~0.0034 CELO
+//   - paid play:  ~0.0080 CELO
+// BUT the wallet pre-flight check uses `gas_limit × max_fee_per_gas`,
+// where max_fee is set ~5x the effective gas price as a safety buffer
+// (480 gwei reserved vs 100 gwei actually charged on Celo). So a paid
+// play tx wallet pre-flight requires ~0.04 CELO, and the chain still
+// only charges 0.008 once it settles. Real-world: a user at 0.0384
+// CELO had a paid play rejected pre-flight by 0.0005 CELO. Thresholds
+// reflect what the WALLET demands, not what the chain charges:
+//   RED    = 0.05 CELO  → can't reliably afford a paid play
+//   YELLOW = 0.10 CELO  → ~2-3 paid plays of buffer left at high gas
+// REFILL_AMOUNT stays at 0.1 — at high gas that's ~2.5 paid plays;
+// at normal gas it's ~12 plays. Wide enough.
 //
 // Fires at 12:00 UTC (7am Bogotá) and 00:00 UTC (7pm Bogotá) via
 // cron-job.org. Auth: CRON_SECRET in Authorization header.
@@ -48,9 +51,9 @@ import { sendTelegramMessage } from "@/lib/telegram";
 export const dynamic = "force-dynamic";
 
 const ACTIVE_DAYS = 7;
-// Calibrated against real wallet pre-flight checks (see file header).
-const RED_THRESHOLD = parseEther("0.02"); // wallet may already reject even a free play
-const YELLOW_THRESHOLD = parseEther("0.05"); // <5 paid plays of buffer
+// Calibrated against real wallet pre-flight (see file header).
+const RED_THRESHOLD = parseEther("0.05"); // can't reliably afford a paid play
+const YELLOW_THRESHOLD = parseEther("0.1"); // ~2-3 paid plays at high gas
 const REFILL_AMOUNT = parseEther("0.1"); // ~30 paid plays of headroom
 // A user can only be auto-refilled once every 6h. Twin cron schedule
 // runs every 12h, so this leaves room for an emergency manual
@@ -303,7 +306,7 @@ function formatMessage(args: {
 
   if (yellow.length > 0) {
     lines.push("");
-    lines.push("*🟡 WATCH — under 0.05 CELO*");
+    lines.push("*🟡 WATCH — under 0.1 CELO*");
     for (const s of yellow.slice(0, MAX_PER_BUCKET)) {
       lines.push(
         `• ${obfuscateEmail(s.email)}  ·  ${s.plays7d} plays  ·  ${formatEther(s.celoWei).slice(0, 6)} CELO`,

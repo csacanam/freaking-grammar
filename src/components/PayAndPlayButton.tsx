@@ -92,18 +92,16 @@ export function PayAndPlayButton({
       await switchChainAsync({ chainId: ACTIVE_CHAIN.id });
     }
 
-    // Gas check first — fails the nicest. Real-world wallet pre-flight
-    // requires `balance ≥ gas_limit × max_fee_per_gas`, which is
-    // ~2x the eventual settled cost. Measured settled costs:
-    //   free play:           ~0.0034 CELO
-    //   paid play (+approve): ~0.0080 CELO
-    // So the wallet thresholds for accepting the tx are roughly
-    // 0.007 (free) and 0.016 (paid). Anything below = wallet rejects
-    // before broadcasting. We pre-empt with the NeedFundsModal so
-    // the user sees a clear "needs CELO" instead of a cryptic wallet
-    // error like "insufficient funds for gas".
-    const MIN_CELO_FREE = parseEther("0.01"); // wallet pre-flight + safety
-    const MIN_CELO_PAID = parseEther("0.02"); // approve + paid play
+    // Gas check. The wallet pre-flight rejects when
+    // `balance < gas_limit × max_fee_per_gas`. We measured max_fee
+    // sitting at ~5x the effective gas price (480 vs 100 gwei) as
+    // the wallet's safety buffer, so a paid play needs ~0.04 CELO
+    // reserved even though the chain only charges ~0.008 once
+    // settled. Real-world: a user at 0.0384 CELO got a paid play
+    // rejected pre-flight by 0.0005 CELO. Thresholds match wallet
+    // demand, not actual chain cost:
+    const MIN_CELO_FREE = parseEther("0.02"); // free play pre-flight + buffer
+    const MIN_CELO_PAID = parseEther("0.05"); // paid play (with approve) pre-flight + buffer
     const minCelo = playerHasFreePlay ? MIN_CELO_FREE : MIN_CELO_PAID;
     const celoBal = await publicClient.getBalance({ address: currentAddress });
     if (celoBal < minCelo) {
