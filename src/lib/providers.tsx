@@ -72,7 +72,32 @@ function PrivyEmbeddedBridge() {
 
     (async () => {
       try {
-        const provider = await privyWallet.getEthereumProvider();
+        const rawProvider = await privyWallet.getEthereumProvider();
+        // viem 2.48 + wagmi 2.19 prefer EIP-5792 `wallet_sendTransaction`
+        // when sending tx through useWriteContract. Privy's embedded
+        // wallet provider only implements the legacy
+        // `eth_sendTransaction`, so without translation the request
+        // ends up bubbling to the chain RPC (Alchemy) which rejects
+        // with `Unsupported method: wallet_sendTransaction`. Wrap the
+        // provider via Proxy so the Privy SDK never sees the new
+        // method name. Same wallet, same signing flow, just legacy
+        // method name.
+        const provider = new Proxy(rawProvider, {
+          get(target, prop, receiver) {
+            if (prop === "request") {
+              return async (args: { method: string; params?: unknown }) => {
+                if (args?.method === "wallet_sendTransaction") {
+                  return target.request({
+                    method: "eth_sendTransaction",
+                    params: args.params as never,
+                  });
+                }
+                return target.request(args as never);
+              };
+            }
+            return Reflect.get(target, prop, receiver);
+          },
+        });
         const info = Object.freeze({
           uuid: `privy-${privyWallet.address}`,
           rdns: "io.privy.wallet",
