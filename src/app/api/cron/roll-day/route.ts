@@ -5,7 +5,11 @@ import { celo } from "viem/chains";
 import { supabase, todayUtc } from "@/lib/supabase";
 import { CELO_RPC_URL, POT_ADDRESS } from "@/lib/chain";
 import { FREAKING_POT_ABI, celoClient, readPotAmount } from "@/lib/onchain";
-import { checkBotPlayer, type BotFlag } from "@/lib/bot-detection";
+import {
+  checkBotPlayer,
+  loadBotBlacklist,
+  type BotFlag,
+} from "@/lib/bot-detection";
 import { sendTelegramMessage } from "@/lib/telegram";
 
 export const dynamic = "force-dynamic";
@@ -83,6 +87,7 @@ async function rollLang(lang: "en" | "es", gameId: number, today: string) {
   let winnerScore: number | null = null;
 
   const skipped: Array<{ player: string; score: number; flag: BotFlag }> = [];
+  const botBlacklist = await loadBotBlacklist(supabase);
 
   if (!lastPot.closed) {
     // Pull a ranked candidate list and walk down, skipping flagged bots.
@@ -122,7 +127,7 @@ async function rollLang(lang: "en" | "es", gameId: number, today: string) {
         if (seen.has(player)) continue;
         seen.add(player);
 
-        const flag = await checkBotPlayer(player, supabase);
+        const flag = await checkBotPlayer(player, supabase, botBlacklist);
         if (flag.flagged) {
           skipped.push({ player, score: c.score, flag });
           continue;
@@ -199,24 +204,28 @@ async function rollLang(lang: "en" | "es", gameId: number, today: string) {
     }
   }
 
-  // Alert ops if we had to skip flagged players. Useful to confirm the
-  // filter actually fired in the wild (or, if a real human ever shows up
-  // here, to catch a false positive before more days pile up).
+  // Alert ops if we had to skip flagged players. Heuristic hits are
+  // always brand-new at this point (if the wallet had been flagged in a
+  // prior run, the blacklist short-circuit would have fired first), so
+  // labelling them "NEW" gives the operator a clean signal that the
+  // auto-detection just expanded the blocklist this settlement.
   if (skipped.length > 0) {
     const lines = skipped.map((s) => {
+      const isNew =
+        s.flag.flagged && s.flag.reason === "heuristic" ? "🆕 " : "  ";
       const reason =
         s.flag.flagged && s.flag.reason === "heuristic"
           ? `heuristic (correct=${(s.flag.correctRate * 100).toFixed(1)}%, p50=${s.flag.p50ms}ms, n=${s.flag.sampleSize})`
           : "blacklist";
-      return `• ${s.player.slice(0, 6)}…${s.player.slice(-4)} score=${s.score} (${reason})`;
+      return `${isNew}\`${s.player.slice(0, 6)}…${s.player.slice(-4)}\` score=${s.score} — ${reason}`;
     });
     await sendTelegramMessage(
       [
-        `🚫 *${lang.toUpperCase()} ${prevDay}* — skipped ${skipped.length} flagged player(s) before settling`,
+        `🚫 *${lang.toUpperCase()} ${prevDay}* — skipped ${skipped.length} flagged player(s)`,
         ...lines,
         winner
-          ? `Winner picked: \`${winner.slice(0, 6)}…${winner.slice(-4)}\` (score ${winnerScore})`
-          : `No clean winner — pot rolls forward.`,
+          ? `✅ Winner: \`${winner.slice(0, 6)}…${winner.slice(-4)}\` (score ${winnerScore})`
+          : `⚠️ No clean winner — pot rolls forward.`,
       ].join("\n"),
     ).catch(() => {});
   }

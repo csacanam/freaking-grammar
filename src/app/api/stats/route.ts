@@ -36,12 +36,21 @@ export async function GET() {
     });
   }
 
-  const [{ data: runsData }, { data: winsData }, { data: potsData }] =
-    await Promise.all([
-      supabase.from("runs").select("lang,player,was_free"),
-      supabase.from("wins").select("lang,amount_units"),
-      supabase.from("pots").select("lang,amount_units,closed"),
-    ]);
+  const [
+    { data: runsData },
+    { data: winsData },
+    { data: potsData },
+    { count: botFilterCount },
+  ] = await Promise.all([
+    supabase.from("runs").select("lang,player,was_free"),
+    supabase.from("wins").select("lang,amount_units"),
+    supabase.from("pots").select("lang,amount_units,closed"),
+    // Game integrity: how many wallets the daily settlement filters
+    // out for being bots. Surfaced publicly as a transparency signal.
+    supabase
+      .from("bot_wallets")
+      .select("player", { count: "exact", head: true }),
+  ]);
 
   const runs = (runsData ?? []) as Array<{
     lang: Lang;
@@ -171,6 +180,7 @@ export async function GET() {
       contract: isAddressEqual(POT_ADDRESS, zeroAddress) ? null : POT_ADDRESS,
       entryFeeUSD: ENTRY_FEE_USD,
       protocolFeePct: 20,
+      botFilterCount: botFilterCount ?? 0,
       updatedAt: new Date().toISOString(),
     },
     { headers: CORS },

@@ -83,6 +83,7 @@ type Stats = {
     esTreasuryDays: number;
     operatorCELO: number;
     daysClosed: number;
+    botsFiltered: number;
   };
   sponsors: Array<{
     name: string;
@@ -123,6 +124,7 @@ async function loadStats(): Promise<Stats | null> {
     { data: potsData },
     { data: airdropsData },
     { data: sponsorPayoutsData },
+    { count: botFilterCount },
   ] = await Promise.all([
     supabase
       .from("runs")
@@ -132,6 +134,9 @@ async function loadStats(): Promise<Stats | null> {
     supabase.from("pots").select("lang,amount_units,closed,day_utc,rolled_tx"),
     supabase.from("welcome_airdrops").select("created_at,tx_hash"),
     supabase.from("sponsor_payouts").select("airdrop_tx_hash"),
+    supabase
+      .from("bot_wallets")
+      .select("player", { count: "exact", head: true }),
   ]);
 
   const runs = (runsData ?? []) as Array<{
@@ -396,6 +401,7 @@ async function loadStats(): Promise<Stats | null> {
       esTreasuryDays: esTreasury.days,
       operatorCELO,
       daysClosed,
+      botsFiltered: botFilterCount ?? 0,
     },
     sponsors,
     posthog,
@@ -823,6 +829,12 @@ export default async function StatsPage() {
               value={fmtUSD(stats.economy.esTreasuryUSDT)}
               accent="bg-purple/10"
               hint={`${stats.economy.esTreasuryDays.toFixed(0)}d runway`}
+            />
+            <Tile
+              label="Bots filtered"
+              value={stats.economy.botsFiltered.toLocaleString("en-US")}
+              accent="bg-red/10"
+              hint="excluded from prizes"
             />
           </section>
 

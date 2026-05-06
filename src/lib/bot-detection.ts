@@ -1,15 +1,16 @@
 // Two-layer bot filter used by `roll-day` when picking the daily winner.
-// Layer 1: a hardcoded blocklist of wallets we already confirmed are bots
-// (one operator running ≥6 sybil wallets, all sharing the same impossibly
-// uniform ~1.5–2.0s response timing and 100% correctness across hundreds
-// of answers). Layer 2: a stats heuristic that fires on any new wallet
-// matching the same signature.
+// Layer 1: a DB-backed blocklist (`bot_wallets` table). Seeded with the
+// six wallets we identified by hand (one operator, all sharing the same
+// impossibly uniform ~1.5–2.0s response timing and 100% correctness
+// across hundreds of answers). Layer 2: a stats heuristic that fires on
+// any new wallet matching the same signature — and *persists* the hit
+// back into `bot_wallets` so future settlements short-circuit on layer 1.
 //
 // Heuristic threshold: correctRate ≥ 99% AND p50 < 2400ms.
 // Calibrated against ~12 confirmed humans (correctRate 67–86%, p50
 // 2637–3833ms) and 6 confirmed bots (correctRate 99.7–100%, p50
-// 1510–2095ms). The gap between bot p50 max (2095ms) and human p50 min
-// (2637ms) is 542ms — wide enough that minimum-sample noise won't push
+// 1510–2095ms). Gap between bot p50 max (2095) and human p50 min
+// (2637) is 542ms — wide enough that minimum-sample noise won't push
 // a real human across.
 //
 // Min sample of 30 timed answers (q_index > 0, answered_at not null,
@@ -17,15 +18,7 @@
 // lucky session.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-
-const BLACKLIST = new Set<string>([
-  "0x247116c752420ec7fe870d1549a1c2e8d44675c6", // master, funded the rest
-  "0x1d7d4da72a32b0ab37b92c773c15412381c7203a", // 4-day winner
-  "0x351d9ac846d3a4e71c2103b91ed7aca67d85be5e",
-  "0xf6826a75a9a9fb41f14732e5ca03df402d2e52ea",
-  "0xdead181ffb8e104ec9347dbf2b8f5884e1ba5f3b", // vanity address
-  "0xa41836014a58f004ee0746c7c66305fdcc252cbd",
-]);
+import { sendTelegramMessage } from "@/lib/telegram";
 
 const MIN_SAMPLE = 30;
 const HEURISTIC_LOOKBACK_DAYS = 30;
@@ -43,13 +36,31 @@ export type BotFlag =
       sampleSize: number;
     };
 
+// Pull the full `bot_wallets` blacklist once per settlement so the
+// per-candidate check is a Set lookup. The table is small (one row per
+// flagged wallet, never expires unless removed) so this is cheap.
+export async function loadBotBlacklist(
+  supabase: SupabaseClient,
+): Promise<Set<string>> {
+  const { data } = await supabase.from("bot_wallets").select("player");
+  const rows = (data ?? []) as Array<{ player: string }>;
+  return new Set(rows.map((r) => r.player.toLowerCase()));
+}
+
 export async function checkBotPlayer(
   player: string,
   supabase: SupabaseClient,
+  blacklist?: Set<string>,
 ): Promise<BotFlag> {
   const addr = player.toLowerCase();
 
-  if (BLACKLIST.has(addr)) {
+  // Hot path: caller passed a preloaded blacklist (e.g., roll-day after
+  // loadBotBlacklist). Otherwise hit the DB for this single wallet —
+  // fine for ad-hoc admin spot-checks but avoid in tight loops.
+  const isBlacklisted = blacklist
+    ? blacklist.has(addr)
+    : await isWalletBlacklisted(addr, supabase);
+  if (isBlacklisted) {
     return { flagged: true, reason: "blacklist" };
   }
 
@@ -99,6 +110,43 @@ export async function checkBotPlayer(
     correctRate >= HEURISTIC_CORRECT_RATE_MIN &&
     p50 < HEURISTIC_P50_MAX_MS
   ) {
+    // Persist so future runs hit the blacklist short-circuit. Upsert on
+    // primary key keeps it idempotent if multiple langs flag the same
+    // wallet on the same settlement, and intentionally does NOT overwrite
+    // older flagged_at / reason — once flagged, stays flagged with the
+    // original context until manually removed.
+    // We got past the blacklist check, so this wallet is being flagged
+    // for the first time RIGHT NOW. Persist + alert ops via Telegram.
+    // Errors here are non-fatal — we still return the flag and keep
+    // the settlement going.
+    const { error } = await supabase.from("bot_wallets").upsert(
+      {
+        player: addr,
+        reason: "heuristic",
+        correct_rate: correctRate,
+        p50_ms: p50,
+        sample_size: timedMs.length,
+      },
+      { onConflict: "player", ignoreDuplicates: true },
+    );
+    if (error) {
+      console.error("bot-detection: upsert failed (non-fatal):", error);
+    }
+
+    await sendTelegramMessage(
+      [
+        `🤖 *New bot wallet auto-flagged*`,
+        `\`${addr}\``,
+        `correctRate: ${(correctRate * 100).toFixed(1)}%`,
+        `p50: ${p50}ms`,
+        `sample: ${timedMs.length} answers`,
+      ].join("\n"),
+    ).catch(() => {});
+
+    // Mutate the in-memory blacklist so the same settlement run doesn't
+    // re-check this wallet across pages.
+    blacklist?.add(addr);
+
     return {
       flagged: true,
       reason: "heuristic",
@@ -109,4 +157,16 @@ export async function checkBotPlayer(
   }
 
   return { flagged: false };
+}
+
+async function isWalletBlacklisted(
+  addr: string,
+  supabase: SupabaseClient,
+): Promise<boolean> {
+  const { data } = await supabase
+    .from("bot_wallets")
+    .select("player")
+    .eq("player", addr)
+    .maybeSingle();
+  return !!data;
 }

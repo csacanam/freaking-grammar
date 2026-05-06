@@ -159,3 +159,35 @@ create table if not exists gas_refills (
 );
 create index if not exists gas_refills_address_idx
   on gas_refills (address, refilled_at desc);
+
+-- ----------------------------------------------- bot_wallets
+-- Persistent blacklist used by roll-day when picking the daily winner.
+-- Two sources of entries:
+--   - reason='manual'    : seeded or added by ops (e.g., the original
+--                          sybil cluster we identified by hand)
+--   - reason='heuristic' : auto-inserted the first time checkBotPlayer
+--                          sees a wallet match (correctRate≥99% AND
+--                          p50<2400ms over ≥30 timed answers). Once a
+--                          wallet lands here, future settlements skip
+--                          straight on the blacklist short-circuit
+--                          without recomputing stats.
+-- Removing a row un-flags the wallet. False positives are recoverable.
+create table if not exists bot_wallets (
+  player        text primary key,                       -- lower-case 0x
+  flagged_at    timestamptz not null default now(),
+  reason        text not null check (reason in ('manual','heuristic')),
+  correct_rate  numeric,                                -- snapshot at flag time
+  p50_ms        integer,                                -- snapshot at flag time
+  sample_size   integer,                                -- snapshot at flag time
+  notes         text
+);
+
+-- Seed the six known sybils (one operator, identified manually). idempotent.
+insert into bot_wallets (player, reason, notes) values
+  ('0x247116c752420ec7fe870d1549a1c2e8d44675c6', 'manual', 'master, funded the rest'),
+  ('0x1d7d4da72a32b0ab37b92c773c15412381c7203a', 'manual', '4-day winner before detection'),
+  ('0x351d9ac846d3a4e71c2103b91ed7aca67d85be5e', 'manual', 'sibling sybil'),
+  ('0xf6826a75a9a9fb41f14732e5ca03df402d2e52ea', 'manual', 'sibling sybil'),
+  ('0xdead181ffb8e104ec9347dbf2b8f5884e1ba5f3b', 'manual', 'vanity address sibling'),
+  ('0xa41836014a58f004ee0746c7c66305fdcc252cbd', 'manual', 'sibling sybil')
+on conflict (player) do nothing;
