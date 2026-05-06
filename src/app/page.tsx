@@ -24,13 +24,13 @@ export default function PickerHome() {
         />
         <div className="flex flex-col items-center gap-2 text-center">
           <h1 className="font-display text-3xl tracking-wider">nerdos.fun</h1>
-          <p className="font-display text-sm tracking-[0.2em] uppercase text-muted">
+          <p className="font-display text-base tracking-[0.15em] uppercase text-muted">
             {t.nerdosTagline}
           </p>
         </div>
       </header>
 
-      <div className="font-display text-sm tracking-[0.25em] uppercase text-muted mb-3 px-1">
+      <div className="font-display text-base tracking-[0.2em] uppercase text-muted mb-3 px-1">
         {t.nerdosPickAGame}
       </div>
 
@@ -55,7 +55,7 @@ export default function PickerHome() {
 
       <Link
         href="/grammar/stats"
-        className="self-center mt-8 inline-flex items-center gap-2 text-sm font-display tracking-[0.25em] uppercase text-muted hover:text-ink"
+        className="self-center mt-8 inline-flex items-center gap-2 text-base font-display tracking-[0.2em] uppercase text-muted hover:text-ink"
       >
         <span aria-hidden>📊</span>
         {t.statsLinkLabel}
