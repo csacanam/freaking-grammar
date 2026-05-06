@@ -5,6 +5,8 @@ import { celo } from "viem/chains";
 import { supabase, todayUtc } from "@/lib/supabase";
 import { CELO_RPC_URL, POT_ADDRESS } from "@/lib/chain";
 import { FREAKING_POT_ABI, celoClient, readPotAmount } from "@/lib/onchain";
+import { checkBotPlayer, type BotFlag } from "@/lib/bot-detection";
+import { sendTelegramMessage } from "@/lib/telegram";
 
 export const dynamic = "force-dynamic";
 
@@ -80,21 +82,44 @@ async function rollLang(lang: "en" | "es", gameId: number, today: string) {
   let winner: string | null = null;
   let winnerScore: number | null = null;
 
+  const skipped: Array<{ player: string; score: number; flag: BotFlag }> = [];
+
   if (!lastPot.closed) {
-    const { data: topRun } = await supabase
+    // Pull a ranked candidate list and walk down, skipping flagged bots.
+    // The two-layer filter (hardcoded sybil blocklist + correctRate/p50
+    // heuristic) lives in src/lib/bot-detection.ts. If every contender is
+    // flagged, `winner` stays null and the on-chain rollDay still fires
+    // with zeroAddress so the pot rolls forward to the next day.
+    const { data: topRuns } = await supabase
       .from("runs")
       .select("player,score,ended_at")
       .eq("lang", lang)
       .eq("day_utc", prevDay)
       .eq("status", "finished")
+      .gt("score", 0)
       .order("score", { ascending: false })
       .order("ended_at", { ascending: true })
-      .limit(1)
-      .maybeSingle();
+      .limit(20);
 
-    const top = (topRun as { player: string; score: number } | null) ?? null;
-    winner = top?.player ?? null;
-    winnerScore = top?.score ?? null;
+    const candidates =
+      (topRuns as Array<{ player: string; score: number }> | null) ?? [];
+
+    const seen = new Set<string>();
+    for (const c of candidates) {
+      const player = c.player.toLowerCase();
+      if (seen.has(player)) continue; // dedupe multiple runs by same player
+      seen.add(player);
+
+      const flag = await checkBotPlayer(player, supabase);
+      if (flag.flagged) {
+        skipped.push({ player, score: c.score, flag });
+        continue;
+      }
+
+      winner = player;
+      winnerScore = c.score;
+      break;
+    }
 
     await supabase
       .from("pots")
@@ -157,8 +182,35 @@ async function rollLang(lang: "en" | "es", gameId: number, today: string) {
     }
   }
 
+  // Alert ops if we had to skip flagged players. Useful to confirm the
+  // filter actually fired in the wild (or, if a real human ever shows up
+  // here, to catch a false positive before more days pile up).
+  if (skipped.length > 0) {
+    const lines = skipped.map((s) => {
+      const reason =
+        s.flag.flagged && s.flag.reason === "heuristic"
+          ? `heuristic (correct=${(s.flag.correctRate * 100).toFixed(1)}%, p50=${s.flag.p50ms}ms, n=${s.flag.sampleSize})`
+          : "blacklist";
+      return `• ${s.player.slice(0, 6)}…${s.player.slice(-4)} score=${s.score} (${reason})`;
+    });
+    await sendTelegramMessage(
+      [
+        `🚫 *${lang.toUpperCase()} ${prevDay}* — skipped ${skipped.length} flagged player(s) before settling`,
+        ...lines,
+        winner
+          ? `Winner picked: \`${winner.slice(0, 6)}…${winner.slice(-4)}\` (score ${winnerScore})`
+          : `No clean winner — pot rolls forward.`,
+      ].join("\n"),
+    ).catch(() => {});
+  }
+
   return {
     closed: { day: prevDay, winner, winnerScore, rolledTx },
+    skipped: skipped.map((s) => ({
+      player: s.player,
+      score: s.score,
+      reason: s.flag.flagged ? s.flag.reason : null,
+    })),
     opened: today,
     day_number: lastPot.day_number + 1,
   };
