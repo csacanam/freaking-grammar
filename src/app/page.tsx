@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { PotCard } from "@/components/PotCard";
 import { Countdown } from "@/components/Countdown";
@@ -113,6 +114,15 @@ export default function LobbyPage() {
         {GAMES.map((g) => (
           <PotCard key={g} game={g} lobby={lobbies[g]} />
         ))}
+        {/* Secondary surface for the live numbers — kept low-contrast and
+            below the fold so it doesn't compete with the play CTA. */}
+        <Link
+          href="/stats"
+          className="self-center mt-2 inline-flex items-center gap-1 text-xs font-display tracking-[0.25em] uppercase text-muted hover:text-ink"
+        >
+          {t.statsLinkLabel}
+          <span aria-hidden>→</span>
+        </Link>
       </div>
     </div>
   );
