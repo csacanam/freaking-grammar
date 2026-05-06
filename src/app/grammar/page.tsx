@@ -85,13 +85,27 @@ export default function LobbyPage() {
       <div className="sticky top-0 z-20 bg-bg/90 backdrop-blur-md px-5 pt-5 pb-3 flex flex-col gap-3 border-b border-black/5">
         {/* Tiny "← nerdos.fun" link above the brand: lets the player jump
             back to the platform picker without going through the browser
-            back button. Replaces the old SakaLabsCredit on this page —
-            picker-bound surfaces feel more useful here than attribution. */}
+            back button. Mixed-case (no `uppercase`) so the brand reads
+            as the actual domain. Arrow is an inline SVG instead of the
+            "←" glyph because that character's optical baseline floats
+            higher than alphabetic letters at this size, making the row
+            visibly off-axis. */}
         <Link
           href="/"
-          className="self-start inline-flex items-center gap-1 text-[10px] font-display tracking-[0.25em] uppercase text-muted hover:text-ink"
+          className="self-start inline-flex items-center gap-1.5 text-xs font-display text-muted hover:text-ink"
         >
-          <span aria-hidden>←</span>
+          <svg
+            viewBox="0 0 16 16"
+            className="w-3 h-3"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+          >
+            <path d="M10 4l-4 4 4 4" />
+          </svg>
           {t.backToPicker}
         </Link>
         <header className="flex items-center justify-between gap-2">

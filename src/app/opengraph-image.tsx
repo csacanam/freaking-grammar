@@ -144,9 +144,8 @@ export default function OpenGraphImage() {
           <div
             style={{
               display: "flex",
-              fontSize: 32,
-              letterSpacing: "0.18em",
-              textTransform: "uppercase",
+              fontSize: 36,
+              letterSpacing: "0.04em",
               fontWeight: 800,
               color: "white",
             }}

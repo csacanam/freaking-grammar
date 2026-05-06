@@ -24,7 +24,7 @@ export default function PickerHome() {
         />
         <div className="flex flex-col items-center gap-2 text-center">
           <h1 className="font-display text-3xl tracking-wider">nerdos.fun</h1>
-          <p className="font-display text-base tracking-[0.15em] uppercase text-muted">
+          <p className="font-display text-base text-muted">
             {t.nerdosTagline}
           </p>
         </div>
