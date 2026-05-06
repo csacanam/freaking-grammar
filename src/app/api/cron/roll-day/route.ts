@@ -90,6 +90,13 @@ async function rollLang(lang: "en" | "es", gameId: number, today: string) {
     // heuristic) lives in src/lib/bot-detection.ts. If every contender is
     // flagged, `winner` stays null and the on-chain rollDay still fires
     // with zeroAddress so the pot rolls forward to the next day.
+    // The bot operator we already caught was running ≥6 sybil wallets and
+    // could trivially scale to dozens (each Privy/external wallet gets a
+    // free play/day, ~$0.001 of gas). limit=100 leaves headroom for an
+    // operator with up to ~100 sybils before any real human gets locked
+    // out by sheer leaderboard volume; and even then, a fresh human run
+    // typically lands in the top 100 by score because bots cap at the
+    // bank's max score.
     const { data: topRuns } = await supabase
       .from("runs")
       .select("player,score,ended_at")
@@ -99,7 +106,7 @@ async function rollLang(lang: "en" | "es", gameId: number, today: string) {
       .gt("score", 0)
       .order("score", { ascending: false })
       .order("ended_at", { ascending: true })
-      .limit(20);
+      .limit(100);
 
     const candidates =
       (topRuns as Array<{ player: string; score: number }> | null) ?? [];
