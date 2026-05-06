@@ -37,7 +37,7 @@ export default function PickerHome() {
       <div className="flex flex-col gap-3">
         <GameCard
           href="/grammar"
-          emoji="🧠"
+          emoji="🔤"
           title={t.grammarCardTitle}
           blurb={t.grammarCardBlurb}
           status="live"
@@ -54,7 +54,7 @@ export default function PickerHome() {
       </div>
 
       <Link
-        href="/stats"
+        href="/grammar/stats"
         className="self-center mt-8 inline-flex items-center gap-1.5 text-xs font-display tracking-[0.25em] uppercase text-muted hover:text-ink"
       >
         <span aria-hidden>📊</span>

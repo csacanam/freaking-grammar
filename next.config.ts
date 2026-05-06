@@ -16,6 +16,7 @@ const nextConfig: NextConfig = {
         permanent: true,
       },
       { source: "/history", destination: "/grammar/history", permanent: true },
+      { source: "/stats", destination: "/grammar/stats", permanent: true },
     ];
   },
 };

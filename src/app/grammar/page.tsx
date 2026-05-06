@@ -83,6 +83,17 @@ export default function LobbyPage() {
           always knows what app they're in and how long until rollover, while
           the pot cards themselves scroll underneath. */}
       <div className="sticky top-0 z-20 bg-bg/90 backdrop-blur-md px-5 pt-5 pb-3 flex flex-col gap-3 border-b border-black/5">
+        {/* Tiny "← nerdos.fun" link above the brand: lets the player jump
+            back to the platform picker without going through the browser
+            back button. Replaces the old SakaLabsCredit on this page —
+            picker-bound surfaces feel more useful here than attribution. */}
+        <Link
+          href="/"
+          className="self-start inline-flex items-center gap-1 text-[10px] font-display tracking-[0.25em] uppercase text-muted hover:text-ink"
+        >
+          <span aria-hidden>←</span>
+          {t.backToPicker}
+        </Link>
         <header className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Image src="/mascot.png" alt="" width={36} height={36} />
@@ -111,16 +122,6 @@ export default function LobbyPage() {
       <div className="px-5 pt-4 pb-10 flex flex-col gap-4">
         <ResumePaidBanner runs={openRuns} />
         <UnclaimedBanner totalUSD={totalUnclaimed} />
-        {/* Compact pill-style stats entry. Sits above the pot cards so
-            anyone landing on home sees it at a glance, but kept small +
-            muted so the play CTA further down still wins the eye. */}
-        <Link
-          href="/stats"
-          className="self-end inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/5 text-[11px] font-display tracking-[0.2em] uppercase text-muted hover:bg-black/10 hover:text-ink transition-colors"
-        >
-          <span aria-hidden>📊</span>
-          {t.statsLinkLabel}
-        </Link>
         {GAMES.map((g) => (
           <PotCard key={g} game={g} lobby={lobbies[g]} />
         ))}

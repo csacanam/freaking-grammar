@@ -4,6 +4,7 @@
 // visitor-funnel data is worth the dependency. Public on purpose:
 // the whole point is showing the room what the game looks like.
 
+import { headers } from "next/headers";
 import { erc20Abi, isAddressEqual, zeroAddress, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { supabase, TOKEN_DECIMALS, todayUtc } from "@/lib/supabase";
@@ -20,6 +21,7 @@ import {
   countryFlag,
   type PostHogStats,
 } from "@/lib/posthog-server";
+import { dict, type Strings } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
 
@@ -594,104 +596,132 @@ async function getOperatorAddressOrNull(): Promise<`0x${string}` | null> {
 }
 
 // =============================================================== PAGE
+// Locale picked from the request's Accept-Language header so a Spanish
+// browser sees Spanish labels even though this is a server component
+// (no useLang() available). Mirrors detectUiLang() on the client.
+async function pickLang(): Promise<Lang> {
+  const accept = (await headers()).get("accept-language") ?? "";
+  return accept.toLowerCase().startsWith("es") ? "es" : "en";
+}
+
+const distLabel = (
+  bucket: "1" | "2" | "3-5" | "6-10" | "11+",
+  t: Strings,
+): string => {
+  switch (bucket) {
+    case "1":
+      return t.statsDistOne;
+    case "2":
+      return t.statsDistTwo;
+    case "3-5":
+      return t.statsDistThreeToFive;
+    case "6-10":
+      return t.statsDistSixToTen;
+    case "11+":
+      return t.statsDistElevenPlus;
+  }
+};
+
 export default async function StatsPage() {
+  const lang = await pickLang();
+  const t = dict[lang];
   const stats = await loadStats();
 
   return (
     <div className="flex-1 flex flex-col px-5 pt-6 pb-10 max-w-3xl mx-auto w-full gap-5">
       <header className="flex flex-col gap-2">
         <BackLink />
-        <h1 className="font-display text-4xl tracking-wider">Stats</h1>
+        <h1 className="font-display text-4xl tracking-wider">{t.statsHeading}</h1>
         <p className="text-xs font-mono text-muted">
-          Live · refresh to update
+          {t.statsLiveRefresh}
         </p>
       </header>
 
       {!stats ? (
         <div className="rounded-2xl bg-white border border-dashed border-black/10 p-8 text-center text-muted text-sm">
-          Supabase not configured.
+          {t.statsDbNotConfigured}
         </div>
       ) : (
         <>
-          <SectionTitle>Today</SectionTitle>
+          <SectionTitle>{t.statsSectionToday}</SectionTitle>
           <section className="grid grid-cols-2 md:grid-cols-3 gap-3">
             <Tile
-              label="DAU"
+              label={t.statsDau}
               value={stats.today.dau.toString()}
               accent="bg-teal/20"
             />
             <Tile
-              label="Plays today"
+              label={t.statsPlaysToday}
               value={stats.today.plays.toString()}
               accent="bg-blue/10"
-              hint={`${stats.today.paid} paid · ${stats.today.free} free`}
+              hint={`${stats.today.paid} ${t.statsPaid} · ${stats.today.free} ${t.statsFree}`}
             />
             <Tile
-              label="New email signups"
+              label={t.statsNewSignups}
               value={stats.today.newSignups.toString()}
               accent="bg-pink/20"
             />
             <Tile
-              label="EN pot"
+              label={t.statsEnPot}
               value={fmtUSD(stats.today.enPotUSDT)}
               accent="bg-yellow/40"
               hint={
                 stats.today.enTopScore !== null
-                  ? `top score ${stats.today.enTopScore}`
-                  : "no plays yet"
+                  ? `${t.statsTopScore} ${stats.today.enTopScore}`
+                  : t.statsNoPlaysYet
               }
             />
             <Tile
-              label="ES pot"
+              label={t.statsEsPot}
               value={fmtUSD(stats.today.esPotUSDT)}
               accent="bg-purple/20"
               hint={
                 stats.today.esTopScore !== null
-                  ? `top score ${stats.today.esTopScore}`
-                  : "no plays yet"
+                  ? `${t.statsTopScore} ${stats.today.esTopScore}`
+                  : t.statsNoPlaysYet
               }
             />
             <Tile
-              label="Operator gas"
+              label={t.statsOperatorGas}
               value={`${stats.economy.operatorCELO.toFixed(3)} CELO`}
               accent="bg-orange/30"
-              hint={`~${Math.floor(stats.economy.operatorCELO / 0.1)} airdrops left`}
+              hint={`~${Math.floor(stats.economy.operatorCELO / 0.1)} ${t.statsAirdropsLeft}`}
             />
           </section>
 
-          <SectionTitle>Players</SectionTitle>
+          <SectionTitle>{t.statsSectionPlayers}</SectionTitle>
           <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <Tile
-              label="Total"
+              label={t.statsPlayersTotal}
               value={stats.players.total.toString()}
               accent="bg-teal/20"
             />
             <Tile
-              label="WAU"
+              label={t.statsWau}
               value={stats.players.wau.toString()}
               accent="bg-blue/10"
-              hint="last 7 days"
+              hint={t.statsLast7Days}
             />
             <Tile
-              label="MAU"
+              label={t.statsMau}
               value={stats.players.mau.toString()}
               accent="bg-purple/20"
-              hint="last 30 days"
+              hint={t.statsLast30Days}
             />
             <Tile
-              label="Paid conversion"
+              label={t.statsPaidConversion}
               value={`${stats.players.paidConversionPct.toFixed(0)}%`}
               accent="bg-yellow/40"
-              hint="ever paid"
+              hint={t.statsEverPaid}
             />
           </section>
 
-          <Card title="Plays per player">
+          <Card title={t.statsCardPlaysPerPlayer}>
             <div className="space-y-1">
               {stats.players.distribution.map((d) => (
                 <DistributionRow
                   key={d.label}
-                  label={d.label}
+                  label={distLabel(d.label as "1" | "2" | "3-5" | "6-10" | "11+", t)}
                   count={d.count}
                   total={stats.players.total}
                 />
@@ -699,18 +729,18 @@ export default async function StatsPage() {
             </div>
           </Card>
 
-          <Card title="Retention">
+          <Card title={t.statsCardRetention}>
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-muted font-display text-xs tracking-widest uppercase">
-                  <th className="py-2">Cohort</th>
-                  <th className="py-2 text-right">Returned</th>
-                  <th className="py-2 text-right">Rate</th>
+                  <th className="py-2">{t.statsRetentionCohort}</th>
+                  <th className="py-2 text-right">{t.statsRetentionReturned}</th>
+                  <th className="py-2 text-right">{t.statsRetentionRate}</th>
                 </tr>
               </thead>
               <tbody>
                 <tr className="border-t border-black/5">
-                  <td className="py-2">Day 1 → Day 2</td>
+                  <td className="py-2">{t.statsRetentionDay1to2}</td>
                   <td className="py-2 text-right tabular-nums">
                     {stats.players.retentionDay2.returned} /{" "}
                     {stats.players.retentionDay2.cohort}
@@ -720,7 +750,7 @@ export default async function StatsPage() {
                   </td>
                 </tr>
                 <tr className="border-t border-black/5">
-                  <td className="py-2">Day 1 → Day 7</td>
+                  <td className="py-2">{t.statsRetentionDay1to7}</td>
                   <td className="py-2 text-right tabular-nums">
                     {stats.players.retentionDay7.returned} /{" "}
                     {stats.players.retentionDay7.cohort}
@@ -733,44 +763,44 @@ export default async function StatsPage() {
             </table>
           </Card>
 
-          <SectionTitle>Plays</SectionTitle>
+          <SectionTitle>{t.statsSectionPlays}</SectionTitle>
           <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <Tile
-              label="Total plays"
+              label={t.statsPlaysTotal}
               value={stats.plays.total.toString()}
               accent="bg-blue/10"
             />
             <Tile
-              label="Paid"
+              label={t.statsPlaysPaid}
               value={stats.plays.paid.toString()}
               accent="bg-teal/20"
             />
             <Tile
-              label="Free"
+              label={t.statsPlaysFree}
               value={stats.plays.free.toString()}
               accent="bg-pink/20"
             />
             <Tile
-              label="Avg score"
+              label={t.statsAvgScore}
               value={stats.plays.avgScore.toFixed(1)}
               accent="bg-yellow/40"
             />
           </section>
 
-          <Card title="Plays — last 30 days">
+          <Card title={t.statsCardPlaysLast30}>
             <PlaysChart data={stats.plays.perDay} />
           </Card>
 
-          <Card title="By language">
+          <Card title={t.statsCardByLanguage}>
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-muted font-display text-xs tracking-widest uppercase">
-                  <th className="py-2">Lang</th>
-                  <th className="py-2 text-right">Plays</th>
-                  <th className="py-2 text-right">Paid</th>
-                  <th className="py-2 text-right">Players</th>
-                  <th className="py-2 text-right">Revenue</th>
-                  <th className="py-2 text-right">Paid out</th>
+                  <th className="py-2">{t.statsLangColLang}</th>
+                  <th className="py-2 text-right">{t.statsLangColPlays}</th>
+                  <th className="py-2 text-right">{t.statsLangColPaid}</th>
+                  <th className="py-2 text-right">{t.statsLangColPlayers}</th>
+                  <th className="py-2 text-right">{t.statsLangColRevenue}</th>
+                  <th className="py-2 text-right">{t.statsLangColPaidOut}</th>
                 </tr>
               </thead>
               <tbody>
@@ -798,106 +828,106 @@ export default async function StatsPage() {
             </table>
           </Card>
 
-          <SectionTitle>Economy</SectionTitle>
+          <SectionTitle>{t.statsSectionEconomy}</SectionTitle>
           <section className="grid grid-cols-2 md:grid-cols-3 gap-3">
             <Tile
-              label="Revenue"
+              label={t.statsRevenue}
               value={fmtUSD(stats.economy.revenueUSD)}
               accent="bg-teal/20"
-              hint="protocol fees"
+              hint={t.statsRevenueHint}
             />
             <Tile
-              label="Paid out"
+              label={t.statsPaidOut}
               value={fmtUSD(stats.economy.distributedUSD)}
               accent="bg-yellow/40"
-              hint="to winners"
+              hint={t.statsToWinners}
             />
             <Tile
-              label="Biggest pot"
+              label={t.statsBiggestPot}
               value={fmtUSD(stats.economy.biggestPotUSD)}
               accent="bg-orange/30"
-              hint={`${stats.economy.daysClosed} days closed`}
+              hint={`${stats.economy.daysClosed} ${t.statsDaysClosed}`}
             />
             <Tile
-              label="EN treasury"
+              label={t.statsEnTreasury}
               value={fmtUSD(stats.economy.enTreasuryUSDT)}
               accent="bg-yellow/20"
-              hint={`${stats.economy.enTreasuryDays.toFixed(0)}d runway`}
+              hint={`${stats.economy.enTreasuryDays.toFixed(0)}${t.statsRunwayDays}`}
             />
             <Tile
-              label="ES treasury"
+              label={t.statsEsTreasury}
               value={fmtUSD(stats.economy.esTreasuryUSDT)}
               accent="bg-purple/10"
-              hint={`${stats.economy.esTreasuryDays.toFixed(0)}d runway`}
+              hint={`${stats.economy.esTreasuryDays.toFixed(0)}${t.statsRunwayDays}`}
             />
             <Tile
-              label="Bots filtered"
+              label={t.statsBotsFiltered}
               value={stats.economy.botsFiltered.toLocaleString("en-US")}
               accent="bg-red/10"
-              hint="excluded from prizes"
+              hint={t.statsBotsHint}
             />
           </section>
 
-          <SectionTitle>On-chain</SectionTitle>
+          <SectionTitle>{t.statsSectionOnchain}</SectionTitle>
           <section className="grid grid-cols-2 md:grid-cols-3 gap-3">
             <Tile
-              label="Total transactions"
+              label={t.statsTotalTx}
               value={stats.onchain.totalTxs.toLocaleString("en-US")}
               accent="bg-teal/20"
-              hint={`${stats.onchain.activeAddresses} active addresses`}
+              hint={`${stats.onchain.activeAddresses} ${t.statsActiveAddresses}`}
             />
             <Tile
-              label="Plays on-chain"
+              label={t.statsPlaysOnchain}
               value={stats.onchain.plays.toLocaleString("en-US")}
               accent="bg-blue/10"
-              hint="every play hits the contract"
+              hint={t.statsPlaysHitContract}
             />
             <Tile
-              label="Days on-chain"
+              label={t.statsDaysOnchain}
               value={stats.onchain.daysOnChain.toString()}
               accent="bg-orange/30"
-              hint="since first play"
+              hint={t.statsSinceFirstPlay}
             />
             <Tile
-              label="USDT volume in"
+              label={t.statsUsdtIn}
               value={fmtUSD(stats.onchain.usdtIn)}
               accent="bg-yellow/40"
-              hint="from paid entries"
+              hint={t.statsFromPaidEntries}
             />
             <Tile
-              label="USDT volume out"
+              label={t.statsUsdtOut}
               value={fmtUSD(stats.onchain.usdtOut)}
               accent="bg-pink/20"
-              hint="to winners"
+              hint={t.statsToWinners}
             />
             <Tile
-              label="Operator txs"
+              label={t.statsOperatorTxs}
               value={(
                 stats.onchain.rollDays +
                 stats.onchain.welcomeAirdrops +
                 stats.onchain.sponsorAirdrops
               ).toLocaleString("en-US")}
               accent="bg-purple/20"
-              hint={`${stats.onchain.welcomeAirdrops} airdrops · ${stats.onchain.rollDays} rolls`}
+              hint={`${stats.onchain.welcomeAirdrops} ${t.statsAirdrops} · ${stats.onchain.rollDays} ${t.statsRolls}`}
             />
           </section>
 
-          <Card title="Transactions by type">
+          <Card title={t.statsCardTxByType}>
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-muted font-display text-xs tracking-widest uppercase">
-                  <th className="py-2">Type</th>
-                  <th className="py-2 text-right">Count</th>
-                  <th className="py-2 text-right">Share</th>
+                  <th className="py-2">{t.statsTxColType}</th>
+                  <th className="py-2 text-right">{t.statsTxColCount}</th>
+                  <th className="py-2 text-right">{t.statsTxColShare}</th>
                 </tr>
               </thead>
               <tbody>
                 {[
-                  ["Plays", stats.onchain.plays],
-                  ["Roll-days", stats.onchain.rollDays],
-                  ["Welcome airdrops", stats.onchain.welcomeAirdrops],
-                  ["Sponsor airdrops", stats.onchain.sponsorAirdrops],
-                  ["Claims", stats.onchain.claims],
+                  [t.statsTxRowPlays, stats.onchain.plays],
+                  [t.statsTxRowRolls, stats.onchain.rollDays],
+                  [t.statsTxRowWelcomeAirdrops, stats.onchain.welcomeAirdrops],
+                  [t.statsTxRowSponsorAirdrops, stats.onchain.sponsorAirdrops],
+                  [t.statsTxRowClaims, stats.onchain.claims],
                 ].map(([label, count]) => {
                   const c = count as number;
                   const pct =
@@ -920,20 +950,20 @@ export default async function StatsPage() {
             </table>
           </Card>
 
-          <Card title="Contracts">
+          <Card title={t.statsCardContracts}>
             <ul className="text-sm space-y-2">
               <ContractRow
-                label="Pot"
+                label={t.statsContractPot}
                 address={stats.onchain.potAddress}
               />
               {stats.onchain.operatorAddress && (
                 <ContractRow
-                  label="Operator"
+                  label={t.statsContractOperator}
                   address={stats.onchain.operatorAddress}
                 />
               )}
               <ContractRow
-                label="USDT (Celo)"
+                label={t.statsContractUsdt}
                 address="0x48065fbbe25f71c9282ddf5e1cd6d6a887483d5e"
               />
             </ul>
@@ -941,25 +971,25 @@ export default async function StatsPage() {
 
           {stats.sponsors.length > 0 && (
             <>
-              <SectionTitle>Sponsors</SectionTitle>
+              <SectionTitle>{t.statsSectionSponsors}</SectionTitle>
               {stats.sponsors.map((s, i) => (
                 <Card key={i} title={s.name}>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                     <KV
-                      label="Balance"
+                      label={t.statsSponsorBalance}
                       value={`${formatAmount(s.balance)} ${s.tokenSymbol}`}
                     />
                     <KV
-                      label="Daily / game"
+                      label={t.statsSponsorDailyPerGame}
                       value={`${formatAmount(s.dailyPerGame)} ${s.tokenSymbol}`}
                     />
                     <KV
-                      label="Paid out"
+                      label={t.statsSponsorPaidOut}
                       value={`${formatAmount(s.paidOut)} ${s.tokenSymbol}`}
                     />
                     <KV
-                      label="Runway"
-                      value={`${s.daysLeft}d left`}
+                      label={t.statsSponsorRunway}
+                      value={`${s.daysLeft}d ${t.statsSponsorDaysLeft}`}
                     />
                   </div>
                 </Card>
@@ -969,37 +999,37 @@ export default async function StatsPage() {
 
           {stats.posthog && stats.posthog.visitors30d > 0 && (
             <>
-              <SectionTitle>Web analytics</SectionTitle>
+              <SectionTitle>{t.statsSectionWebAnalytics}</SectionTitle>
               <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <Tile
-                  label="Visitors 7d"
+                  label={t.statsVisitors7d}
                   value={stats.posthog.visitors7d.toLocaleString("en-US")}
                   accent="bg-teal/20"
                 />
                 <Tile
-                  label="Visitors 30d"
+                  label={t.statsVisitors30d}
                   value={stats.posthog.visitors30d.toLocaleString("en-US")}
                   accent="bg-blue/10"
                 />
                 <Tile
-                  label="Sessions"
+                  label={t.statsSessions}
                   value={stats.posthog.sessions30d.toLocaleString("en-US")}
                   accent="bg-purple/20"
-                  hint="last 30 days"
+                  hint={t.statsLast30Days}
                 />
                 <Tile
-                  label="Connect rate"
+                  label={t.statsConnectRate}
                   value={pctString(
                     stats.posthog.funnel.identified,
                     stats.posthog.funnel.visitors,
                   )}
                   accent="bg-yellow/40"
-                  hint="of visitors"
+                  hint={t.statsOfVisitors}
                 />
               </section>
 
               {stats.posthog.countries.length > 0 && (
-                <Card title="Top countries (last 30 days)">
+                <Card title={t.statsCardTopCountries}>
                   <div className="space-y-1">
                     {stats.posthog.countries.map((c) => (
                       <DistributionRow
@@ -1013,25 +1043,25 @@ export default async function StatsPage() {
                 </Card>
               )}
 
-              <Card title="Funnel (last 30 days)">
+              <Card title={t.statsCardFunnel}>
                 <div className="space-y-1">
                   <DistributionRow
-                    label="Visitors"
+                    label={t.statsFunnelVisitors}
                     count={stats.posthog.funnel.visitors}
                     total={stats.posthog.funnel.visitors}
                   />
                   <DistributionRow
-                    label="Wallet connected"
+                    label={t.statsFunnelConnected}
                     count={stats.posthog.funnel.identified}
                     total={stats.posthog.funnel.visitors}
                   />
                   <DistributionRow
-                    label="Started a play"
+                    label={t.statsFunnelStarted}
                     count={stats.posthog.funnel.played}
                     total={stats.posthog.funnel.visitors}
                   />
                   <DistributionRow
-                    label="Finished a play"
+                    label={t.statsFunnelFinished}
                     count={stats.posthog.funnel.finished}
                     total={stats.posthog.funnel.visitors}
                   />
@@ -1039,7 +1069,7 @@ export default async function StatsPage() {
               </Card>
 
               {stats.posthog.devices.length > 0 && (
-                <Card title="Devices">
+                <Card title={t.statsCardDevices}>
                   <div className="space-y-1">
                     {stats.posthog.devices.map((d) => (
                       <DistributionRow
@@ -1054,7 +1084,7 @@ export default async function StatsPage() {
               )}
 
               {stats.posthog.sources.length > 0 && (
-                <Card title="Top traffic sources">
+                <Card title={t.statsCardTrafficSources}>
                   <div className="space-y-1">
                     {stats.posthog.sources.map((s) => (
                       <DistributionRow
@@ -1072,8 +1102,8 @@ export default async function StatsPage() {
 
           <section className="text-xs text-muted font-mono">
             <p>
-              Entry fee: {fmtUSD(ENTRY_FEE_USD)} · Protocol cut: 20% (
-              {fmtUSD(PROTOCOL_CUT_USD)}/play)
+              {t.statsEntryFee} {fmtUSD(ENTRY_FEE_USD)} · {t.statsProtocolCut} (
+              {fmtUSD(PROTOCOL_CUT_USD)}{t.statsPerPlay})
             </p>
           </section>
         </>
