@@ -90,24 +90,29 @@ async function rollLang(lang: "en" | "es", gameId: number, today: string) {
   const botBlacklist = await loadBotBlacklist(supabase);
 
   if (!lastPot.closed) {
-    // Pull a ranked candidate list and walk down, skipping flagged bots.
-    // The two-layer filter (hardcoded sybil blocklist + correctRate/p50
-    // heuristic) lives in src/lib/bot-detection.ts. If every contender is
-    // flagged, `winner` stays null and the on-chain rollDay still fires
-    // with zeroAddress so the pot rolls forward to the next day.
-    // Paginate through the full leaderboard (no upper bound) until we hit
-    // a non-bot. The operator can spawn hundreds of sybils trivially —
-    // free play/day at ~$0.001 of gas — so a fixed cap would let them
-    // lock out a real human at rank N+1. The dedup keeps a single bot
-    // wallet from being re-checked across its multiple runs in the day,
-    // and the bot filter short-circuits on blacklist before doing any
-    // DB work, so cost is roughly O(unique-bots-above-first-human).
+    // Push the blacklist filter down into Postgres instead of pulling
+    // bot rows just to drop them client-side. With the blacklist
+    // short-circuited at the DB, the only candidates we ever see are
+    // either truly clean or new wallets the heuristic still has to
+    // evaluate. Two-layer filter (DB blocklist + correctRate/p50
+    // heuristic) lives in src/lib/bot-detection.ts.
+    //
+    // Pagination is still here because heuristic-flagged wallets are
+    // possible inside the result set (they're new, not yet in
+    // bot_wallets) and dedup is still needed because each player can
+    // own multiple runs on the same day.
+    const blacklistArr = [...botBlacklist];
+    const blacklistFilter =
+      blacklistArr.length > 0
+        ? `(${blacklistArr.map((p) => `"${p}"`).join(",")})`
+        : null;
+
     const PAGE = 1000;
     const seen = new Set<string>();
     let offset = 0;
     let pickedWinner = false;
     walk: while (!pickedWinner) {
-      const { data: page } = await supabase
+      let query = supabase
         .from("runs")
         .select("player,score,ended_at")
         .eq("lang", lang)
@@ -117,6 +122,10 @@ async function rollLang(lang: "en" | "es", gameId: number, today: string) {
         .order("score", { ascending: false })
         .order("ended_at", { ascending: true })
         .range(offset, offset + PAGE - 1);
+      if (blacklistFilter) {
+        query = query.not("player", "in", blacklistFilter);
+      }
+      const { data: page } = await query;
 
       const candidates =
         (page as Array<{ player: string; score: number }> | null) ?? [];
@@ -127,6 +136,9 @@ async function rollLang(lang: "en" | "es", gameId: number, today: string) {
         if (seen.has(player)) continue;
         seen.add(player);
 
+        // Pass the in-memory blacklist so the heuristic short-circuit
+        // also catches wallets just-flagged earlier in this same loop
+        // (cross-page dedup against fresh adds).
         const flag = await checkBotPlayer(player, supabase, botBlacklist);
         if (flag.flagged) {
           skipped.push({ player, score: c.score, flag });
@@ -204,24 +216,22 @@ async function rollLang(lang: "en" | "es", gameId: number, today: string) {
     }
   }
 
-  // Alert ops if we had to skip flagged players. Heuristic hits are
-  // always brand-new at this point (if the wallet had been flagged in a
-  // prior run, the blacklist short-circuit would have fired first), so
-  // labelling them "NEW" gives the operator a clean signal that the
-  // auto-detection just expanded the blocklist this settlement.
+  // Alert ops only when something interesting happens. Already-known
+  // bots are filtered out at the SQL layer (NOT IN bot_wallets) so they
+  // never land in `skipped` and don't generate daily noise. What ends
+  // up here is exclusively NEW heuristic catches, which is exactly the
+  // signal worth pinging Telegram for.
   if (skipped.length > 0) {
     const lines = skipped.map((s) => {
-      const isNew =
-        s.flag.flagged && s.flag.reason === "heuristic" ? "🆕 " : "  ";
-      const reason =
+      const stats =
         s.flag.flagged && s.flag.reason === "heuristic"
-          ? `heuristic (correct=${(s.flag.correctRate * 100).toFixed(1)}%, p50=${s.flag.p50ms}ms, n=${s.flag.sampleSize})`
-          : "blacklist";
-      return `${isNew}\`${s.player.slice(0, 6)}…${s.player.slice(-4)}\` score=${s.score} — ${reason}`;
+          ? `correct=${(s.flag.correctRate * 100).toFixed(1)}%, p50=${s.flag.p50ms}ms, n=${s.flag.sampleSize}`
+          : "blacklisted"; // unreachable in the settlement loop today
+      return `🆕 \`${s.player.slice(0, 6)}…${s.player.slice(-4)}\` score=${s.score} — ${stats}`;
     });
     await sendTelegramMessage(
       [
-        `🚫 *${lang.toUpperCase()} ${prevDay}* — skipped ${skipped.length} flagged player(s)`,
+        `🤖 *${lang.toUpperCase()} ${prevDay}* — auto-flagged ${skipped.length} new bot(s)`,
         ...lines,
         winner
           ? `✅ Winner: \`${winner.slice(0, 6)}…${winner.slice(-4)}\` (score ${winnerScore})`

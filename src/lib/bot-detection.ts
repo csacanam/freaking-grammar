@@ -18,7 +18,6 @@
 // lucky session.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { sendTelegramMessage } from "@/lib/telegram";
 
 const MIN_SAMPLE = 30;
 const HEURISTIC_LOOKBACK_DAYS = 30;
@@ -116,9 +115,10 @@ export async function checkBotPlayer(
     // older flagged_at / reason — once flagged, stays flagged with the
     // original context until manually removed.
     // We got past the blacklist check, so this wallet is being flagged
-    // for the first time RIGHT NOW. Persist + alert ops via Telegram.
-    // Errors here are non-fatal — we still return the flag and keep
-    // the settlement going.
+    // for the first time RIGHT NOW. Persist silently — the caller
+    // (roll-day) rolls every new flag into a single settlement summary
+    // Telegram. Errors here are non-fatal: still return the flag so
+    // settlement can keep going.
     const { error } = await supabase.from("bot_wallets").upsert(
       {
         player: addr,
@@ -132,16 +132,6 @@ export async function checkBotPlayer(
     if (error) {
       console.error("bot-detection: upsert failed (non-fatal):", error);
     }
-
-    await sendTelegramMessage(
-      [
-        `🤖 *New bot wallet auto-flagged*`,
-        `\`${addr}\``,
-        `correctRate: ${(correctRate * 100).toFixed(1)}%`,
-        `p50: ${p50}ms`,
-        `sample: ${timedMs.length} answers`,
-      ].join("\n"),
-    ).catch(() => {});
 
     // Mutate the in-memory blacklist so the same settlement run doesn't
     // re-check this wallet across pages.
