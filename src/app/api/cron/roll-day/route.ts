@@ -90,42 +90,52 @@ async function rollLang(lang: "en" | "es", gameId: number, today: string) {
     // heuristic) lives in src/lib/bot-detection.ts. If every contender is
     // flagged, `winner` stays null and the on-chain rollDay still fires
     // with zeroAddress so the pot rolls forward to the next day.
-    // The bot operator we already caught was running ≥6 sybil wallets and
-    // could trivially scale to dozens (each Privy/external wallet gets a
-    // free play/day, ~$0.001 of gas). limit=100 leaves headroom for an
-    // operator with up to ~100 sybils before any real human gets locked
-    // out by sheer leaderboard volume; and even then, a fresh human run
-    // typically lands in the top 100 by score because bots cap at the
-    // bank's max score.
-    const { data: topRuns } = await supabase
-      .from("runs")
-      .select("player,score,ended_at")
-      .eq("lang", lang)
-      .eq("day_utc", prevDay)
-      .eq("status", "finished")
-      .gt("score", 0)
-      .order("score", { ascending: false })
-      .order("ended_at", { ascending: true })
-      .limit(100);
-
-    const candidates =
-      (topRuns as Array<{ player: string; score: number }> | null) ?? [];
-
+    // Paginate through the full leaderboard (no upper bound) until we hit
+    // a non-bot. The operator can spawn hundreds of sybils trivially —
+    // free play/day at ~$0.001 of gas — so a fixed cap would let them
+    // lock out a real human at rank N+1. The dedup keeps a single bot
+    // wallet from being re-checked across its multiple runs in the day,
+    // and the bot filter short-circuits on blacklist before doing any
+    // DB work, so cost is roughly O(unique-bots-above-first-human).
+    const PAGE = 1000;
     const seen = new Set<string>();
-    for (const c of candidates) {
-      const player = c.player.toLowerCase();
-      if (seen.has(player)) continue; // dedupe multiple runs by same player
-      seen.add(player);
+    let offset = 0;
+    let pickedWinner = false;
+    walk: while (!pickedWinner) {
+      const { data: page } = await supabase
+        .from("runs")
+        .select("player,score,ended_at")
+        .eq("lang", lang)
+        .eq("day_utc", prevDay)
+        .eq("status", "finished")
+        .gt("score", 0)
+        .order("score", { ascending: false })
+        .order("ended_at", { ascending: true })
+        .range(offset, offset + PAGE - 1);
 
-      const flag = await checkBotPlayer(player, supabase);
-      if (flag.flagged) {
-        skipped.push({ player, score: c.score, flag });
-        continue;
+      const candidates =
+        (page as Array<{ player: string; score: number }> | null) ?? [];
+      if (candidates.length === 0) break;
+
+      for (const c of candidates) {
+        const player = c.player.toLowerCase();
+        if (seen.has(player)) continue;
+        seen.add(player);
+
+        const flag = await checkBotPlayer(player, supabase);
+        if (flag.flagged) {
+          skipped.push({ player, score: c.score, flag });
+          continue;
+        }
+
+        winner = player;
+        winnerScore = c.score;
+        pickedWinner = true;
+        break walk;
       }
 
-      winner = player;
-      winnerScore = c.score;
-      break;
+      if (candidates.length < PAGE) break;
+      offset += PAGE;
     }
 
     await supabase
