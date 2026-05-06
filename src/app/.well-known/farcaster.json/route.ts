@@ -40,7 +40,11 @@ export async function GET() {
       iconUrl: `${SITE_URL}/icon-1024.png`,
       splashImageUrl: `${SITE_URL}/splash-200.png`,
       splashBackgroundColor: "#68c3a0",
-      homeUrl: SITE_URL,
+      // Farcaster users opening this miniapp drop straight into Grammar
+      // — no detour through the platform picker (/), since this manifest
+      // *is* the Grammar miniapp. The picker still lives at the bare
+      // domain for direct visits.
+      homeUrl: `${SITE_URL}/grammar`,
       heroImageUrl: `${SITE_URL}/opengraph-image`,
       tagline: "Top streak takes the prize.",
       ogTitle: "Freaking Grammar",

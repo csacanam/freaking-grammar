@@ -80,7 +80,11 @@ function buildHtmlShell(
       ? `Recibes esto porque entraste a Freaking Grammar con tu correo.<br><a href="${unsubUrl}" style="color:#9a9a9a;">Darse de baja</a>`
       : `You're getting this because you signed in to Freaking Grammar with your email.<br><a href="${unsubUrl}" style="color:#9a9a9a;">Unsubscribe</a>`;
 
-  const body = rendered.bodyHtml.replace(/__APP__/g, appUrl());
+  // Emails for Freaking Grammar drop the user straight into the game,
+  // not the platform picker. When a future game has its own email
+  // pipeline, render a different placeholder per template.
+  const playUrl = `${appUrl()}/grammar`;
+  const body = rendered.bodyHtml.replace(/__APP__/g, playUrl);
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="margin:0;padding:32px 16px;background:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1a1a1a;">
@@ -113,7 +117,7 @@ export async function sendDailyEmail(params: {
   const unsubUrl = `${appUrl()}/api/unsubscribe?a=${params.address.toLowerCase()}&t=${unsubToken}`;
 
   const html = buildHtmlShell(rendered, unsubUrl, params.lang);
-  const text = rendered.text.replace(/__APP__/g, appUrl());
+  const text = rendered.text.replace(/__APP__/g, `${appUrl()}/grammar`);
 
   const body = {
     from: fromHeader(),

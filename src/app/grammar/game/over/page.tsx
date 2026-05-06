@@ -43,7 +43,7 @@ function GameOverInner() {
 
       <div className="w-full flex flex-col gap-3">
         <PayAndPlayButton playerHasFreePlay={false} replay />
-        <ButtonLink href={`/?game=${game}`} variant="ghost" full>
+        <ButtonLink href={`/grammar?game=${game}`} variant="ghost" full>
           ← {t.backToLobby}
         </ButtonLink>
       </div>

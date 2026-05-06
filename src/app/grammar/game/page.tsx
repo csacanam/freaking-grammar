@@ -58,7 +58,7 @@ function GameInner() {
   // (every play is backed by an on-chain play() call). Deep-linked without
   // those → bounce home.
   useEffect(() => {
-    if (!address || !txHash) router.replace(`/?game=${game}`);
+    if (!address || !txHash) router.replace(`/grammar?game=${game}`);
   }, [address, txHash, game, router]);
 
   // Countdown 3 → 2 → 1 → GO! → startRun (~3s). Gated behind readyStarted so
@@ -134,11 +134,11 @@ function GameInner() {
         });
         transitionRef.current = setTimeout(() => {
           router.replace(
-            `/game/over?score=${res.score}&rank=${res.rank}&reason=timeout&game=${game}`,
+            `/grammar/game/over?score=${res.score}&rank=${res.rank}&reason=timeout&game=${game}`,
           );
         }, 700);
       } catch {
-        router.replace(`/game/over?score=${score}&reason=timeout&game=${game}`);
+        router.replace(`/grammar/game/over?score=${score}&reason=timeout&game=${game}`);
       }
     })();
     return () => {
@@ -167,7 +167,7 @@ function GameInner() {
             reason: res.reason,
           });
           router.replace(
-            `/game/over?score=${res.score}&rank=${res.rank}&reason=${res.reason}&game=${game}`,
+            `/grammar/game/over?score=${res.score}&rank=${res.rank}&reason=${res.reason}&game=${game}`,
           );
         } else if (res.correct && "nextQuestion" in res) {
           setQuestion(res.nextQuestion);
@@ -181,7 +181,7 @@ function GameInner() {
       } catch {
         await minDelay;
         router.replace(
-          `/game/over?score=${score}&reason=${pickedCorrect ? "cleared" : "wrong"}&game=${game}`,
+          `/grammar/game/over?score=${score}&reason=${pickedCorrect ? "cleared" : "wrong"}&game=${game}`,
         );
       }
     },

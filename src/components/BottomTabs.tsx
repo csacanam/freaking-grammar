@@ -8,23 +8,32 @@ export function BottomTabs() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { t, game } = useLang();
-  if (pathname?.startsWith("/game")) return null;
+  // Hidden on the platform picker (/) — that's the nerdos.fun landing,
+  // not a game context. Hidden inside an active /grammar/game session.
+  if (pathname === "/") return null;
+  if (pathname?.startsWith("/grammar/game")) return null;
 
   // Keep the active lang in URLs so navigation preserves it.
   const params = new URLSearchParams(searchParams?.toString() ?? "");
   params.set("game", game);
   const qs = `?${params.toString()}`;
 
+  // Tabs are scoped to the Grammar app for now; when /math launches its
+  // own home + history, BottomTabs will render the matching set per
+  // pathname (or move to a per-app layout).
   const tabs = [
-    { href: `/${qs}`, path: "/", key: "home", label: t.tabPlay, Icon: HomeIcon },
-    { href: `/history${qs}`, path: "/history", key: "history", label: t.tabHistory, Icon: HistoryIcon },
+    { href: `/grammar${qs}`, path: "/grammar", key: "home", label: t.tabPlay, Icon: HomeIcon },
+    { href: `/grammar/history${qs}`, path: "/grammar/history", key: "history", label: t.tabHistory, Icon: HistoryIcon },
     { href: `/you${qs}`, path: "/you", key: "you", label: t.tabYou, Icon: YouIcon },
   ];
 
   return (
     <nav className="fixed bottom-0 inset-x-0 h-20 bg-white border-t border-black/5 flex items-stretch justify-around z-40 pb-[env(safe-area-inset-bottom)] max-w-md mx-auto rounded-t-3xl shadow-[0_-8px_24px_rgba(0,0,0,0.06)] sm:rounded-t-3xl">
       {tabs.map(({ href, path, key, label, Icon }) => {
-        const active = pathname === path || (path !== "/" && pathname?.startsWith(path));
+        const active =
+          pathname === path ||
+          (path !== "/grammar" && pathname?.startsWith(path)) ||
+          (path === "/grammar" && pathname?.startsWith("/grammar") && !pathname?.startsWith("/grammar/history"));
         return (
           <Link
             key={key}

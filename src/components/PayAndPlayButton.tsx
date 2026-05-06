@@ -181,7 +181,7 @@ export function PayAndPlayButton({
     }
 
     setStage("starting");
-    router.push(`/game?tx=${playHash}&game=${game}`);
+    router.push(`/grammar/game?tx=${playHash}&game=${game}`);
   }
 
   async function handleClick() {

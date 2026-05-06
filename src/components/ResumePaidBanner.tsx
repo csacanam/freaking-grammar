@@ -5,10 +5,11 @@ import type { OpenRun } from "@/lib/api";
 import { useLang } from "@/lib/lang-provider";
 import { tpl } from "@/lib/i18n";
 
-// Shown on Home when the connected wallet has paid plays today that never
-// finished a run (usually from a client-side failure between payment and
-// startRun). One tap takes them to /game with the original txHash — the
-// idempotent /api/runs endpoint finishes what was interrupted.
+// Shown on the Grammar home when the connected wallet has paid plays
+// today that never finished a run (usually from a client-side failure
+// between payment and startRun). One tap takes them to /grammar/game
+// with the original txHash — the idempotent /api/runs endpoint
+// finishes what was interrupted.
 export function ResumePaidBanner({ runs }: { runs: OpenRun[] }) {
   const { t } = useLang();
   if (runs.length === 0) return null;
@@ -17,7 +18,7 @@ export function ResumePaidBanner({ runs }: { runs: OpenRun[] }) {
 
   return (
     <Link
-      href={`/game?tx=${head.txHash}&game=${head.lang}`}
+      href={`/grammar/game?tx=${head.txHash}&game=${head.lang}`}
       className="block rounded-2xl bg-teal text-white px-4 py-3 shadow-[0_4px_0_0_rgba(0,0,0,0.1)] active:translate-y-[2px] active:shadow-[0_2px_0_0_rgba(0,0,0,0.1)]"
     >
       <div className="flex items-center justify-between gap-3">
