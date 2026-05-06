@@ -165,7 +165,7 @@ export const dict = {
     tabPlay: "Inicio",
     tabHistory: "Historial",
     tabYou: "Tú",
-    statsLinkLabel: "Stats en vivo",
+    statsLinkLabel: "Estadísticas en vivo",
     todaysPot: "Pot de hoy",
     todaysPots: "Pots de hoy",
     pickGame: "Elige un juego",

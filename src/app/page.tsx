@@ -111,18 +111,19 @@ export default function LobbyPage() {
       <div className="px-5 pt-4 pb-10 flex flex-col gap-4">
         <ResumePaidBanner runs={openRuns} />
         <UnclaimedBanner totalUSD={totalUnclaimed} />
+        {/* Compact pill-style stats entry. Sits above the pot cards so
+            anyone landing on home sees it at a glance, but kept small +
+            muted so the play CTA further down still wins the eye. */}
+        <Link
+          href="/stats"
+          className="self-end inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/5 text-[11px] font-display tracking-[0.2em] uppercase text-muted hover:bg-black/10 hover:text-ink transition-colors"
+        >
+          <span aria-hidden>📊</span>
+          {t.statsLinkLabel}
+        </Link>
         {GAMES.map((g) => (
           <PotCard key={g} game={g} lobby={lobbies[g]} />
         ))}
-        {/* Secondary surface for the live numbers — kept low-contrast and
-            below the fold so it doesn't compete with the play CTA. */}
-        <Link
-          href="/stats"
-          className="self-center mt-2 inline-flex items-center gap-1 text-xs font-display tracking-[0.25em] uppercase text-muted hover:text-ink"
-        >
-          {t.statsLinkLabel}
-          <span aria-hidden>→</span>
-        </Link>
       </div>
     </div>
   );
