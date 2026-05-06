@@ -29,34 +29,32 @@ export async function GET() {
     ...(accountAssociation && { accountAssociation }),
     miniapp: {
       version: "1",
-      name: "Freaking Grammar",
+      name: "nerdos.fun",
       // Subtitle/tagline have hard char limits enforced by Warpcast
       // (tagline must be 30 chars or fewer). Description must avoid
       // these special chars: @, #, $, %, ^, &, *, +, =, /, \, |, ~, «, ».
       // Copy below has been audited against both rules.
-      subtitle: "Top streak. Take the prize.",
+      subtitle: "Daily games. Real rewards.",
       description:
-        "Pick the right word in 5 seconds. The longest streak each day wins the prize in USDT. English or Spanish.",
+        "Daily games for nerdos. Pick the right answer in 5 seconds, build a streak, win the USDT pot. Grammar is live. Math coming soon.",
       iconUrl: `${SITE_URL}/icon-1024.png`,
       splashImageUrl: `${SITE_URL}/splash-200.png`,
       splashBackgroundColor: "#68c3a0",
-      // Farcaster users opening this miniapp drop straight into Grammar
-      // — no detour through the platform picker (/), since this manifest
-      // *is* the Grammar miniapp. The picker still lives at the bare
-      // domain for direct visits.
-      homeUrl: `${SITE_URL}/grammar`,
+      // Land Farcaster users on the platform picker so they see the full
+      // line-up. While Freaking Grammar is the only live game we could
+      // shortcut to /grammar, but the picker is the brand surface and
+      // adds one tap — worth it for the rebrand.
+      homeUrl: SITE_URL,
       heroImageUrl: `${SITE_URL}/opengraph-image`,
-      tagline: "Top streak takes the prize.",
-      ogTitle: "Freaking Grammar",
-      ogDescription:
-        "Longest streak wins. Pick the right word in 5s.",
+      tagline: "Daily rewards for nerdos.",
+      ogTitle: "nerdos.fun",
+      ogDescription: "Games for nerdos. Daily rewards.",
       ogImageUrl: `${SITE_URL}/opengraph-image`,
       primaryCategory: "games",
-      // Warpcast caps this array at 5. Picked the 5 most valuable for
-      // discovery: identity (grammar), habit signal (daily), real
-      // differentiator vs other miniapps (spanish), unique mechanic
-      // (streak), crypto angle (earn).
-      tags: ["grammar", "daily", "spanish", "streak", "earn"],
+      // Warpcast caps this array at 5. Switched from grammar-specific
+      // tags to platform-level ones now that the manifest represents
+      // nerdos.fun rather than a single game.
+      tags: ["games", "daily", "earn", "puzzles", "nerd"],
       noindex: false,
     },
   });
