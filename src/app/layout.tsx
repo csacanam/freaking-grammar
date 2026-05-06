@@ -22,7 +22,7 @@ const fcMiniAppEmbed = {
     action: {
       type: "launch_miniapp",
       url: SITE_URL,
-      name: "Freaking Grammar",
+      name: "nerdos.fun",
       splashImageUrl: `${SITE_URL}/splash-200.png`,
       splashBackgroundColor: "#68c3a0",
     },
@@ -41,20 +41,19 @@ const fcFrameEmbed = {
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
-  title: "Freaking Grammar",
-  description:
-    "Pick the right word in 5 seconds. The longest streak each day wins the prize in USDT.",
+  title: "nerdos.fun",
+  description: "Games for nerdos. Daily rewards.",
   openGraph: {
-    title: "Freaking Grammar",
-    description: "Top streak takes the prize. Daily.",
+    title: "nerdos.fun",
+    description: "Games for nerdos. Daily rewards.",
     url: SITE_URL,
-    siteName: "Freaking Grammar",
+    siteName: "nerdos.fun",
     images: [{ url: "/opengraph-image", width: 1200, height: 630 }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Freaking Grammar",
-    description: "Top streak takes the prize. Daily.",
+    title: "nerdos.fun",
+    description: "Games for nerdos. Daily rewards.",
     images: ["/opengraph-image"],
   },
   other: {

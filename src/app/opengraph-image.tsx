@@ -1,16 +1,17 @@
 import { ImageResponse } from "next/og";
 
-export const alt =
-  "Freaking Grammar — tap the right word, win the daily pot";
+export const alt = "nerdos.fun — games for nerdos, daily rewards";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 // Static share-card: the puzzle doesn't change between renders so we can
 // cache aggressively.
 export const revalidate = 3600;
 
-// Mirrors the in-game layout (two colored halves with the options on each side
-// and the phrase floating on top) so people who've never played can see what
-// the game *is* at a glance instead of a generic pot number.
+// Mirrors the in-game layout (two colored halves with the options on each
+// side and the phrase floating on top) so people who've never played can
+// see what the game *is* at a glance instead of a generic logo card. The
+// take/takes wordplay survived the rebrand because it's still the cleanest
+// visual demo of the mechanic shared by every game on the platform.
 export default function OpenGraphImage() {
   const optionStyle = {
     fontSize: 170,
@@ -50,15 +51,14 @@ export default function OpenGraphImage() {
         >
           <div
             style={{
-              fontSize: 28,
-              letterSpacing: "0.35em",
-              textTransform: "uppercase",
+              fontSize: 38,
+              letterSpacing: "0.05em",
               fontWeight: 800,
               color: "white",
               display: "flex",
             }}
           >
-            Freaking Grammar
+            nerdos.fun
           </div>
         </div>
 
@@ -144,19 +144,14 @@ export default function OpenGraphImage() {
           <div
             style={{
               display: "flex",
-              gap: 22,
-              fontSize: 28,
-              letterSpacing: "0.3em",
+              fontSize: 32,
+              letterSpacing: "0.18em",
               textTransform: "uppercase",
               fontWeight: 800,
               color: "white",
             }}
           >
-            <span style={{ display: "flex" }}>Daily pot</span>
-            <span style={{ display: "flex", opacity: 0.55 }}>·</span>
-            <span style={{ display: "flex" }}>Play free</span>
-            <span style={{ display: "flex", opacity: 0.55 }}>·</span>
-            <span style={{ display: "flex" }}>Winner takes all</span>
+            Games for nerdos. Daily rewards.
           </div>
         </div>
       </div>

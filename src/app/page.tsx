@@ -30,7 +30,7 @@ export default function PickerHome() {
         </div>
       </header>
 
-      <div className="font-display text-xs tracking-[0.25em] uppercase text-muted mb-3 px-1">
+      <div className="font-display text-sm tracking-[0.25em] uppercase text-muted mb-3 px-1">
         {t.nerdosPickAGame}
       </div>
 
@@ -55,7 +55,7 @@ export default function PickerHome() {
 
       <Link
         href="/grammar/stats"
-        className="self-center mt-8 inline-flex items-center gap-1.5 text-xs font-display tracking-[0.25em] uppercase text-muted hover:text-ink"
+        className="self-center mt-8 inline-flex items-center gap-2 text-sm font-display tracking-[0.25em] uppercase text-muted hover:text-ink"
       >
         <span aria-hidden>📊</span>
         {t.statsLinkLabel}
@@ -87,24 +87,25 @@ function GameCard({
           : "bg-black/5 border-black/5 opacity-60"
       }`}
     >
-      <div className="flex items-start gap-4">
+      {/* Status badge sits absolute top-right so its position is constant
+          regardless of the title length — inline next to the title looked
+          ragged because the offset moved with each game's name. */}
+      <span
+        className={`absolute top-3 right-3 text-[10px] font-display tracking-[0.2em] uppercase px-2 py-0.5 rounded-full ${
+          status === "live"
+            ? "bg-teal text-white"
+            : "bg-black/10 text-muted"
+        }`}
+      >
+        {statusLabel}
+      </span>
+      <div className="flex items-start gap-4 pr-12">
         <div className="text-4xl shrink-0 leading-none mt-0.5">{emoji}</div>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <h2 className="font-display text-xl tracking-wide leading-tight truncate">
-              {title}
-            </h2>
-            <span
-              className={`text-[10px] font-display tracking-[0.2em] uppercase px-2 py-0.5 rounded-full shrink-0 ${
-                status === "live"
-                  ? "bg-teal text-white"
-                  : "bg-black/10 text-muted"
-              }`}
-            >
-              {statusLabel}
-            </span>
-          </div>
-          <p className="text-sm text-muted mt-1 leading-snug">{blurb}</p>
+          <h2 className="font-display text-2xl tracking-wide leading-tight">
+            {title}
+          </h2>
+          <p className="text-base text-muted mt-2 leading-snug">{blurb}</p>
         </div>
         {status === "live" && (
           <span
