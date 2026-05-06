@@ -85,14 +85,13 @@ export default function LobbyPage() {
       <div className="sticky top-0 z-20 bg-bg/90 backdrop-blur-md px-5 pt-5 pb-3 flex flex-col gap-3 border-b border-black/5">
         {/* Tiny "← nerdos.fun" link above the brand: lets the player jump
             back to the platform picker without going through the browser
-            back button. Mixed-case (no `uppercase`) so the brand reads
-            as the actual domain. Arrow is an inline SVG instead of the
-            "←" glyph because that character's optical baseline floats
-            higher than alphabetic letters at this size, making the row
-            visibly off-axis. */}
+            back button. Uses the system sans (NOT font-display) — the
+            display font is Bebas Neue, which has no lowercase glyphs and
+            would render the domain as NERDOS.FUN. Arrow is an inline
+            SVG so its baseline lines up with the letters. */}
         <Link
           href="/"
-          className="self-start inline-flex items-center gap-1.5 text-xs font-display text-muted hover:text-ink"
+          className="self-start inline-flex items-center gap-1.5 text-xs text-muted hover:text-ink"
         >
           <svg
             viewBox="0 0 16 16"

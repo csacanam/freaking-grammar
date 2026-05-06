@@ -23,10 +23,13 @@ export default function PickerHome() {
           priority
         />
         <div className="flex flex-col items-center gap-2 text-center">
-          <h1 className="font-display text-3xl tracking-wider">nerdos.fun</h1>
-          <p className="font-display text-base text-muted">
-            {t.nerdosTagline}
-          </p>
+          {/* Brand name + tagline use the system sans, NOT font-display.
+              The display font (Bebas Neue) is uppercase-only by design,
+              so anything routed through it renders as NERDOS.FUN —
+              wrong for a lowercase domain identity. Section labels and
+              stage chrome stay on font-display where caps read fine. */}
+          <h1 className="text-4xl font-bold tracking-tight">nerdos.fun</h1>
+          <p className="text-base text-muted">{t.nerdosTagline}</p>
         </div>
       </header>
 
