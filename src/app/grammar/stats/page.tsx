@@ -134,7 +134,6 @@ type Stats = {
     biggestPotUSD: number;
     operatorCELO: number;
     daysClosed: number;
-    botsFiltered: number;
   };
   sponsors: Array<{
     name: string;
@@ -175,7 +174,6 @@ async function loadStats(): Promise<Stats | null> {
     { data: potsData },
     { data: airdropsData },
     { data: sponsorPayoutsData },
-    { count: botFilterCount },
   ] = await Promise.all([
     supabase
       .from("runs")
@@ -187,9 +185,6 @@ async function loadStats(): Promise<Stats | null> {
       .select("lang,game,amount_units,closed,day_utc,rolled_tx"),
     supabase.from("welcome_airdrops").select("created_at,tx_hash"),
     supabase.from("sponsor_payouts").select("airdrop_tx_hash"),
-    supabase
-      .from("bot_wallets")
-      .select("player", { count: "exact", head: true }),
   ]);
 
   const runs = (runsData ?? []) as Array<{
@@ -465,7 +460,6 @@ async function loadStats(): Promise<Stats | null> {
       biggestPotUSD,
       operatorCELO,
       daysClosed,
-      botsFiltered: botFilterCount ?? 0,
     },
     sponsors,
     posthog,
@@ -907,12 +901,6 @@ export default async function StatsPage() {
                 hint={`${g.treasuryDays.toFixed(0)}${t.statsRunwayDays}`}
               />
             ))}
-            <Tile
-              label={t.statsBotsFiltered}
-              value={stats.economy.botsFiltered.toLocaleString("en-US")}
-              accent="bg-red/10"
-              hint={t.statsBotsHint}
-            />
           </section>
 
           <SectionTitle>{t.statsSectionOnchain}</SectionTitle>
