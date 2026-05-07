@@ -130,7 +130,7 @@ export function SponsorLeaderboard() {
       )}
       {entries && entries.length === 0 && (
         <p className="text-sm text-muted text-center py-4">
-          No sponsors yet — be the first to boost a pot.
+          No sponsors yet — be the first to boost a prize.
         </p>
       )}
       {entries && entries.length > 0 && (

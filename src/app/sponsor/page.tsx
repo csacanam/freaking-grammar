@@ -161,7 +161,7 @@ function SponsorInner() {
     <div className="flex-1 flex flex-col px-5 pt-6 pb-10 max-w-md mx-auto w-full gap-5">
       <header className="flex flex-col gap-2">
         <BackLink />
-        <h1 className="font-display text-4xl tracking-wider">Sponsor a pot</h1>
+        <h1 className="font-display text-4xl tracking-wider">Sponsor a prize</h1>
         <p className="text-xs text-muted">
           100% goes to the winner. Your wallet goes on the sponsor wall below.
         </p>
@@ -197,7 +197,7 @@ function SponsorInner() {
 
         <div className="rounded-xl bg-teal/10 px-3 py-2">
           <div className="text-[10px] font-display tracking-widest uppercase text-muted">
-            Today&apos;s pot
+            Today&apos;s prize
           </div>
           <div className="font-display text-3xl">{fmtUSD(todayPotUSD)}</div>
         </div>
@@ -235,7 +235,7 @@ function SponsorInner() {
             ? "Sponsoring…"
             : !isConnected
             ? "Connect wallet"
-            : `Boost pot  ·  ${fmtUSD(parseFloat(amount) || 0)}`}
+            : `Boost prize  ·  ${fmtUSD(parseFloat(amount) || 0)}`}
         </Button>
 
         {error && (

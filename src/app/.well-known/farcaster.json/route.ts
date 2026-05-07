@@ -36,7 +36,7 @@ export async function GET() {
       // Copy below has been audited against both rules.
       subtitle: "Daily games. Real rewards.",
       description:
-        "Daily games for nerdos. Pick the right answer in 5 seconds, build a streak, win the USDT pot. Grammar is live. Math coming soon.",
+        "Daily games for nerdos. Pick the right answer in 5 seconds, build a streak, win the USDT prize. Grammar and Math are live.",
       iconUrl: `${SITE_URL}/icon-1024.png`,
       splashImageUrl: `${SITE_URL}/splash-200.png`,
       splashBackgroundColor: "#68c3a0",

@@ -98,7 +98,7 @@ export function PotHeader({ closesAtIso }: { closesAtIso: string }) {
             >
               <div className="flex items-center justify-between">
                 <span className="font-display text-sm tracking-[0.2em] uppercase">
-                  {g.id} pot
+                  {g.id} {t.prize}
                 </span>
                 {active && (
                   <span className="w-2 h-2 rounded-full bg-yellow" />
