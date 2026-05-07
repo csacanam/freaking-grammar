@@ -45,23 +45,31 @@ type DifficultyBand = {
 };
 
 function bandForStreak(q: number): DifficultyBand {
-  // Q0-4: warm-up. Big numbers OK but only +/-, decoys are obvious.
-  if (q < 5) return { maxOperand: 9, ops: ["+", "-"], decoyDeltas: [3, 5, 7, 10] };
-  // Q5-14: × shows up. Numbers stay small. Decoys tighten.
-  if (q < 15) return { maxOperand: 12, ops: ["+", "-", "x"], decoyDeltas: [2, 3, 5] };
-  // Q15-29: full mix incl. ÷. Decoys mostly off-by-2.
-  if (q < 30) return { maxOperand: 12, ops: ["+", "-", "x", "/"], decoyDeltas: [1, 2, 3] };
-  // Q30+: max difficulty. Off-by-1 dominates. Larger products possible.
+  // Q0-2: warm-up. Small +/- only. Decoys are obviously wrong (off by
+  // 5+) so the player learns the mechanic without needing real
+  // arithmetic skill.
+  if (q < 3) return { maxOperand: 9, ops: ["+", "-"], decoyDeltas: [4, 6, 8] };
+  // Q3-7: multiplication shows up. Decoys tighten to off-by-2 or 3,
+  // which already requires a glance instead of pattern recognition.
+  if (q < 8) return { maxOperand: 12, ops: ["+", "-", "x"], decoyDeltas: [2, 3, 4] };
+  // Q8-14: full mix incl. ÷ + off-by-1 decoys appear. This is where
+  // the OG Freaking Math really starts biting.
+  if (q < 15) return { maxOperand: 12, ops: ["+", "-", "x", "/"], decoyDeltas: [1, 2, 2] };
+  // Q15+: max difficulty. Off-by-1 dominates (the brain almost can't
+  // tell at 1.5s/glance). Larger products possible.
   return { maxOperand: 15, ops: ["+", "-", "x", "/"], decoyDeltas: [1, 1, 2] };
 }
 
-// Time budget per question, smooth decay 3s → 1.5s. Driven by q_index
-// so the curve is deterministic and matches what the client renders.
+// Time budget per question, aggressive decay 2.5s → 1.5s. Original
+// Freaking Math gets the time pressure punching by question 5; we
+// match that. Q0 is briefing (no timer rendered); we still return a
+// non-zero placeholder so any caller computing budgets uniformly
+// doesn't divide-by-zero.
 export function timeBudgetMs(q: number): number {
-  if (q < 1) return 3000;       // first one is "no timer" handled by client; we still return a value
-  if (q >= 30) return 1500;
-  // Linear drop from 3000 at q=1 to 1500 at q=30 → ~52ms per step.
-  const t = 3000 - ((q - 1) / 29) * 1500;
+  if (q < 1) return 2500;
+  if (q >= 20) return 1500;
+  // Linear drop from 2500 at q=1 to 1500 at q=20 → ~53ms per step.
+  const t = 2500 - ((q - 1) / 19) * 1000;
   return Math.round(t);
 }
 

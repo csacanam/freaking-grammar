@@ -14,12 +14,29 @@ import { posthog } from "@/lib/posthog-provider";
 
 // Mirrors the difficulty curve in src/lib/math-questions.ts so the
 // client-side timer matches what the server thinks each question is
-// worth. Keeping it duplicated keeps the gameplay layer entirely on
-// the client (no extra round-trip per question to ask "how long?").
+// worth. Aggressive ramp: 2.5s at Q1, 1.5s at Q20. Q0 is the briefing
+// question and renders no timer at all.
 function timeBudgetSec(q: number): number {
-  if (q < 1) return 0; // q_index 0 has no timer (briefing question)
-  if (q >= 30) return 1.5;
-  return Number((3.0 - ((q - 1) / 29) * 1.5).toFixed(2));
+  if (q < 1) return 0;
+  if (q >= 20) return 1.5;
+  return Number((2.5 - ((q - 1) / 19) * 1.0).toFixed(2));
+}
+
+// Per-question background colour, cycling through the platform palette
+// (the same accent colours used by Grammar's PotCard stripes + sponsor
+// bonuses). Matches the OG Freaking Math feel where every round
+// repaints the whole screen — keeps the eye busy and signals "new
+// question" without the player having to read score deltas.
+const MATH_BACKDROPS = [
+  "bg-teal/30",
+  "bg-purple/25",
+  "bg-yellow/30",
+  "bg-pink/30",
+  "bg-blue/20",
+  "bg-orange/30",
+];
+function backdropForQ(q: number): string {
+  return MATH_BACKDROPS[q % MATH_BACKDROPS.length];
 }
 
 // Display-friendly operator glyphs. The server sends "x" / "/" because
@@ -229,7 +246,7 @@ function MathGameInner() {
 
   if (!question) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-yellow/40 font-display text-xl">
+      <div className="flex-1 flex items-center justify-center bg-teal/30 font-display text-xl">
         …
       </div>
     );
@@ -241,7 +258,7 @@ function MathGameInner() {
     : Math.min(100, (secondsLeft / Math.max(0.5, totalSeconds)) * 100);
 
   return (
-    <div className="flex-1 flex flex-col bg-yellow/30 select-none touch-manipulation">
+    <div className={`flex-1 flex flex-col select-none touch-manipulation transition-colors duration-200 ${backdropForQ(qIndex)}`}>
       {/* SCORE */}
       <div className="pt-8 pb-4 text-center">
         <div className="font-display text-xs tracking-[0.4em] text-muted">SCORE</div>
@@ -284,21 +301,22 @@ function MathGameInner() {
         )}
       </div>
 
-      {/* BUTTONS */}
+      {/* BUTTONS — single huge glyph each, no text labels. The
+          color carries the meaning (green = correct, red = wrong)
+          and the glyph fills the button so it's a clear motor
+          target at a glance. */}
       <div className="px-5 pb-8 grid grid-cols-2 gap-3">
         <ChoiceButton
-          label="CORRECT"
-          glyph="✓"
-          color="bg-teal"
+          ariaLabel="Correct"
+          variant="correct"
           picked={picked === "correct"}
           dimmed={picked !== null && picked !== "correct"}
           onClick={() => onPick("correct")}
           disabled={outcome !== "playing"}
         />
         <ChoiceButton
-          label="WRONG"
-          glyph="✗"
-          color="bg-red"
+          ariaLabel="Wrong"
+          variant="wrong"
           picked={picked === "incorrect"}
           dimmed={picked !== null && picked !== "incorrect"}
           onClick={() => onPick("incorrect")}
@@ -310,61 +328,95 @@ function MathGameInner() {
 }
 
 function ChoiceButton({
-  label,
-  glyph,
-  color,
+  ariaLabel,
+  variant,
   picked,
   dimmed,
   onClick,
   disabled,
 }: {
-  label: string;
-  glyph: string;
-  color: string;
+  ariaLabel: string;
+  variant: "correct" | "wrong";
   picked: boolean;
   dimmed: boolean;
   onClick: () => void;
   disabled: boolean;
 }) {
+  const bg = variant === "correct" ? "bg-teal" : "bg-red";
   return (
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`${color} text-white rounded-3xl py-8 transition-all
+      aria-label={ariaLabel}
+      className={`${bg} rounded-3xl h-32 transition-all flex items-center justify-center
         ${picked ? "ring-[8px] ring-inset ring-white scale-[1.02]" : ""}
         ${dimmed ? "opacity-40 scale-[0.98]" : ""}
         ${disabled && !picked && !dimmed ? "cursor-default" : "active:brightness-110"}
-        shadow-[0_4px_0_0_rgba(0,0,0,0.12)]
-        flex flex-col items-center justify-center gap-2`}
+        shadow-[0_6px_0_0_rgba(0,0,0,0.14)]`}
     >
-      <span className="text-5xl leading-none">{glyph}</span>
-      <span className="font-display tracking-[0.2em] text-sm">{label}</span>
+      {variant === "correct" ? <CheckIcon /> : <CrossIcon />}
     </button>
+  );
+}
+
+// Inline SVG so the strokes scale with the button height and the
+// colour matches the Tailwind palette via currentColor.
+function CheckIcon() {
+  return (
+    <svg
+      viewBox="0 0 100 100"
+      fill="none"
+      stroke="white"
+      strokeWidth="14"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="w-20 h-20 drop-shadow-[0_2px_0_rgba(0,0,0,0.18)]"
+      aria-hidden
+    >
+      <path d="M22 52 l18 20 l40 -44" />
+    </svg>
+  );
+}
+
+function CrossIcon() {
+  return (
+    <svg
+      viewBox="0 0 100 100"
+      fill="none"
+      stroke="white"
+      strokeWidth="14"
+      strokeLinecap="round"
+      className="w-20 h-20 drop-shadow-[0_2px_0_rgba(0,0,0,0.18)]"
+      aria-hidden
+    >
+      <path d="M26 26 L74 74" />
+      <path d="M74 26 L26 74" />
+    </svg>
   );
 }
 
 function BriefingOverlay({ onReady }: { onReady: () => void }) {
   return (
-    <div className="flex-1 flex flex-col items-center justify-center bg-yellow/40 px-6 text-center gap-6">
-      <div className="text-6xl">🔢</div>
-      <h1 className="font-display text-3xl tracking-wide">Freaking Math</h1>
-      <ul className="text-left text-sm space-y-2 max-w-xs text-ink/80">
+    <div className="flex-1 flex flex-col items-center justify-center bg-yellow/40 px-6 text-center gap-7">
+      <div className="text-7xl">🔢</div>
+      <h1 className="font-display text-4xl tracking-wide">Freaking Math</h1>
+      <ul className="text-left text-base space-y-3 max-w-sm text-ink/85 leading-snug">
         <li className="flex gap-3">
-          <span aria-hidden>1.</span>
+          <span aria-hidden className="font-display">1.</span>
           <span>You see an equation. Decide if the result shown is right or wrong.</span>
         </li>
         <li className="flex gap-3">
-          <span aria-hidden>2.</span>
-          <span>5 seconds the first one, then it gets faster every question.</span>
+          <span aria-hidden className="font-display">2.</span>
+          <span>2.5 seconds at first — the timer gets shorter every question.</span>
         </li>
         <li className="flex gap-3">
-          <span aria-hidden>3.</span>
+          <span aria-hidden className="font-display">3.</span>
           <span>One wrong answer = game over. Highest streak wins the daily pot.</span>
         </li>
       </ul>
       <button
         onClick={onReady}
-        className="mt-2 bg-ink text-white rounded-full px-8 py-3 font-display tracking-[0.2em] text-sm shadow-[0_4px_0_0_rgba(0,0,0,0.18)] active:translate-y-[2px] active:shadow-[0_2px_0_0_rgba(0,0,0,0.18)]"
+        className="mt-2 bg-ink text-white rounded-full px-10 py-4 font-display tracking-[0.2em] text-base shadow-[0_4px_0_0_rgba(0,0,0,0.18)] active:translate-y-[2px] active:shadow-[0_2px_0_0_rgba(0,0,0,0.18)]"
       >
         I&apos;M READY
       </button>
