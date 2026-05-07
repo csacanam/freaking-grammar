@@ -133,29 +133,40 @@ export async function GET(req: NextRequest) {
           break;
         }
 
-        // Find that day's winner.
-        const { data: topRun } = await supabase
-          .from("runs")
-          .select("player,score")
+        // Read the day's winner from `pots.winner` — the same address
+        // roll-day chose AFTER running the bot filter. Querying `runs`
+        // directly here would re-pick the raw top scorer and bypass the
+        // blacklist + heuristic, exactly the bug that paid 8,000 COPm
+        // to the 0xdead sybil on 2026-05-06 even though roll-day had
+        // correctly settled the pot to a real human.
+        const { data: potRow } = await supabase
+          .from("pots")
+          .select("winner,winner_score,closed")
           .eq("lang", lang)
           .eq("day_utc", dayKey)
-          .eq("status", "finished")
-          .order("score", { ascending: false })
-          .order("ended_at", { ascending: true })
-          .limit(1)
           .maybeSingle();
-        const top = topRun as { player: string; score: number } | null;
-        if (!top) {
-          // No winner that day → carry-over (don't spend, don't log).
+        const pot = potRow as
+          | { winner: string | null; winner_score: number | null; closed: boolean }
+          | null;
+        if (!pot || !pot.closed) {
+          // Pot not settled yet — bonus-airdrop runs ~5 min after
+          // roll-day, so this is rare; if it happens, the next
+          // invocation will pick it up.
           continue;
         }
+        if (!pot.winner) {
+          // Pot closed but no clean winner (e.g., every candidate was
+          // a flagged bot). Carry-over: don't spend, don't log.
+          continue;
+        }
+        const winner = pot.winner;
 
         try {
           const hash = await walletClient.writeContract({
             address: c.token_address as `0x${string}`,
             abi: erc20Abi,
             functionName: "transfer",
-            args: [top.player as `0x${string}`, daily],
+            args: [winner as `0x${string}`, daily],
           });
           await celoClient.waitForTransactionReceipt({ hash });
 
@@ -163,7 +174,7 @@ export async function GET(req: NextRequest) {
             campaign_id: c.id,
             lang,
             day_utc: dayKey,
-            winner: top.player,
+            winner,
             amount_units: daily.toString(),
             airdrop_tx_hash: hash,
           });
@@ -173,7 +184,7 @@ export async function GET(req: NextRequest) {
             lang,
             day: dayKey,
             paid: {
-              winner: top.player,
+              winner,
               amount: daily.toString(),
               txHash: hash,
             },
