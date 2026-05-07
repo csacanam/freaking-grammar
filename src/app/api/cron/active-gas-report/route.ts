@@ -49,6 +49,10 @@ import { CELO_RPC_URL } from "@/lib/chain";
 import { sendTelegramMessage } from "@/lib/telegram";
 
 export const dynamic = "force-dynamic";
+// Auto-refill loop hits up to MAX_PER_BUCKET addresses with on-chain
+// transfers, each ~3-5s on Celo. With a few yellow-zone candidates +
+// cold start the route can run 30-40s; 60s is the ceiling.
+export const maxDuration = 60;
 
 const ACTIVE_DAYS = 7;
 // Calibrated against real wallet pre-flight (see file header).

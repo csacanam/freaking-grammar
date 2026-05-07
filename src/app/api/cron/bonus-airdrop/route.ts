@@ -21,6 +21,11 @@ import { CELO_RPC_URL } from "@/lib/chain";
 import { celoClient } from "@/lib/onchain";
 
 export const dynamic = "force-dynamic";
+// Same reasoning as roll-day: each ERC-20 transfer + receipt wait is
+// ~3-5s on Celo, and bonus-airdrop iterates up to lookback × langs ×
+// campaigns transfers. 60s gives comfortable headroom; cold start
+// alone can eat 10s.
+export const maxDuration = 60;
 
 type Campaign = {
   id: string;

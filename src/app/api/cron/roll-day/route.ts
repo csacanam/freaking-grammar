@@ -13,6 +13,12 @@ import {
 import { sendTelegramMessage } from "@/lib/telegram";
 
 export const dynamic = "force-dynamic";
+// 60s ceiling: a normal run is ~10s (heuristic walk + 2× on-chain
+// rollDay), but a cold start + a few new bot candidates can push close
+// to 20-30s. Without this declaration Vercel applies its plan default
+// (10s on Hobby) and silently 504s mid-flight. Pro plan supports up to
+// 60s; if you ever upgrade to Enterprise you can lift this further.
+export const maxDuration = 60;
 
 type Pot = {
   lang: string;
