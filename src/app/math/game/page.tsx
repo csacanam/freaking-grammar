@@ -299,24 +299,34 @@ function MathGameInner() {
 
   return (
     <div className={`flex-1 flex flex-col select-none touch-manipulation text-white ${backdrop}`}>
-      {/* SCORE + LEVEL — level chip pulses on phase change (Q5/10/15/20)
-          to draw the eye without blocking input. Score number pulses
-          every time it ticks up so the correct answer reads kinetic. */}
-      <div className="pt-8 pb-4 flex flex-col items-center gap-2">
-        <div
-          key={`level-${levelKey}`}
-          className="font-display text-[0.65rem] tracking-[0.3em] text-white border border-white/40 rounded-full px-3 py-1 animate-level-pulse"
-        >
-          {t.mathLevel} {level}
+      {/* LEVEL + SCORE — split across the top so each gets its own
+          column and the digits can be big. Level pulses on phase
+          change (Q5/10/15/20) so the climb reads without blocking
+          input; score pulses every correct answer so the increment
+          feels kinetic. Stacked text-on-top, value-below mirrors the
+          score widget Grammar uses. */}
+      <div className="pt-7 pb-3 px-5 flex items-start justify-between">
+        <div className="flex flex-col items-center">
+          <span className="font-display text-base tracking-[0.25em] uppercase text-white/80">
+            {t.mathLevel}
+          </span>
+          <span
+            key={`level-${levelKey}`}
+            className="font-display text-5xl tracking-tight tabular-nums leading-none animate-level-pulse mt-1"
+          >
+            {level}
+          </span>
         </div>
-        <div className="font-display text-xs tracking-[0.4em] text-white/70 mt-1">
-          {t.mathScore}
-        </div>
-        <div
-          key={`score-${scoreKey}`}
-          className="font-display text-6xl tracking-tight tabular-nums leading-none animate-score-pulse"
-        >
-          {score}
+        <div className="flex flex-col items-center">
+          <span className="font-display text-base tracking-[0.25em] uppercase text-white/80">
+            {t.mathScore}
+          </span>
+          <span
+            key={`score-${scoreKey}`}
+            className="font-display text-5xl tracking-tight tabular-nums leading-none animate-score-pulse mt-1"
+          >
+            {score}
+          </span>
         </div>
       </div>
 
