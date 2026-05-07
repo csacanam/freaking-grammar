@@ -46,17 +46,13 @@ export default function PickerHome() {
           status="live"
           statusLabel={t.cardLive}
         />
-        {/* Soft launch: code path is wired (visit /math directly to play),
-            but the picker shows "Soon" until the operator finishes
-            testing the gameplay flow end-to-end. Flip back to live in a
-            follow-up deploy. */}
         <GameCard
-          href={null}
+          href="/math"
           emoji="🔢"
           title={t.mathCardTitle}
           blurb={t.mathCardBlurb}
-          status="soon"
-          statusLabel={t.cardSoon}
+          status="live"
+          statusLabel={t.cardLive}
         />
       </div>
 
