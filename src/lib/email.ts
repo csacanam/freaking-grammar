@@ -90,10 +90,12 @@ function buildHtmlShell(
       ? `Recibes esto porque entraste a nerdos.fun con tu correo.<br><a href="${unsubUrl}" style="color:#9a9a9a;">Darse de baja</a>`
       : `You're getting this because you signed in to nerdos.fun with your email.<br><a href="${unsubUrl}" style="color:#9a9a9a;">Unsubscribe</a>`;
 
-  // The Grammar email funnels users straight into /grammar, not the
-  // platform picker. When Math ships its own daily email it'll use a
-  // /math placeholder instead.
-  const playUrl = `${appUrl()}/grammar`;
+  // CTA goes to the platform picker so users see the nerdos.fun brand
+  // surface before dropping into a specific game. Costs one extra tap
+  // compared to /grammar, but reinforces the platform identity and
+  // future-proofs the email when Freaking Math ships — the same email
+  // template still works whether the user wants Grammar or Math.
+  const playUrl = appUrl();
   const body = rendered.bodyHtml.replace(/__APP__/g, playUrl);
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
@@ -128,7 +130,7 @@ export async function sendDailyEmail(params: {
   const unsubUrl = `${appUrl()}/api/unsubscribe?a=${params.address.toLowerCase()}&t=${unsubToken}`;
 
   const html = buildHtmlShell(rendered, unsubUrl, params.lang);
-  const text = rendered.text.replace(/__APP__/g, `${appUrl()}/grammar`);
+  const text = rendered.text.replace(/__APP__/g, appUrl());
 
   // SendGrid wins when both keys are present so a Vercel env-var swap
   // (clearing SENDGRID_API_KEY) is the rollback lever.
