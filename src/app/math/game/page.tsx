@@ -22,11 +22,11 @@ function timeBudgetSec(q: number): number {
   return Number((2.5 - ((q - 1) / 19) * 1.0).toFixed(2));
 }
 
-// Per-question background colour, cycling through the platform palette
-// (the same accent colours used by Grammar's PotCard stripes + sponsor
-// bonuses). Matches the OG Freaking Math feel where every round
-// repaints the whole screen — keeps the eye busy and signals "new
-// question" without the player having to read score deltas.
+// One backdrop per session — picked once at mount and kept for the
+// whole run. Original Freaking Math feels like a "new vibe" each time
+// you launch the game; rotating per question turned out to be too
+// strobe-y. The palette stays in the platform family (same accents
+// Grammar uses for its PotCard stripes).
 const MATH_BACKDROPS = [
   "bg-teal/30",
   "bg-purple/25",
@@ -35,9 +35,6 @@ const MATH_BACKDROPS = [
   "bg-blue/20",
   "bg-orange/30",
 ];
-function backdropForQ(q: number): string {
-  return MATH_BACKDROPS[q % MATH_BACKDROPS.length];
-}
 
 // Display-friendly operator glyphs. The server sends "x" / "/" because
 // those are stable in JSON; we render them as proper math symbols.
@@ -90,6 +87,17 @@ function MathGameInner() {
   const transitionRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startingRef = useRef(false);
   const [startError, setStartError] = useState<string | null>(null);
+
+  // Pick a backdrop once per mount. SSR renders the first entry to
+  // avoid hydration mismatch; the useEffect after mount swaps it for
+  // a random one. Keeps each session visually distinct without the
+  // per-question strobe.
+  const [backdrop, setBackdrop] = useState(MATH_BACKDROPS[0]);
+  useEffect(() => {
+    setBackdrop(
+      MATH_BACKDROPS[Math.floor(Math.random() * MATH_BACKDROPS.length)],
+    );
+  }, []);
 
   // Bounce home if missing wallet or txHash. Wait for wagmi to finish
   // (re)connecting first — direct URL nav to /math/game?tx=… loads
@@ -258,7 +266,7 @@ function MathGameInner() {
     : Math.min(100, (secondsLeft / Math.max(0.5, totalSeconds)) * 100);
 
   return (
-    <div className={`flex-1 flex flex-col select-none touch-manipulation transition-colors duration-200 ${backdropForQ(qIndex)}`}>
+    <div className={`flex-1 flex flex-col select-none touch-manipulation ${backdrop}`}>
       {/* SCORE */}
       <div className="pt-8 pb-4 text-center">
         <div className="font-display text-xs tracking-[0.4em] text-muted">SCORE</div>
