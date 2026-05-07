@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/treasury-alert",
       "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/cron/sweep-bots",
+      "schedule": "0 12 * * *"
     }
   ]
 }
