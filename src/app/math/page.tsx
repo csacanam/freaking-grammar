@@ -77,26 +77,30 @@ export default function MathLobbyPage() {
           </div>
           <SakaLabsCredit />
         </header>
-
-        <div className="flex items-center justify-between">
-          <div className="font-display text-sm tracking-[0.25em] uppercase text-muted">
-            {t.todaysPot}
-          </div>
-          <div className="inline-flex items-center gap-1.5 text-xs font-display tracking-wider uppercase text-muted">
-            <span className="w-1.5 h-1.5 rounded-full bg-teal animate-pulse" />
-            <span>{t.closesIn}</span>
-            <Countdown
-              targetIso={resetIso}
-              className="font-mono tabular-nums text-ink"
-            />
-          </div>
-        </div>
       </div>
 
       <div className="px-5 pt-4 pb-10 flex flex-col gap-4">
         <div className="rounded-3xl bg-white border border-black/5 shadow-[0_6px_0_0_rgba(0,0,0,0.06)] flex flex-col overflow-hidden">
           <div className="h-1.5 bg-orange" />
           <div className="p-5 flex flex-col gap-4">
+            {/* Pot title + countdown lives inside the card because Math
+                has a single pot — the global "Today's pot · Closes in"
+                strip Grammar uses above stacked EN/ES cards would be
+                redundant context here. */}
+            <div className="flex items-center justify-between -mt-1">
+              <div className="font-display text-sm tracking-[0.25em] uppercase text-muted">
+                {t.todaysPot}
+              </div>
+              <div className="inline-flex items-center gap-1.5 text-xs font-display tracking-wider uppercase text-muted">
+                <span className="w-1.5 h-1.5 rounded-full bg-teal animate-pulse" />
+                <span>{t.closesIn}</span>
+                <Countdown
+                  targetIso={resetIso}
+                  className="font-mono tabular-nums text-ink"
+                />
+              </div>
+            </div>
+
             <div className="rounded-2xl bg-orange/10 px-4 py-3 flex items-baseline justify-between gap-3">
               <div className="font-display text-sm tracking-[0.15em] uppercase text-orange leading-tight">
                 {t.winnerTakesAll}
