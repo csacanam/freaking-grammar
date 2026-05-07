@@ -4,18 +4,23 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Countdown } from "@/components/Countdown";
-import { Button } from "@/components/Button";
-import { Leaderboard } from "@/components/Leaderboard";
 import { PayAndPlayButton } from "@/components/PayAndPlayButton";
+import { PlayerName } from "@/components/PlayerName";
 import { SakaLabsCredit } from "@/components/SakaLabsCredit";
+import { fmtUSD } from "@/lib/format";
 import { getMathLobby, type LobbyData } from "@/lib/api";
 import { useCurrentPlayer } from "@/lib/wallet";
+import { useLang } from "@/lib/lang-provider";
 
-// Math lobby. Single-game, no language toggle. Shows today's pot,
-// leaderboard, and the pay-and-play button (Math variant). Borrows the
-// header chrome from /grammar but drops the EN/ES PotCard split — Math
-// has one pot for everyone.
+const TOP = 3;
+
+// Math home. Single-game, no language toggle. Visually mirrors the
+// Grammar PotCard (white card, accent stripe, tinted pot tag, mini
+// leaderboard, play CTA, sponsor link) so the platform feels like one
+// product family. Math's accent is orange — distinct from Grammar's
+// teal/purple but related to the yellow used in the gameplay screen.
 export default function MathLobbyPage() {
+  const { t } = useLang();
   const { address } = useCurrentPlayer();
   const [lobby, setLobby] = useState<LobbyData | null>(null);
 
@@ -36,6 +41,11 @@ export default function MathLobbyPage() {
       Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1),
     ).toISOString();
   }, []);
+
+  const rows = lobby?.leaderboard ?? [];
+  const top = rows.slice(0, TOP);
+  const me = rows.find((r) => r.isMe);
+  const meOutside = me && me.rank > TOP;
 
   return (
     <div className="flex-1 flex flex-col max-w-md mx-auto w-full">
@@ -70,11 +80,11 @@ export default function MathLobbyPage() {
 
         <div className="flex items-center justify-between">
           <div className="font-display text-sm tracking-[0.25em] uppercase text-muted">
-            Today&apos;s pot
+            {t.todaysPot}
           </div>
           <div className="inline-flex items-center gap-1.5 text-xs font-display tracking-wider uppercase text-muted">
             <span className="w-1.5 h-1.5 rounded-full bg-teal animate-pulse" />
-            <span>Closes in</span>
+            <span>{t.closesIn}</span>
             <Countdown
               targetIso={resetIso}
               className="font-mono tabular-nums text-ink"
@@ -84,45 +94,95 @@ export default function MathLobbyPage() {
       </div>
 
       <div className="px-5 pt-4 pb-10 flex flex-col gap-4">
-        {/* Pot card */}
-        <div className="rounded-3xl bg-yellow/30 px-5 py-5 border border-black/5">
-          <div className="flex items-baseline justify-between">
-            <div className="font-display text-xs tracking-[0.25em] uppercase text-muted">
-              Pot
+        <div className="rounded-3xl bg-white border border-black/5 shadow-[0_6px_0_0_rgba(0,0,0,0.06)] flex flex-col overflow-hidden">
+          <div className="h-1.5 bg-orange" />
+          <div className="p-5 flex flex-col gap-4">
+            <div className="rounded-2xl bg-orange/10 px-4 py-3 flex items-baseline justify-between gap-3">
+              <div className="font-display text-sm tracking-[0.15em] uppercase text-orange leading-tight">
+                {t.winnerTakesAll}
+              </div>
+              <div className="font-display text-5xl text-ink leading-none tabular-nums">
+                {lobby ? fmtUSD(lobby.potUSD) : "—"}
+              </div>
             </div>
-            <div className="font-display text-3xl tabular-nums">
-              ${lobby ? lobby.potUSD.toFixed(2) : "—"}
-            </div>
-          </div>
-          <p className="text-xs text-muted mt-2 leading-snug">
-            Decide whether the math operation is correct or incorrect before
-            time runs out. Longest streak today wins the pot in USDT.
-          </p>
-        </div>
 
-        <PayAndPlayButton
-          playerHasFreePlay={lobby?.playerHasFreePlay ?? true}
-          app="math"
-        />
+            <ul className="divide-y divide-black/5">
+              {lobby === null && (
+                <>
+                  <SkeletonRow />
+                  <SkeletonRow />
+                  <SkeletonRow />
+                </>
+              )}
+              {lobby && top.length === 0 && (
+                <li className="py-5 text-center text-muted text-sm">
+                  {t.noPlaysYet}
+                </li>
+              )}
+              {lobby && top.map((r) => <Row key={r.rank} r={r} />)}
+              {lobby && meOutside && (
+                <>
+                  <li className="py-1 text-center text-muted text-xs tracking-[0.4em] select-none">
+                    •••
+                  </li>
+                  <Row r={me} />
+                </>
+              )}
+            </ul>
 
-        {lobby && lobby.leaderboard.length > 0 && (
-          <div className="rounded-3xl bg-white px-5 py-4 border border-black/5">
-            <div className="font-display text-xs tracking-[0.25em] uppercase text-muted mb-3">
-              Today&apos;s leaderboard
-            </div>
-            <Leaderboard
-              rows={lobby.leaderboard.slice(0, 10)}
-              closesAtIso={lobby.closesAtIso}
+            <PayAndPlayButton
+              app="math"
+              playerHasFreePlay={!!lobby?.playerHasFreePlay}
             />
           </div>
-        )}
-
-        {lobby && lobby.leaderboard.length === 0 && (
-          <div className="rounded-3xl bg-white px-5 py-6 border border-dashed border-black/10 text-center text-sm text-muted">
-            No plays yet today — be the first.
-          </div>
-        )}
+        </div>
       </div>
     </div>
   );
+}
+
+function Row({
+  r,
+}: {
+  r: { rank: number; player: string; score: number; isMe?: boolean };
+}) {
+  const { t } = useLang();
+  return (
+    <li
+      className={`flex items-center gap-3 py-2.5 ${
+        r.isMe ? "font-semibold" : ""
+      }`}
+    >
+      <span
+        className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center font-display text-sm ${
+          r.rank === 1
+            ? "bg-yellow text-ink"
+            : r.rank === 2
+            ? "bg-purple/20 text-purple"
+            : r.rank === 3
+            ? "bg-orange/30 text-ink"
+            : "bg-black/[0.04] text-muted"
+        }`}
+      >
+        {r.rank === 1 ? (
+          <Image src="/medal.png" alt="" width={16} height={16} />
+        ) : (
+          r.rank
+        )}
+      </span>
+      <span className="flex-1 text-sm text-ink truncate">
+        <PlayerName address={r.player} />
+        {r.isMe && (
+          <span className="ml-2 text-[10px] text-teal font-display tracking-widest uppercase">
+            {t.youTag}
+          </span>
+        )}
+      </span>
+      <span className="font-display text-lg tabular-nums">{r.score}</span>
+    </li>
+  );
+}
+
+function SkeletonRow() {
+  return <li className="h-10 bg-black/[0.04] animate-pulse rounded my-1.5" />;
 }
