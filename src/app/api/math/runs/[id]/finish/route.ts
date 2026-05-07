@@ -1,3 +1,6 @@
+// Mark a Math run as finished/abandoned and compute final rank. Same
+// shape as Grammar's finish endpoint.
+
 import type { NextRequest } from "next/server";
 import { supabase, computeRank } from "@/lib/supabase";
 
@@ -17,7 +20,7 @@ export async function POST(
 
   const { data: runRow } = await supabase
     .from("runs")
-    .select("player,score,status,day_utc,lang")
+    .select("player,score,status,day_utc,game")
     .eq("id", runId)
     .maybeSingle();
 
@@ -29,8 +32,11 @@ export async function POST(
     score: number;
     status: string;
     day_utc: string;
-    lang: string;
+    game: string;
   };
+  if (run.game !== "math") {
+    return Response.json({ error: "not-a-math-run" }, { status: 400 });
+  }
 
   if (run.status === "open") {
     await supabase
@@ -43,7 +49,7 @@ export async function POST(
   }
 
   const rank = await computeRank(
-    { game: "grammar", lang: run.lang as "en" | "es" },
+    { game: "math" },
     run.day_utc,
     run.player,
     run.score,

@@ -46,18 +46,24 @@ export function PayAndPlayButton({
   playerHasFreePlay,
   replay = false,
   game: gameOverride,
+  app = "grammar",
 }: {
   playerHasFreePlay: boolean;
   replay?: boolean;
   // Optional: pot cards pass their own game explicitly so the button drives
   // the right pot regardless of the URL ?game= selection. Falls back to the
-  // lang context for legacy callers (game/over page).
+  // lang context for legacy callers (game/over page). Only relevant for
+  // app='grammar'; for app='math' the game is fixed (gameId=3, no lang).
   game?: Lang;
+  // Which app this button drives. Math reuses the same on-chain `play`
+  // entrypoint (the contract is multi-game) but with gameId=3 and a
+  // different post-payment redirect.
+  app?: "grammar" | "math";
 }) {
   const router = useRouter();
   const { t, game: ctxGame } = useLang();
   const game = gameOverride ?? ctxGame;
-  const gameId = gameIdFor(game);
+  const gameId = app === "math" ? 3 : gameIdFor(game);
   const { address, isConnected, chainId } = useAccount();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
@@ -181,7 +187,11 @@ export function PayAndPlayButton({
     }
 
     setStage("starting");
-    router.push(`/grammar/game?tx=${playHash}&game=${game}`);
+    const dest =
+      app === "math"
+        ? `/math/game?tx=${playHash}`
+        : `/grammar/game?tx=${playHash}&game=${game}`;
+    router.push(dest);
   }
 
   async function handleClick() {

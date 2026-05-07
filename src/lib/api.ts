@@ -52,6 +52,11 @@ export async function getLobby(lang: Lang, player?: string): Promise<LobbyData> 
   return r.json();
 }
 
+export async function getMathLobby(player?: string): Promise<LobbyData> {
+  const r = await fetch(`/api/math/lobby${q({ player })}`, { cache: "no-store" });
+  return r.json();
+}
+
 export async function getHistory(lang: Lang): Promise<HistoryDay[]> {
   const r = await fetch(`/api/history${q({ lang })}`, { cache: "no-store" });
   return r.json();
@@ -146,5 +151,68 @@ export async function finishRun(
     body: JSON.stringify({ reason }),
   });
   if (!r.ok) throw new Error(`finishRun failed: ${r.status}`);
+  return r.json();
+}
+
+// ----- MATH game flow
+
+export type MathQuestion = {
+  left: number;
+  right: number;
+  op: "+" | "-" | "x" | "/";
+  shown: number;
+};
+
+export type MathStartResult = { runId: string; question: MathQuestion };
+
+export type MathAnswerResult =
+  | { correct: true; score: number; nextQuestion: MathQuestion }
+  | { correct: false; ended: true; score: number; rank: number; reason: "wrong" };
+
+export async function startMathRun(
+  player: string,
+  txHash: string,
+): Promise<MathStartResult> {
+  const r = await fetch("/api/math/runs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ player, txHash }),
+  });
+  if (!r.ok) {
+    let reason = String(r.status);
+    try {
+      const body = (await r.json()) as { error?: string };
+      if (body?.error) reason = body.error;
+    } catch {
+      /* non-JSON body */
+    }
+    throw new Error(`startMathRun failed: ${reason}`);
+  }
+  return r.json();
+}
+
+export async function submitMathAnswer(
+  runId: string,
+  choice: "correct" | "incorrect",
+): Promise<MathAnswerResult> {
+  const r = await fetch(`/api/math/runs/${encodeURIComponent(runId)}/answer`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ choice }),
+  });
+  if (!r.ok) throw new Error(`submitMathAnswer failed: ${r.status}`);
+  return r.json();
+}
+
+export async function finishMathRun(
+  runId: string,
+  reason: "timeout" | "abandoned",
+): Promise<FinishResult> {
+  const r = await fetch(`/api/math/runs/${encodeURIComponent(runId)}/finish`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ reason }),
+  });
+  if (!r.ok) throw new Error(`finishMathRun failed: ${r.status}`);
   return r.json();
 }

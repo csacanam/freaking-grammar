@@ -27,19 +27,28 @@ export const TOKEN_DECIMALS = 1_000_000;
 // Rank = 1 + number of distinct players with a strictly better best score today.
 // Ties share a rank, and the current player is included using `score` when they
 // don't have a higher score stored yet (mid-run).
+//
+// `scope` describes which leaderboard to count against:
+//   { game: 'grammar', lang: 'en' | 'es' } → Grammar EN or ES specifically
+//   { game: 'math' }                       → Math (no language)
+//
+// The previous lang-only signature is kept as a thin wrapper for the
+// existing Grammar callers so this change doesn't ripple.
 export async function computeRank(
-  lang: string,
+  scope: { game: "grammar"; lang: "en" | "es" } | { game: "math" },
   day: string,
   player: string,
   score: number,
 ): Promise<number> {
   if (!supabase) return 0;
-  const { data } = await supabase
+  let q = supabase
     .from("runs")
     .select("player,score")
-    .eq("lang", lang)
+    .eq("game", scope.game)
     .eq("day_utc", day)
     .eq("status", "finished");
+  if (scope.game === "grammar") q = q.eq("lang", scope.lang);
+  const { data } = await q;
 
   const bestByPlayer = new Map<string, number>();
   for (const r of (data ?? []) as Array<{ player: string; score: number }>) {

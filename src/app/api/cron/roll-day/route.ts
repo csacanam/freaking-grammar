@@ -50,49 +50,53 @@ export async function GET(req: NextRequest) {
   }
 
   const today = todayUtc();
-  const results: Record<string, LangResult> = {} as Record<string, LangResult>;
+  // Each settlement bucket: human-readable label, the game it belongs
+  // to, the gameId on-chain, and (for grammar) which UI language. Math
+  // has lang=null because it's one global pot. New games slot in here.
+  const buckets: Bucket[] = [
+    { label: "EN", game: "grammar", gameId: 1, lang: "en" },
+    { label: "ES", game: "grammar", gameId: 2, lang: "es" },
+    { label: "MATH", game: "math", gameId: 3, lang: null },
+  ];
 
-  for (const lang of ["en", "es"] as const) {
-    const gameId = lang === "en" ? 1 : 2;
-    results[lang] = await rollLang(lang, gameId, today);
+  const results: Array<{ label: string; result: LangResult }> = [];
+  for (const b of buckets) {
+    results.push({ label: b.label, result: await rollPot(b, today) });
   }
 
-  // Single consolidated Telegram for both languages. Sent on every
-  // settlement run (not only when bots were caught) so the operator
-  // gets a daily heartbeat with winners + any new heuristic flags
-  // attached. Per-lang messages were too fragmented and silent on
-  // smooth days; one message gives the full picture.
+  // Single consolidated Telegram for every settled bucket. Sent on
+  // every settlement run (not only when bots were caught) so the
+  // operator gets a daily heartbeat with winners + any new heuristic
+  // flags attached. Skipped buckets (already-open, no-db) stay silent
+  // — only "real" settlements produce a line.
   await sendSettlementSummary(results).catch(() => {});
 
   return Response.json({ today, results });
 }
 
 async function sendSettlementSummary(
-  results: Record<"en" | "es", LangResult>,
+  results: Array<{ label: string; result: LangResult }>,
 ): Promise<void> {
-  const settledAny =
-    (results.en.status === "settled" && results.en.closed.day) ||
-    (results.es.status === "settled" && results.es.closed.day);
-  if (!settledAny) return; // nothing meaningful happened (e.g. alreadyOpen)
+  const firstSettled = results.find(
+    (r): r is { label: string; result: Extract<LangResult, { status: "settled" }> } =>
+      r.result.status === "settled",
+  );
+  if (!firstSettled) return; // nothing meaningful happened (e.g. alreadyOpen)
 
-  const day =
-    (results.en.status === "settled" && results.en.closed.day) ||
-    (results.es.status === "settled" && results.es.closed.day) ||
-    "";
+  const day = firstSettled.result.closed.day;
 
   const lines: string[] = [`🎲 *Settlement ${day}*`];
 
-  for (const lang of ["en", "es"] as const) {
-    const r = results[lang];
+  for (const { label, result: r } of results) {
     if (r.status !== "settled") {
-      lines.push("", `*${lang.toUpperCase()}* — ${r.reason}`);
+      lines.push("", `*${label}* — ${r.reason}`);
       continue;
     }
     const c = r.closed;
     const winnerLine = c.winner
       ? `✅ Winner: \`${c.winner.slice(0, 6)}…${c.winner.slice(-4)}\` (score ${c.winnerScore})`
       : `⚠️ No clean winner — pot rolls forward.`;
-    lines.push("", `*${lang.toUpperCase()} → ${c.day}*`, winnerLine);
+    lines.push("", `*${label} → ${c.day}*`, winnerLine);
     if (r.skipped.length > 0) {
       lines.push(`🆕 auto-flagged ${r.skipped.length} new bot(s):`);
       for (const s of r.skipped) {
@@ -135,17 +139,38 @@ type LangResult =
     }
   | { status: "skipped"; reason: string };
 
-async function rollLang(
-  lang: "en" | "es",
-  gameId: number,
-  today: string,
-): Promise<LangResult> {
+type Bucket = {
+  label: string;
+  game: "grammar" | "math";
+  gameId: number;
+  // Only meaningful for grammar (en/es). Math doesn't have a language
+  // — `null` here, and the wins/sponsor_payouts PKs have moved off
+  // `lang` onto `game_id` so a null lang doesn't break uniqueness.
+  lang: "en" | "es" | null;
+};
+
+// PostgREST .eq(col, null) does NOT match — it requires .is(col, null).
+// Math buckets carry lang=null; this small helper threads the right
+// operator into a query so we can write the rest of the function as if
+// lang was always a value.
+function withLangFilter<T>(q: T, lang: "en" | "es" | null): T {
+  // The `as any` is unavoidable because the supabase QueryBuilder
+  // generic chain narrows on each call and TypeScript can't see that
+  // both .eq and .is return the same shape.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (lang === null ? (q as any).is("lang", null) : (q as any).eq("lang", lang)) as T;
+}
+
+async function rollPot(b: Bucket, today: string): Promise<LangResult> {
   if (!supabase) return { status: "skipped", reason: "no-db" };
 
-  const { data: last } = await supabase
-    .from("pots")
-    .select("lang,day_utc,day_number,amount_units,closed,rolled_tx")
-    .eq("lang", lang)
+  const { data: last } = await withLangFilter(
+    supabase
+      .from("pots")
+      .select("lang,day_utc,day_number,amount_units,closed,rolled_tx")
+      .eq("game", b.game),
+    b.lang,
+  )
     .order("day_utc", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -154,7 +179,8 @@ async function rollLang(
 
   if (!lastPot) {
     await supabase.from("pots").insert({
-      lang,
+      game: b.game,
+      lang: b.lang,
       day_utc: today,
       day_number: 1,
       amount_units: 0,
@@ -197,10 +223,13 @@ async function rollLang(
     let offset = 0;
     let pickedWinner = false;
     walk: while (!pickedWinner) {
-      let query = supabase
-        .from("runs")
-        .select("player,score,ended_at")
-        .eq("lang", lang)
+      let query = withLangFilter(
+        supabase
+          .from("runs")
+          .select("player,score,ended_at")
+          .eq("game", b.game),
+        b.lang,
+      )
         .eq("day_utc", prevDay)
         .eq("status", "finished")
         .gt("score", 0)
@@ -224,7 +253,9 @@ async function rollLang(
         // Pass the in-memory blacklist so the heuristic short-circuit
         // also catches wallets just-flagged earlier in this same loop
         // (cross-page dedup against fresh adds).
-        const flag = await checkBotPlayer(player, supabase, botBlacklist);
+        const flag = await checkBotPlayer(player, supabase, botBlacklist, {
+          game: b.game,
+        });
         if (flag.flagged) {
           skipped.push({ player, score: c.score, flag });
           continue;
@@ -240,33 +271,34 @@ async function rollLang(
       offset += PAGE;
     }
 
-    await supabase
-      .from("pots")
-      .update({
-        closed: true,
-        winner,
-        winner_score: winnerScore,
-      })
-      .eq("lang", lang)
-      .eq("day_utc", prevDay);
+    await withLangFilter(
+      supabase
+        .from("pots")
+        .update({ closed: true, winner, winner_score: winnerScore })
+        .eq("game", b.game),
+      b.lang,
+    ).eq("day_utc", prevDay);
 
     if (winner && Number(lastPot.amount_units) > 0) {
       await supabase.from("wins").upsert(
         {
-          lang,
+          game: b.game,
+          game_id: b.gameId,
+          lang: b.lang,
           day_utc: prevDay,
           player: winner,
           amount_units: lastPot.amount_units,
           claimed: false,
         },
-        { onConflict: "lang,day_utc,player" },
+        { onConflict: "game_id,day_utc,player" },
       );
     }
   }
 
   // Open today in the DB so plays can start funding it.
   await supabase.from("pots").insert({
-    lang,
+    game: b.game,
+    lang: b.lang,
     day_utc: today,
     day_number: lastPot.day_number + 1,
     amount_units: 0,
@@ -277,27 +309,31 @@ async function rollLang(
   // key / contract address aren't configured yet.
   let rolledTx: string | null = lastPot.rolled_tx;
   if (!rolledTx) {
-    rolledTx = await rollDayOnChain(gameId, winner);
+    rolledTx = await rollDayOnChain(b.gameId, winner);
     if (rolledTx) {
-      await supabase
-        .from("pots")
-        .update({ rolled_tx: rolledTx })
-        .eq("lang", lang)
-        .eq("day_utc", prevDay);
+      await withLangFilter(
+        supabase
+          .from("pots")
+          .update({ rolled_tx: rolledTx })
+          .eq("game", b.game),
+        b.lang,
+      ).eq("day_utc", prevDay);
     }
   }
 
   // Mirror today's pot amount (seed from treasury) from the contract.
   if (POT_ADDRESS !== zeroAddress) {
     try {
-      const seeded = await readPotAmount(gameId, lastPot.day_number + 1);
-      await supabase
-        .from("pots")
-        .update({ amount_units: seeded.toString() })
-        .eq("lang", lang)
-        .eq("day_utc", today);
+      const seeded = await readPotAmount(b.gameId, lastPot.day_number + 1);
+      await withLangFilter(
+        supabase
+          .from("pots")
+          .update({ amount_units: seeded.toString() })
+          .eq("game", b.game),
+        b.lang,
+      ).eq("day_utc", today);
     } catch (e) {
-      console.error(`pot mirror failed for ${lang}:`, e);
+      console.error(`pot mirror failed for ${b.label}:`, e);
     }
   }
 

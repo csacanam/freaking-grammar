@@ -191,3 +191,85 @@ insert into bot_wallets (player, reason, notes) values
   ('0xdead181ffb8e104ec9347dbf2b8f5884e1ba5f3b', 'manual', 'vanity address sibling'),
   ('0xa41836014a58f004ee0746c7c66305fdcc252cbd', 'manual', 'sibling sybil')
 on conflict (player) do nothing;
+
+-- ----------------------------------------------- multi-game (Math)
+-- Adding Freaking Math (gameId=3) under nerdos.fun. Grammar already
+-- splits per-language with gameId=1 (EN) / gameId=2 (ES); Math is
+-- single-pot with no language split. The schema needs to (a) tell
+-- "which game" rows belong to and (b) handle null `lang` for games
+-- without languages.
+--
+-- Strategy: `game_id` is the canonical discriminator for primary keys
+-- and unique constraints (always non-null, scales to N games trivially
+-- as we add more). `game` text is a human-readable shortcut. `lang`
+-- becomes truly optional metadata, only meaningful for Grammar's
+-- EN/ES split.
+--
+--   Game ID  Game     Lang
+--   1        grammar  en
+--   2        grammar  es
+--   3        math     null
+--   4+       (future) (free)
+--
+-- Existing Grammar rows: game='grammar', game_id=1 or 2, lang stays.
+-- Math rows: game='math', game_id=3, lang=null.
+
+-- Add `game` text shortcut + new game_id columns where missing.
+alter table runs            add column if not exists game text not null default 'grammar' check (game in ('grammar','math'));
+alter table pots            add column if not exists game text not null default 'grammar' check (game in ('grammar','math'));
+alter table wins            add column if not exists game text not null default 'grammar' check (game in ('grammar','math'));
+alter table sponsor_payouts add column if not exists game text not null default 'grammar' check (game in ('grammar','math'));
+
+alter table wins            add column if not exists game_id smallint;
+alter table sponsor_payouts add column if not exists game_id smallint;
+
+-- Backfill new game_id from existing lang for Grammar wins/payouts.
+update wins
+  set game_id = case when lang = 'en' then 1 when lang = 'es' then 2 end
+  where game_id is null;
+update sponsor_payouts
+  set game_id = case when lang = 'en' then 1 when lang = 'es' then 2 end
+  where game_id is null;
+
+-- Tighten game_id to NOT NULL once backfill is done.
+alter table wins            alter column game_id set not null;
+alter table sponsor_payouts alter column game_id set not null;
+
+-- Move PK / unique off `lang` (which can't be null while a PK column)
+-- onto `game_id` (always set, scales infinitely).
+alter table wins drop constraint if exists wins_pkey;
+alter table wins add primary key (game_id, day_utc, player);
+alter table sponsor_payouts drop constraint if exists sponsor_payouts_campaign_id_lang_day_utc_key;
+alter table sponsor_payouts add constraint sponsor_payouts_campaign_id_game_id_day_utc_key
+  unique (campaign_id, game_id, day_utc);
+
+-- Now `lang` is free to be null for non-language games.
+alter table runs            alter column lang drop not null;
+alter table pots            alter column lang drop not null;
+alter table wins            alter column lang drop not null;
+alter table sponsor_payouts alter column lang drop not null;
+
+-- Replace the original CHECK constraints (the auto-named ones blocked
+-- null) with permissive versions that still enforce the en/es enum
+-- when lang is set.
+alter table runs            drop constraint if exists runs_lang_check;
+alter table runs            add constraint runs_lang_check check (lang is null or lang in ('en','es'));
+alter table pots            drop constraint if exists pots_lang_check;
+alter table pots            add constraint pots_lang_check check (lang is null or lang in ('en','es'));
+alter table wins            drop constraint if exists wins_lang_check;
+alter table wins            add constraint wins_lang_check check (lang is null or lang in ('en','es'));
+alter table sponsor_payouts drop constraint if exists sponsor_payouts_lang_check;
+alter table sponsor_payouts add constraint sponsor_payouts_lang_check check (lang is null or lang in ('en','es'));
+
+-- run_questions.question_id references the curated grammar bank, but
+-- Math equations are generated dynamically per round — there's no row
+-- in `questions` to reference. Allow null and add the math equation
+-- payload alongside, so analytics can still group by operation type
+-- (which math operations have the highest fail rate, etc.) without
+-- forcing math into a synthetic questions table.
+alter table run_questions alter column question_id drop not null;
+alter table run_questions add column if not exists math_left   integer;
+alter table run_questions add column if not exists math_right  integer;
+alter table run_questions add column if not exists math_op     text check (math_op in ('+','-','x','/'));
+alter table run_questions add column if not exists math_shown  integer;  -- the result the player saw
+alter table run_questions add column if not exists math_truth  boolean;  -- whether the shown result is correct

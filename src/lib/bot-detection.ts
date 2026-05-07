@@ -50,6 +50,7 @@ export async function checkBotPlayer(
   player: string,
   supabase: SupabaseClient,
   blacklist?: Set<string>,
+  scope?: { game?: "grammar" | "math" },
 ): Promise<BotFlag> {
   const addr = player.toLowerCase();
 
@@ -67,16 +68,23 @@ export async function checkBotPlayer(
     Date.now() - HEURISTIC_LOOKBACK_DAYS * 86_400_000,
   ).toISOString();
 
-  const { data } = await supabase
+  // Scope to one game when caller provides it. Grammar and Math have
+  // different natural timing distributions (Grammar reads phrases ~3s,
+  // Math reads tiny equations ~1.5s), so mixing the two would muddy
+  // the heuristic — a fast Math player could push their pooled p50
+  // below the threshold and escape detection on Grammar.
+  let q = supabase
     .from("run_questions")
     .select(
-      "q_index,served_at,answered_at,answer_correct,runs!inner(player,status)",
+      "q_index,served_at,answered_at,answer_correct,runs!inner(player,status,game)",
     )
     .eq("runs.player", addr)
     .gte("served_at", since)
     .gt("q_index", 0) // q_index 0 has no timer; not useful for fingerprinting
     .neq("runs.status", "open")
     .limit(2000);
+  if (scope?.game) q = q.eq("runs.game", scope.game);
+  const { data } = await q;
 
   type Row = {
     served_at: string;

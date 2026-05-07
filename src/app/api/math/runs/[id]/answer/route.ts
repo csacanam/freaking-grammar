@@ -1,9 +1,20 @@
+// POST a player's answer to the latest served Math equation. Body
+// shape: { choice: "correct" | "incorrect" }. The client tells us
+// whether the user thinks the displayed result is correct or not, and
+// the server validates against the `math_truth` flag stored when the
+// equation was generated. Truth lives server-side so a tampered client
+// can't fake answers.
+//
+// One wrong answer ends the run (same as Grammar). On a correct
+// answer, score increments and the next equation is generated and
+// stored — the client only ever sees the next equation, never the
+// truth value.
+
 import type { NextRequest } from "next/server";
 import { supabase, computeRank } from "@/lib/supabase";
+import { generateMathQuestion } from "@/lib/math-questions";
 
 export const dynamic = "force-dynamic";
-
-type QuestionRow = { id: string; phrase: string; correct: string; wrong: string };
 
 export async function POST(
   req: NextRequest,
@@ -14,15 +25,15 @@ export async function POST(
   }
 
   const { id: runId } = await params;
-  const body = (await req.json().catch(() => ({}))) as { pickedWord?: string };
-  const pickedWord = body.pickedWord;
-  if (!pickedWord) {
+  const body = (await req.json().catch(() => ({}))) as { choice?: string };
+  const choice = body.choice;
+  if (choice !== "correct" && choice !== "incorrect") {
     return Response.json({ error: "invalid-body" }, { status: 400 });
   }
 
   const { data: runRow } = await supabase
     .from("runs")
-    .select("id,player,score,status,day_utc,lang")
+    .select("id,player,score,status,day_utc,game")
     .eq("id", runId)
     .maybeSingle();
 
@@ -35,16 +46,19 @@ export async function POST(
     score: number;
     status: string;
     day_utc: string;
-    lang: string;
+    game: string;
   };
+  if (run.game !== "math") {
+    return Response.json({ error: "not-a-math-run" }, { status: 400 });
+  }
   if (run.status !== "open") {
     return Response.json({ error: "run-closed" }, { status: 409 });
   }
 
-  // Latest served question for this run.
+  // Latest served equation for this run.
   const { data: rqRow } = await supabase
     .from("run_questions")
-    .select("id,question_id,q_index,answered_at")
+    .select("id,q_index,answered_at,math_truth")
     .eq("run_id", runId)
     .order("q_index", { ascending: false })
     .limit(1)
@@ -55,43 +69,39 @@ export async function POST(
   }
   const rq = rqRow as {
     id: string;
-    question_id: string;
     q_index: number;
     answered_at: string | null;
+    math_truth: boolean | null;
   };
   if (rq.answered_at) {
     return Response.json({ error: "already-answered" }, { status: 409 });
   }
-
-  const { data: qRow } = await supabase
-    .from("questions")
-    .select("correct")
-    .eq("id", rq.question_id)
-    .single();
-
-  if (!qRow) {
-    return Response.json({ error: "question-missing" }, { status: 500 });
+  if (rq.math_truth === null) {
+    return Response.json({ error: "missing-truth" }, { status: 500 });
   }
-  const q = qRow as { correct: string };
 
-  const isCorrect = pickedWord === q.correct;
+  // Player's choice "correct" means they think the shown result is the
+  // real answer. Compare against `math_truth`.
+  const playerSaidCorrect = choice === "correct";
+  const isRight = playerSaidCorrect === rq.math_truth;
 
   await supabase
     .from("run_questions")
     .update({
       answered_at: new Date().toISOString(),
-      answer_correct: isCorrect,
+      answer_correct: isRight,
+      answer_choice: choice,
     })
     .eq("id", rq.id);
 
-  if (!isCorrect) {
+  if (!isRight) {
     await supabase
       .from("runs")
       .update({ status: "finished", ended_at: new Date().toISOString() })
       .eq("id", runId);
 
     const rank = await computeRank(
-      { game: "grammar", lang: run.lang as "en" | "es" },
+      { game: "math" },
       run.day_utc,
       run.player,
       run.score,
@@ -108,58 +118,28 @@ export async function POST(
   const newScore = run.score + 1;
   await supabase.from("runs").update({ score: newScore }).eq("id", runId);
 
-  // Pick next question not already served in this run.
-  const [{ data: allQ }, { data: seenQ }] = await Promise.all([
-    supabase
-      .from("questions")
-      .select("id,phrase,correct,wrong")
-      .eq("lang", run.lang)
-      .eq("active", true),
-    supabase.from("run_questions").select("question_id").eq("run_id", runId),
-  ]);
-
-  const seenIds = new Set(
-    ((seenQ ?? []) as Array<{ question_id: string }>).map((x) => x.question_id),
-  );
-  const available = ((allQ ?? []) as QuestionRow[]).filter(
-    (row) => !seenIds.has(row.id),
-  );
-
-  if (available.length === 0) {
-    await supabase
-      .from("runs")
-      .update({ status: "finished", ended_at: new Date().toISOString() })
-      .eq("id", runId);
-
-    const rank = await computeRank(
-      { game: "grammar", lang: run.lang as "en" | "es" },
-      run.day_utc,
-      run.player,
-      newScore,
-    );
-    return Response.json({
-      correct: true,
-      ended: true,
-      reason: "cleared",
-      score: newScore,
-      rank,
-    });
-  }
-
-  const next = available[Math.floor(Math.random() * available.length)];
+  // Generate the next equation. Math has unbounded difficulty (the
+  // generator floors at 1.5s + off-by-1 wrongs around q=30), so unlike
+  // Grammar there's no "exhausted the bank" path.
+  const nextQ = generateMathQuestion(rq.q_index + 1);
   await supabase.from("run_questions").insert({
     run_id: runId,
-    question_id: next.id,
     q_index: rq.q_index + 1,
+    math_left: nextQ.left,
+    math_right: nextQ.right,
+    math_op: nextQ.op,
+    math_shown: nextQ.shown,
+    math_truth: nextQ.truth,
   });
 
   return Response.json({
     correct: true,
     score: newScore,
     nextQuestion: {
-      phrase: next.phrase,
-      correct: next.correct,
-      wrong: next.wrong,
+      left: nextQ.left,
+      right: nextQ.right,
+      op: nextQ.op,
+      shown: nextQ.shown,
     },
   });
 }
