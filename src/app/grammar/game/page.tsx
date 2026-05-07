@@ -87,7 +87,7 @@ function GameInner() {
           // briefing, which reuses the same txHash (server is idempotent).
           console.error("startRun failed:", e);
           startingRef.current = false;
-          setStartError((e as Error)?.message ?? "Could not start the run.");
+          setStartError((e as Error)?.message ?? t.startErrorFallback);
         }
       }, 500);
       return () => clearTimeout(id);
@@ -351,11 +351,12 @@ function StartErrorOverlay({
   message: string;
   onRetry: () => void;
 }) {
+  const { t } = useLang();
   return (
     <div className="flex-1 flex flex-col items-center justify-center gap-6 bg-teal text-white px-6 text-center">
       <Image src="/mascot.png" alt="" width={96} height={96} />
       <h1 className="font-display text-4xl leading-tight">
-        Couldn&rsquo;t start the run
+        {t.startErrorHeadline}
       </h1>
       <p className="font-mono text-sm opacity-80 max-w-xs break-words">
         {message}
@@ -364,10 +365,10 @@ function StartErrorOverlay({
         onClick={onRetry}
         className="bg-yellow text-ink font-display text-xl tracking-widest uppercase px-8 py-3 rounded-2xl shadow-[0_5px_0_0_rgba(0,0,0,0.18)] active:translate-y-[3px] active:shadow-[0_2px_0_0_rgba(0,0,0,0.18)]"
       >
-        Try again
+        {t.retry}
       </button>
       <p className="text-xs opacity-60 max-w-[18rem]">
-        Your payment is safe — the same tx is reused on retry.
+        {t.startErrorFooter}
       </p>
     </div>
   );

@@ -264,7 +264,7 @@ function MathGameInner() {
     return (
       <StartErrorOverlay
         message={startError}
-        retryLabel={t.mathRetry}
+        retryLabel={t.retry}
         onRetry={() => {
           setStartError(null);
           startingRef.current = false;

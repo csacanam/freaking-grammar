@@ -5,10 +5,11 @@ import { usePublicClient } from "wagmi";
 import { parseAbiItem, isAddressEqual, zeroAddress } from "viem";
 import { fmtUSD, shortAddr } from "@/lib/format";
 import { ACTIVE_CHAIN, POT_ADDRESS } from "@/lib/chain";
+import { useLang } from "@/lib/lang-provider";
 
 const TOKEN_DECIMALS = 1_000_000;
 
-const PROTOCOL_LABEL = "Freaking Grammar Protocol";
+const PROTOCOL_LABEL = "nerdos.fun Protocol";
 
 type Entry = {
   key: string;
@@ -30,6 +31,7 @@ const ROLLED_EVENT = parseAbiItem(
 
 export function SponsorLeaderboard() {
   const publicClient = usePublicClient({ chainId: ACTIVE_CHAIN.id });
+  const { t } = useLang();
   const [entries, setEntries] = useState<Entry[] | null>(null);
 
   useEffect(() => {
@@ -130,7 +132,7 @@ export function SponsorLeaderboard() {
       )}
       {entries && entries.length === 0 && (
         <p className="text-sm text-muted text-center py-4">
-          No sponsors yet — be the first to boost a prize.
+          {t.sponsorEmptyState}
         </p>
       )}
       {entries && entries.length > 0 && (

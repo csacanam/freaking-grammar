@@ -24,7 +24,11 @@ function GameOverInner() {
   const reason = sp.get("reason") || "wrong";
 
   const headline =
-    reason === "timeout" ? "⏰  Time's up" : reason === "cleared" ? "🏆  Cleared the deck" : "💥  Game over";
+    reason === "timeout"
+      ? t.timeUpHeadline
+      : reason === "cleared"
+      ? t.clearedHeadline
+      : t.gameOverHeadline;
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-6 max-w-md mx-auto w-full text-center gap-6">
