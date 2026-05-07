@@ -52,10 +52,19 @@ export async function GET() {
     { data: runsData },
     { data: winsData },
     { data: potsData },
+    { data: grantsData },
   ] = await Promise.all([
     supabase.from("runs").select("lang,game,player,was_free"),
     supabase.from("wins").select("lang,game,amount_units"),
     supabase.from("pots").select("lang,game,amount_units,closed"),
+    // External funding (grants, hackathon prizes, ecosystem subsidies).
+    // Tracked separately from `runs.was_free=false` revenue so consumers
+    // like sakalabs.io can chart real protocol earnings against
+    // subsidies and judge sustainability honestly.
+    supabase
+      .from("grants")
+      .select("source,amount_units,token_symbol,received_at,note,tx_hash")
+      .order("received_at", { ascending: false }),
   ]);
 
   const runs = (runsData ?? []) as Array<{
@@ -132,6 +141,33 @@ export async function GET() {
     if (usd > biggestPotUSD) biggestPotUSD = usd;
   }
 
+  // Grants: aggregate USDT-denominated grants into the headline totals
+  // and pass through the raw rows so consumers can render their own
+  // breakdown. Non-USDT grants (CELO, sponsor tokens received as a
+  // grant, etc.) come through in the array but don't roll into the USD
+  // headline — adding price feeds for that conversion isn't worth it
+  // until the volume justifies a pricing service.
+  const grants = (grantsData ?? []) as Array<{
+    source: string;
+    amount_units: string | number;
+    token_symbol: string;
+    received_at: string;
+    note: string | null;
+    tx_hash: string | null;
+  }>;
+  // YYYY-MM in UTC; cheap calendar-month filter for `thisMonth` totals.
+  const currentMonthPrefix = new Date().toISOString().slice(0, 7);
+  let grantsReceivedUSD = 0;
+  let grantsThisMonthUSD = 0;
+  for (const g of grants) {
+    if (g.token_symbol !== "USDT") continue;
+    const usd = Number(g.amount_units) / TOKEN_DECIMALS;
+    grantsReceivedUSD += usd;
+    if (g.received_at.slice(0, 7) === currentMonthPrefix) {
+      grantsThisMonthUSD += usd;
+    }
+  }
+
   // Live on-chain per-game state. Keyed by the public GameKey so
   // dashboards can pivot directly without remembering the contract id.
   const games: Record<
@@ -195,6 +231,20 @@ export async function GET() {
       biggestPotUSD,
       byGame,
       games,
+      grantsReceivedUSD,
+      grantsThisMonthUSD,
+      grants: grants.map((g) => ({
+        source: g.source,
+        amountUSD:
+          g.token_symbol === "USDT"
+            ? Number(g.amount_units) / TOKEN_DECIMALS
+            : null,
+        amountRaw: String(g.amount_units),
+        tokenSymbol: g.token_symbol,
+        receivedAt: g.received_at,
+        note: g.note,
+        txHash: g.tx_hash,
+      })),
       contract: isAddressEqual(POT_ADDRESS, zeroAddress) ? null : POT_ADDRESS,
       entryFeeUSD: ENTRY_FEE_USD,
       protocolFeePct: 20,

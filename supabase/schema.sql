@@ -273,3 +273,28 @@ alter table run_questions add column if not exists math_right  integer;
 alter table run_questions add column if not exists math_op     text check (math_op in ('+','-','x','/'));
 alter table run_questions add column if not exists math_shown  integer;  -- the result the player saw
 alter table run_questions add column if not exists math_truth  boolean;  -- whether the shown result is correct
+
+-- ------------------------------------------------------- grants
+-- External funding (Celo Foundation, ecosystem grants, hackathon prizes,
+-- etc.) tracked separately from `runs.was_free=false` revenue. The point
+-- is honest sustainability accounting: the public /api/stats feed should
+-- show "we earned $X from players AND received $Y in grants" so external
+-- dashboards (sakalabs.io) and onlookers can judge runway accurately
+-- instead of conflating subsidies with organic revenue.
+--
+-- Filled manually via Supabase SQL editor — grants land 1-3x/month, not
+-- worth building an admin UI. Insert example:
+--   insert into grants (source, amount_units, token_symbol, received_at, note)
+--   values ('Celo Foundation', 250000000, 'USDT', '2026-05-01', 'May ecosystem grant');
+create table if not exists grants (
+  id            uuid primary key default gen_random_uuid(),
+  source        text not null,                       -- 'Celo Foundation', 'Optimism RPGF', etc.
+  amount_units  numeric not null check (amount_units > 0),  -- raw on-chain units (USDT = 6 decimals)
+  token_symbol  text not null default 'USDT',        -- which token the grant came in
+  received_at   date not null,                       -- when the grant landed (UTC)
+  tx_hash       text,                                -- on-chain receipt, if applicable
+  note          text,                                -- one-liner about the grant context
+  created_at    timestamptz not null default now()
+);
+
+create index if not exists grants_received_at_idx on grants (received_at desc);
