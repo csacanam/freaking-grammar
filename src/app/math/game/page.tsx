@@ -10,16 +10,19 @@ import {
   type MathQuestion,
 } from "@/lib/api";
 import { useLang } from "@/lib/lang-provider";
+import type { Strings } from "@/lib/i18n";
 import { posthog } from "@/lib/posthog-provider";
 
-// Mirrors the difficulty curve in src/lib/math-questions.ts so the
-// client-side timer matches what the server thinks each question is
-// worth. Aggressive ramp: 2.5s at Q1, 1.5s at Q20. Q0 is the briefing
-// question and renders no timer at all.
+// Mirrors the difficulty curve in src/lib/math-questions.ts. Five-Q
+// phases at 2.5s → 2.3s → 2.0s → 1.7s → 1.5s. Q0 has no client-side
+// timer (warm-up); returns 0 so the timer block hides.
 function timeBudgetSec(q: number): number {
-  if (q < 1) return 0;
-  if (q >= 20) return 1.5;
-  return Number((2.5 - ((q - 1) / 19) * 1.0).toFixed(2));
+  if (q < 1)  return 0;
+  if (q < 5)  return 2.5;
+  if (q < 10) return 2.3;
+  if (q < 15) return 2.0;
+  if (q < 20) return 1.7;
+  return 1.5;
 }
 
 // One backdrop per session — picked once at mount and kept for the
@@ -71,8 +74,8 @@ function MathGameInner() {
     useAccount();
   const address = rawAddress ? rawAddress.toLowerCase() : "";
   // Math has no language split, but the LangProvider still gives us
-  // uiLang for chrome strings (CORRECT / INCORRECT etc.).
-  useLang();
+  // uiLang for chrome strings (PUNTAJE / ESTOY LISTO / etc.).
+  const { t } = useLang();
 
   const [runId, setRunId] = useState<string | null>(null);
   const [score, setScore] = useState(0);
@@ -232,6 +235,7 @@ function MathGameInner() {
     return (
       <StartErrorOverlay
         message={startError}
+        retryLabel={t.mathRetry}
         onRetry={() => {
           setStartError(null);
           startingRef.current = false;
@@ -242,7 +246,13 @@ function MathGameInner() {
   }
 
   if (showBriefing) {
-    return <BriefingOverlay onReady={() => setShowBriefing(false)} />;
+    return (
+      <BriefingOverlay
+        backdrop={backdrop}
+        t={t}
+        onReady={() => setShowBriefing(false)}
+      />
+    );
   }
 
   if (!question) {
@@ -262,7 +272,9 @@ function MathGameInner() {
     <div className={`flex-1 flex flex-col select-none touch-manipulation text-white ${backdrop}`}>
       {/* SCORE */}
       <div className="pt-8 pb-4 text-center">
-        <div className="font-display text-xs tracking-[0.4em] text-white/70">SCORE</div>
+        <div className="font-display text-xs tracking-[0.4em] text-white/70">
+          {t.mathScore}
+        </div>
         <div className="font-display text-6xl tracking-tight tabular-nums leading-none mt-1">
           {score}
         </div>
@@ -301,8 +313,8 @@ function MathGameInner() {
           />
         </div>
         {noTimerThisQuestion && (
-          <div className="mt-2 text-center text-[10px] font-display tracking-[0.3em] uppercase text-white/70">
-            First one — take your time
+          <div className="mt-3 text-center text-sm font-display tracking-[0.2em] uppercase text-white">
+            {t.mathFirstHint}
           </div>
         )}
       </div>
@@ -403,30 +415,40 @@ function CrossIcon() {
   );
 }
 
-function BriefingOverlay({ onReady }: { onReady: () => void }) {
+function BriefingOverlay({
+  backdrop,
+  t,
+  onReady,
+}: {
+  backdrop: string;
+  t: Strings;
+  onReady: () => void;
+}) {
   return (
-    <div className="flex-1 flex flex-col items-center justify-center bg-yellow/40 px-6 text-center gap-7">
+    <div
+      className={`flex-1 flex flex-col items-center justify-center px-6 text-center gap-7 text-white ${backdrop}`}
+    >
       <div className="text-7xl">🔢</div>
-      <h1 className="font-display text-4xl tracking-wide">Freaking Math</h1>
-      <ul className="text-left text-base space-y-3 max-w-sm text-ink/85 leading-snug">
+      <h1 className="font-display text-4xl tracking-wide">{t.mathTitle}</h1>
+      <ul className="text-left text-base space-y-3 max-w-sm leading-snug">
         <li className="flex gap-3">
           <span aria-hidden className="font-display">1.</span>
-          <span>You see an equation. Decide if the result shown is right or wrong.</span>
+          <span>{t.mathRule1}</span>
         </li>
         <li className="flex gap-3">
           <span aria-hidden className="font-display">2.</span>
-          <span>2.5 seconds at first — the timer gets shorter every question.</span>
+          <span>{t.mathRule2}</span>
         </li>
         <li className="flex gap-3">
           <span aria-hidden className="font-display">3.</span>
-          <span>One wrong answer = game over. Highest streak wins the daily pot.</span>
+          <span>{t.mathRule3}</span>
         </li>
       </ul>
       <button
         onClick={onReady}
-        className="mt-2 bg-ink text-white rounded-full px-10 py-4 font-display tracking-[0.2em] text-base shadow-[0_4px_0_0_rgba(0,0,0,0.18)] active:translate-y-[2px] active:shadow-[0_2px_0_0_rgba(0,0,0,0.18)]"
+        className="mt-2 bg-white text-ink rounded-full px-10 py-4 font-display tracking-[0.2em] text-base shadow-[0_4px_0_0_rgba(0,0,0,0.2)] active:translate-y-[2px] active:shadow-[0_2px_0_0_rgba(0,0,0,0.2)]"
       >
-        I&apos;M READY
+        {t.mathReady}
       </button>
     </div>
   );
@@ -434,9 +456,11 @@ function BriefingOverlay({ onReady }: { onReady: () => void }) {
 
 function StartErrorOverlay({
   message,
+  retryLabel,
   onRetry,
 }: {
   message: string;
+  retryLabel: string;
   onRetry: () => void;
 }) {
   return (
@@ -447,7 +471,7 @@ function StartErrorOverlay({
         onClick={onRetry}
         className="bg-ink text-white rounded-full px-6 py-2 font-display tracking-widest text-xs"
       >
-        RETRY
+        {retryLabel}
       </button>
     </div>
   );

@@ -26,8 +26,7 @@ function MathGameOverInner() {
   // Math has only two end-states the player can land on: timeout
   // (clock ran out) and wrong (picked the bad answer). No "cleared
   // the deck" because the question generator is unbounded.
-  const headline =
-    reason === "timeout" ? "⏰  Time's up" : "💥  Game over";
+  const headline = reason === "timeout" ? t.mathTimeUp : t.mathGameOver;
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-6 max-w-md mx-auto w-full text-center gap-6">

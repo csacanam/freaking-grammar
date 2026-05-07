@@ -44,33 +44,34 @@ type DifficultyBand = {
   decoyDeltas: number[];
 };
 
+// Difficulty climbs in five-question phases. Each tier feels like
+// a milestone — the player notices "ah, now multiplication" or
+// "the clock dropped." Tiers are 5 long so the change is frequent
+// enough to feel earned but not so often it disorients.
+//
+//   Q0-4:   only +     | 2.5s | obvious decoys (±5-9)
+//   Q5-9:   + -        | 2.3s | medium decoys (±3-5)
+//   Q10-14: + - ×      | 2.0s | tight decoys (±2-3)
+//   Q15-19: + - × ÷    | 1.7s | very tight (±1-2)
+//   Q20+:   full mix   | 1.5s | off-by-1 dominant
 function bandForStreak(q: number): DifficultyBand {
-  // Q0-2: warm-up. Small +/- only. Decoys are obviously wrong (off by
-  // 5+) so the player learns the mechanic without needing real
-  // arithmetic skill.
-  if (q < 3) return { maxOperand: 9, ops: ["+", "-"], decoyDeltas: [4, 6, 8] };
-  // Q3-7: multiplication shows up. Decoys tighten to off-by-2 or 3,
-  // which already requires a glance instead of pattern recognition.
-  if (q < 8) return { maxOperand: 12, ops: ["+", "-", "x"], decoyDeltas: [2, 3, 4] };
-  // Q8-14: full mix incl. ÷ + off-by-1 decoys appear. This is where
-  // the OG Freaking Math really starts biting.
-  if (q < 15) return { maxOperand: 12, ops: ["+", "-", "x", "/"], decoyDeltas: [1, 2, 2] };
-  // Q15+: max difficulty. Off-by-1 dominates (the brain almost can't
-  // tell at 1.5s/glance). Larger products possible.
-  return { maxOperand: 15, ops: ["+", "-", "x", "/"], decoyDeltas: [1, 1, 2] };
+  if (q < 5)  return { maxOperand: 9,  ops: ["+"],                decoyDeltas: [5, 6, 8, 9] };
+  if (q < 10) return { maxOperand: 10, ops: ["+", "-"],            decoyDeltas: [3, 4, 5] };
+  if (q < 15) return { maxOperand: 12, ops: ["+", "-", "x"],       decoyDeltas: [2, 3, 3] };
+  if (q < 20) return { maxOperand: 12, ops: ["+", "-", "x", "/"],  decoyDeltas: [1, 2, 2] };
+  return        { maxOperand: 15, ops: ["+", "-", "x", "/"],       decoyDeltas: [1, 1, 2] };
 }
 
-// Time budget per question, aggressive decay 2.5s → 1.5s. Original
-// Freaking Math gets the time pressure punching by question 5; we
-// match that. Q0 is briefing (no timer rendered); we still return a
-// non-zero placeholder so any caller computing budgets uniformly
-// doesn't divide-by-zero.
+// Time budget aligned with the same five-step phases — drops 200ms
+// per phase from 2.5s @ Q0 to 1.5s floor at Q20. Aggressive on
+// purpose; the OG Freaking Math has the clock biting by Q5.
 export function timeBudgetMs(q: number): number {
-  if (q < 1) return 2500;
-  if (q >= 20) return 1500;
-  // Linear drop from 2500 at q=1 to 1500 at q=20 → ~53ms per step.
-  const t = 2500 - ((q - 1) / 19) * 1000;
-  return Math.round(t);
+  if (q < 1)  return 2500; // Q0 has no client-side timer; non-zero placeholder
+  if (q < 5)  return 2500;
+  if (q < 10) return 2300;
+  if (q < 15) return 2000;
+  if (q < 20) return 1700;
+  return 1500;
 }
 
 export function generateMathQuestion(qIndex: number): MathQuestion {
