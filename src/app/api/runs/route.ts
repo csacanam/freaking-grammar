@@ -4,6 +4,8 @@ import { gameIdFor, validateLang } from "@/lib/i18n";
 import { supabase, todayUtc } from "@/lib/supabase";
 import { POT_ADDRESS } from "@/lib/chain";
 import { verifyPaymentTx } from "@/lib/onchain";
+import { maybeAlertBotPlay } from "@/lib/bot-detection";
+import { sendTelegramMessage } from "@/lib/telegram";
 
 export const dynamic = "force-dynamic";
 
@@ -101,6 +103,17 @@ export async function POST(req: NextRequest) {
   }
   const potAmountAfter = check.potAfter;
   const wasFree = check.wasFree;
+
+  // Heads-up to ops if a known-bot wallet is paying. Fire-and-forget —
+  // must not block the play even if Telegram is down.
+  void maybeAlertBotPlay({
+    player,
+    gameLabel: `Grammar ${lang.toUpperCase()}`,
+    wasFree,
+    day,
+    supabase,
+    sendTelegram: sendTelegramMessage,
+  });
 
   const { data: runRow, error: runErr } = await supabase
     .from("runs")

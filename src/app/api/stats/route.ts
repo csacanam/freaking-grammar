@@ -6,17 +6,29 @@ import { isAddressEqual, zeroAddress } from "viem";
 import { supabase, TOKEN_DECIMALS } from "@/lib/supabase";
 import { POT_ADDRESS } from "@/lib/chain";
 import { celoClient, FREAKING_POT_ABI, readTreasuryState } from "@/lib/onchain";
-import type { Lang } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
 
 const ENTRY_FEE_USD = 0.1;
 const PROTOCOL_CUT_USD = (ENTRY_FEE_USD * 2000) / 10_000; // 20%
 
-const GAMES: { id: 1 | 2; lang: Lang }[] = [
-  { id: 1, lang: "en" },
-  { id: 2, lang: "es" },
+// All three live games keyed for the public feed. `key` is the
+// stable identifier consumers can group by; the `games` map in the
+// response is keyed by it. id = on-chain gameId in the FreakingPot
+// contract.
+type GameKey = "grammar-en" | "grammar-es" | "math";
+const GAMES: { id: number; key: GameKey; game: "grammar" | "math"; lang: "en" | "es" | null }[] = [
+  { id: 1, key: "grammar-en", game: "grammar", lang: "en" },
+  { id: 2, key: "grammar-es", game: "grammar", lang: "es" },
+  { id: 3, key: "math",       game: "math",    lang: null },
 ];
+
+function gameKeyOf(row: { game?: string | null; lang: string | null }): GameKey | null {
+  if (row.game === "math") return "math";
+  if (row.lang === "en") return "grammar-en";
+  if (row.lang === "es") return "grammar-es";
+  return null;
+}
 
 const CORS: Record<string, string> = {
   "access-control-allow-origin": "*",
@@ -42,9 +54,9 @@ export async function GET() {
     { data: potsData },
     { count: botFilterCount },
   ] = await Promise.all([
-    supabase.from("runs").select("lang,player,was_free"),
-    supabase.from("wins").select("lang,amount_units"),
-    supabase.from("pots").select("lang,amount_units,closed"),
+    supabase.from("runs").select("lang,game,player,was_free"),
+    supabase.from("wins").select("lang,game,amount_units"),
+    supabase.from("pots").select("lang,game,amount_units,closed"),
     // Game integrity: how many wallets the daily settlement filters
     // out for being bots. Surfaced publicly as a transparency signal.
     supabase
@@ -53,60 +65,67 @@ export async function GET() {
   ]);
 
   const runs = (runsData ?? []) as Array<{
-    lang: Lang;
+    lang: string | null;
+    game: string | null;
     player: string;
     was_free: boolean;
   }>;
   const wins = (winsData ?? []) as Array<{
-    lang: Lang;
+    lang: string | null;
+    game: string | null;
     amount_units: string | number;
   }>;
   const pots = (potsData ?? []) as Array<{
-    lang: Lang;
+    lang: string | null;
+    game: string | null;
     amount_units: string | number;
     closed: boolean;
   }>;
 
-  type LangAgg = {
+  type GameAgg = {
     plays: number;
     paid: number;
     players: number;
     revenueUSD: number;
     distributedUSD: number;
   };
-  const byLang: Record<Lang, LangAgg> = {
-    en: { plays: 0, paid: 0, players: 0, revenueUSD: 0, distributedUSD: 0 },
-    es: { plays: 0, paid: 0, players: 0, revenueUSD: 0, distributedUSD: 0 },
+  const byGame: Record<GameKey, GameAgg> = {
+    "grammar-en": { plays: 0, paid: 0, players: 0, revenueUSD: 0, distributedUSD: 0 },
+    "grammar-es": { plays: 0, paid: 0, players: 0, revenueUSD: 0, distributedUSD: 0 },
+    "math":       { plays: 0, paid: 0, players: 0, revenueUSD: 0, distributedUSD: 0 },
   };
-  const playersByLang: Record<Lang, Set<string>> = {
-    en: new Set(),
-    es: new Set(),
+  const playersByGame: Record<GameKey, Set<string>> = {
+    "grammar-en": new Set(),
+    "grammar-es": new Set(),
+    "math": new Set(),
   };
   const allPlayers = new Set<string>();
 
   let paidPlays = 0;
   let freePlays = 0;
   for (const r of runs) {
-    if (r.lang !== "en" && r.lang !== "es") continue;
-    byLang[r.lang].plays++;
-    playersByLang[r.lang].add(r.player);
+    const k = gameKeyOf(r);
+    if (!k) continue;
+    byGame[k].plays++;
+    playersByGame[k].add(r.player);
     allPlayers.add(r.player);
     if (r.was_free) freePlays++;
     else {
       paidPlays++;
-      byLang[r.lang].paid++;
+      byGame[k].paid++;
     }
   }
-  for (const l of ["en", "es"] as const) {
-    byLang[l].players = playersByLang[l].size;
-    byLang[l].revenueUSD = byLang[l].paid * PROTOCOL_CUT_USD;
+  for (const g of GAMES) {
+    byGame[g.key].players = playersByGame[g.key].size;
+    byGame[g.key].revenueUSD = byGame[g.key].paid * PROTOCOL_CUT_USD;
   }
 
   let totalDistributedUSD = 0;
   for (const w of wins) {
-    if (w.lang !== "en" && w.lang !== "es") continue;
+    const k = gameKeyOf(w);
+    if (!k) continue;
     const usd = Number(w.amount_units) / TOKEN_DECIMALS;
-    byLang[w.lang].distributedUSD += usd;
+    byGame[k].distributedUSD += usd;
     totalDistributedUSD += usd;
   }
 
@@ -119,17 +138,20 @@ export async function GET() {
     if (usd > biggestPotUSD) biggestPotUSD = usd;
   }
 
-  // Live on-chain per-game state.
+  // Live on-chain per-game state. Keyed by the public GameKey so
+  // dashboards can pivot directly without remembering the contract id.
   const games: Record<
-    string,
+    GameKey,
     {
-      lang: Lang;
+      contractId: number;
+      game: "grammar" | "math";
+      lang: "en" | "es" | null;
       currentPotUSD: number;
       treasuryUSD: number;
       runwayDays: number;
       dailySeedUSD: number;
     }
-  > = {};
+  > = {} as never;
   if (!isAddressEqual(POT_ADDRESS, zeroAddress)) {
     await Promise.all(
       GAMES.map(async (g) => {
@@ -151,7 +173,9 @@ export async function GET() {
           })) as bigint;
           const treasuryUSD = Number(treasury) / TOKEN_DECIMALS;
           const dailySeedUSD = Number(dailySeed) / TOKEN_DECIMALS;
-          games[String(g.id)] = {
+          games[g.key] = {
+            contractId: g.id,
+            game: g.game,
             lang: g.lang,
             currentPotUSD: Number(pot) / TOKEN_DECIMALS,
             treasuryUSD,
@@ -175,7 +199,7 @@ export async function GET() {
       daysClosed,
       totalDistributedUSD,
       biggestPotUSD,
-      byLang,
+      byGame,
       games,
       contract: isAddressEqual(POT_ADDRESS, zeroAddress) ? null : POT_ADDRESS,
       entryFeeUSD: ENTRY_FEE_USD,

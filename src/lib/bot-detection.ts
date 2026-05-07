@@ -168,3 +168,55 @@ async function isWalletBlacklisted(
     .maybeSingle();
   return !!data;
 }
+
+// Fire-and-forget Telegram heads-up when a wallet on the blacklist
+// pays for a play. We deliberately ignore free plays — those don't
+// drain the pot and would just spam the channel.
+//
+// Dedup: only the FIRST paid play of the day per (player) triggers a
+// message. Same wallet paying 30 times → one alert, not 30. We detect
+// "first" by checking how many paid runs already exist today for this
+// player; this function is called BEFORE the new run is inserted, so
+// "0 existing" means the about-to-be-inserted play is the day's first.
+//
+// Errors are swallowed so a failing alert never blocks a real play. No
+// re-throws, no awaiting from the hot path — call sites use a fire-
+// and-forget pattern (no `await`) and let the runtime handle it.
+export async function maybeAlertBotPlay(args: {
+  player: string;
+  gameLabel: string;
+  wasFree: boolean;
+  day: string;
+  supabase: SupabaseClient;
+  sendTelegram: (text: string) => Promise<boolean>;
+}): Promise<void> {
+  const { player, gameLabel, wasFree, day, supabase, sendTelegram } = args;
+  if (wasFree) return;
+  try {
+    const addr = player.toLowerCase();
+    const flagged = await isWalletBlacklisted(addr, supabase);
+    if (!flagged) return;
+
+    const { count } = await supabase
+      .from("runs")
+      .select("*", { count: "exact", head: true })
+      .eq("player", addr)
+      .eq("day_utc", day)
+      .eq("was_free", false);
+    if ((count ?? 0) > 0) return; // already alerted today (or earlier paid play exists)
+
+    const short = `${addr.slice(0, 6)}…${addr.slice(-4)}`;
+    const text = [
+      "*🤖 Bot wallet paid for a play*",
+      "",
+      `Game: *${gameLabel}*`,
+      `Wallet: \`${addr}\` (${short})`,
+      `Day: ${day}`,
+      "",
+      "Settlement will skip this wallet at roll-day; alerting because the entry fee still lands in the pot. First paid play of the day — further plays today are silent.",
+    ].join("\n");
+    await sendTelegram(text);
+  } catch (e) {
+    console.error("maybeAlertBotPlay: failed (non-fatal):", e);
+  }
+}

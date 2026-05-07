@@ -25,6 +25,17 @@ function timeBudgetSec(q: number): number {
   return 1.5;
 }
 
+// Same five-Q phases mapped to a 1..5 level number. Shown to the
+// player so they feel the climb without us interrupting the round
+// with a "level up!" overlay — the badge just changes value.
+function levelOf(q: number): number {
+  if (q < 5)  return 1;
+  if (q < 10) return 2;
+  if (q < 15) return 3;
+  if (q < 20) return 4;
+  return 5;
+}
+
 // One backdrop per session — picked once at mount and kept for the
 // whole run. Original Freaking Math feels like a "new vibe" each time
 // you launch the game; rotating per question was too strobe-y. The
@@ -105,6 +116,24 @@ function MathGameInner() {
       MATH_BACKDROPS[Math.floor(Math.random() * MATH_BACKDROPS.length)],
     );
   }, []);
+
+  // Re-trigger CSS animations by changing a React key every time the
+  // value we want to celebrate goes up. The level badge and score
+  // number remount with a fresh key, so `animate-*-pulse` fires from
+  // the start instead of staying frozen on its previous run.
+  const level = levelOf(qIndex);
+  const [scoreKey, setScoreKey] = useState(0);
+  const [levelKey, setLevelKey] = useState(0);
+  const prevScoreRef = useRef(0);
+  const prevLevelRef = useRef(level);
+  useEffect(() => {
+    if (score > prevScoreRef.current) setScoreKey((k) => k + 1);
+    prevScoreRef.current = score;
+  }, [score]);
+  useEffect(() => {
+    if (level !== prevLevelRef.current) setLevelKey((k) => k + 1);
+    prevLevelRef.current = level;
+  }, [level]);
 
   // Bounce home if missing wallet or txHash. Wait for wagmi to finish
   // (re)connecting first — direct URL nav to /math/game?tx=… loads
@@ -270,12 +299,23 @@ function MathGameInner() {
 
   return (
     <div className={`flex-1 flex flex-col select-none touch-manipulation text-white ${backdrop}`}>
-      {/* SCORE */}
-      <div className="pt-8 pb-4 text-center">
-        <div className="font-display text-xs tracking-[0.4em] text-white/70">
+      {/* SCORE + LEVEL — level chip pulses on phase change (Q5/10/15/20)
+          to draw the eye without blocking input. Score number pulses
+          every time it ticks up so the correct answer reads kinetic. */}
+      <div className="pt-8 pb-4 flex flex-col items-center gap-2">
+        <div
+          key={`level-${levelKey}`}
+          className="font-display text-[0.65rem] tracking-[0.3em] text-white border border-white/40 rounded-full px-3 py-1 animate-level-pulse"
+        >
+          {t.mathLevel} {level}
+        </div>
+        <div className="font-display text-xs tracking-[0.4em] text-white/70 mt-1">
           {t.mathScore}
         </div>
-        <div className="font-display text-6xl tracking-tight tabular-nums leading-none mt-1">
+        <div
+          key={`score-${scoreKey}`}
+          className="font-display text-6xl tracking-tight tabular-nums leading-none animate-score-pulse"
+        >
           {score}
         </div>
       </div>

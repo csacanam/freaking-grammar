@@ -25,6 +25,7 @@ export const dynamic = "force-dynamic";
 const GAMES = [
   { id: 1, key: "en", label: "EN" },
   { id: 2, key: "es", label: "ES" },
+  { id: 3, key: "math", label: "MATH" },
 ] as const;
 
 // Buffer we target per game when auto-funding. Anything below this gets
@@ -218,17 +219,20 @@ async function autoFund(pkHex: Hex): Promise<AutoFundReport> {
     approveTx = hash;
   }
 
-  // Allocation: each game gets topped up toward TARGET_DAYS of runway first,
-  // any leftover splits 50/50 so the whole balance always gets used.
-  const states = await Promise.all(
+  // Allocation: equalize days-of-runway across all games. The allocator
+  // looks at (balance + every treasury) and (every dailySeed), figures
+  // out the days-of-runway each game would have if everyone shared the
+  // same liquidity proportional to their daily burn, and tops the
+  // under-funded ones up to that line. Games already above the line
+  // can't be drained, so they keep their lead and the math re-runs on
+  // the remainder. See `allocate` for the water-filling loop.
+  const allocStates = await Promise.all(
     GAMES.map(async (g) => {
       const { treasury, dailySeed } = await readTreasuryState(g.id);
-      const target = TARGET_DAYS * dailySeed;
-      const gap = treasury < target ? target - treasury : 0n;
-      return { id: g.id, gap };
+      return { id: g.id, treasury, dailySeed };
     }),
   );
-  const allocations = allocate(usdtBalance, states);
+  const allocations = allocate(usdtBalance, allocStates);
 
   const txHashes: Record<number, string> = {};
   for (const a of allocations) {
@@ -256,45 +260,65 @@ async function autoFund(pkHex: Hex): Promise<AutoFundReport> {
 
 function allocate(
   balance: bigint,
-  states: { id: number; gap: bigint }[],
+  states: { id: number; treasury: bigint; dailySeed: bigint }[],
 ): Alloc[] {
-  const totalGap = states.reduce((s, g) => s + g.gap, 0n);
-
-  if (totalGap === 0n) {
-    // Both above target → split remainder 50/50
-    const each = balance / BigInt(states.length);
-    const last = balance - each * BigInt(states.length - 1);
-    return states.map((g, i) => ({
-      gameId: g.id,
-      amount: i === states.length - 1 ? last : each,
-    }));
+  // Equalize days-of-runway. Concept:
+  //
+  //   sharedDays = (balance + sum(treasuries_active)) / sum(seeds_active)
+  //
+  // Each active game's target treasury is sharedDays * its dailySeed,
+  // so they all end up with the same runway. We can never pull USDT
+  // back out of a treasury, so any game already above sharedDays
+  // (overfunded) is excluded and the math re-runs on the rest. Repeat
+  // until no game is overfunded — classic water-filling.
+  //
+  // Bigints throughout: we compare via cross-multiplication to avoid
+  // truncating sharedDays. Final per-game amounts are computed as
+  // (totalLiq * seed) / totalSeed. To avoid losing 1-wei dust to bigint
+  // truncation, the last active game absorbs whatever is left of the
+  // balance.
+  let active = states.slice();
+  while (true) {
+    if (active.length === 0) break;
+    const totalSeed = active.reduce((s, g) => s + g.dailySeed, 0n);
+    if (totalSeed === 0n) break;
+    const totalLiq = balance + active.reduce((s, g) => s + g.treasury, 0n);
+    // Overfunded check: treasury_i > sharedDays * seed_i, written
+    // without truncation as treasury_i * totalSeed > totalLiq * seed_i.
+    const overfunded = active.filter(
+      (g) => g.treasury * totalSeed > totalLiq * g.dailySeed,
+    );
+    if (overfunded.length === 0) break;
+    const overfundedIds = new Set(overfunded.map((g) => g.id));
+    active = active.filter((g) => !overfundedIds.has(g.id));
   }
 
-  if (balance <= totalGap) {
-    // Not enough to cover both gaps → proportional to gap
-    const allocs: Alloc[] = [];
-    let assigned = 0n;
-    for (let i = 0; i < states.length - 1; i++) {
-      const amt = (balance * states[i].gap) / totalGap;
-      allocs.push({ gameId: states[i].id, amount: amt });
-      assigned += amt;
+  if (active.length === 0) {
+    return states.map((g) => ({ gameId: g.id, amount: 0n }));
+  }
+
+  const totalSeed = active.reduce((s, g) => s + g.dailySeed, 0n);
+  const totalLiq = balance + active.reduce((s, g) => s + g.treasury, 0n);
+  const lastActiveId = active[active.length - 1].id;
+
+  const allocs: Alloc[] = [];
+  let assigned = 0n;
+  for (const g of states) {
+    if (!active.some((a) => a.id === g.id)) {
+      allocs.push({ gameId: g.id, amount: 0n });
+      continue;
     }
-    allocs.push({
-      gameId: states[states.length - 1].id,
-      amount: balance - assigned,
-    });
-    return allocs;
+    if (g.id === lastActiveId) {
+      // Soak up rounding remainder so the operator's whole balance lands.
+      allocs.push({ gameId: g.id, amount: balance - assigned });
+      continue;
+    }
+    const target = (totalLiq * g.dailySeed) / totalSeed;
+    const amt = target > g.treasury ? target - g.treasury : 0n;
+    allocs.push({ gameId: g.id, amount: amt });
+    assigned += amt;
   }
-
-  // Balance covers both gaps → fill gaps, split extra 50/50
-  const extra = balance - totalGap;
-  const each = extra / BigInt(states.length);
-  const last = extra - each * BigInt(states.length - 1);
-  return states.map((g, i) => ({
-    gameId: g.id,
-    amount:
-      g.gap + (i === states.length - 1 ? last : each),
-  }));
+  return allocs;
 }
 
 // ------------------------------------------------- sponsor campaign states

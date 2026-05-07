@@ -14,6 +14,7 @@ import {
   FREAKING_POT_ABI,
   readHasFreePlayToday,
 } from "@/lib/onchain";
+import { loadBotBlacklist } from "@/lib/bot-detection";
 
 // Cache the operator address at module scope — it's derived from a stable
 // env var and reused on every lobby fetch to validate sponsor balances.
@@ -70,6 +71,30 @@ export async function GET(req: NextRequest) {
 
   const day = todayUtc();
 
+  // Pull the bot blacklist first so we can push the filter into the
+  // leaderboard query. Without this, flagged wallets dominate the
+  // live podium until daily settlement skips them — bad UX (real
+  // players see "I can't compete" and bounce). Tabla `bot_wallets` is
+  // tiny, so the extra round-trip is cheap.
+  const blacklist = await loadBotBlacklist(supabase);
+  const blacklistFilter =
+    blacklist.size > 0
+      ? `(${[...blacklist].map((p) => `"${p}"`).join(",")})`
+      : null;
+
+  let runsQuery = supabase
+    .from("runs")
+    .select("player,score,ended_at")
+    .eq("lang", lang)
+    .eq("day_utc", day)
+    .eq("status", "finished")
+    .order("score", { ascending: false })
+    .order("ended_at", { ascending: true })
+    .limit(200);
+  if (blacklistFilter) {
+    runsQuery = runsQuery.not("player", "in", blacklistFilter);
+  }
+
   const [potRes, runsRes] = await Promise.all([
     supabase
       .from("pots")
@@ -77,15 +102,7 @@ export async function GET(req: NextRequest) {
       .eq("lang", lang)
       .eq("day_utc", day)
       .maybeSingle(),
-    supabase
-      .from("runs")
-      .select("player,score,ended_at")
-      .eq("lang", lang)
-      .eq("day_utc", day)
-      .eq("status", "finished")
-      .order("score", { ascending: false })
-      .order("ended_at", { ascending: true })
-      .limit(200),
+    runsQuery,
   ]);
 
   // Prefer the live on-chain pot so sponsorPot / seedCurrentDay calls show up

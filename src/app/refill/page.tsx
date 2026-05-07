@@ -28,6 +28,7 @@ const FREAKING_POT_ABI = FreakingPotArtifact.abi;
 const GAMES = [
   { id: 1, key: "en", label: "English" },
   { id: 2, key: "es", label: "Español" },
+  { id: 3, key: "math", label: "Math" },
 ];
 
 export default function RefillPage() {
@@ -40,8 +41,12 @@ export default function RefillPage() {
 
 function RefillInner() {
   const sp = useSearchParams();
-  const initialGame =
-    (sp.get("game") || "").toLowerCase() === "es" ? 2 : 1;
+  const initialGame = (() => {
+    const k = (sp.get("game") || "").toLowerCase();
+    if (k === "es") return 2;
+    if (k === "math") return 3;
+    return 1;
+  })();
   const initialAmount = sp.get("amount") || "10";
 
   const [gameId, setGameId] = useState<number>(initialGame);

@@ -24,6 +24,21 @@
 
   --font-display: "Bebas Neue", system-ui, sans-serif;
   --font-sans: ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  --animate-score-pulse: score-pulse 320ms ease-out;
+  --animate-level-pulse: level-pulse 500ms ease-out;
+}
+
+@keyframes score-pulse {
+  0%   { transform: scale(1);    }
+  35%  { transform: scale(1.28); }
+  100% { transform: scale(1);    }
+}
+
+@keyframes level-pulse {
+  0%   { transform: scale(1);   box-shadow: 0 0 0 0 rgba(255,255,255,0.6); }
+  40%  { transform: scale(1.18); box-shadow: 0 0 0 12px rgba(255,255,255,0); }
+  100% { transform: scale(1);   box-shadow: 0 0 0 0 rgba(255,255,255,0); }
 }
 
 html,

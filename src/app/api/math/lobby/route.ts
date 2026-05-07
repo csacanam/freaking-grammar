@@ -25,6 +25,7 @@ import {
   FREAKING_POT_ABI,
   readHasFreePlayToday,
 } from "@/lib/onchain";
+import { loadBotBlacklist } from "@/lib/bot-detection";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +45,30 @@ export async function GET(req: NextRequest) {
 
   const day = todayUtc();
 
+  // Pre-load the bot blacklist so we can drop flagged wallets at the
+  // SQL layer instead of letting them eat into the limit(200) window.
+  // Same reasoning as the Grammar lobby: settlement already skips
+  // them, but unfiltered they dominate the live podium and demoralize
+  // real players.
+  const blacklist = await loadBotBlacklist(supabase);
+  const blacklistFilter =
+    blacklist.size > 0
+      ? `(${[...blacklist].map((p) => `"${p}"`).join(",")})`
+      : null;
+
+  let runsQuery = supabase
+    .from("runs")
+    .select("player,score,ended_at")
+    .eq("game", "math")
+    .eq("day_utc", day)
+    .eq("status", "finished")
+    .order("score", { ascending: false })
+    .order("ended_at", { ascending: true })
+    .limit(200);
+  if (blacklistFilter) {
+    runsQuery = runsQuery.not("player", "in", blacklistFilter);
+  }
+
   const [potRes, runsRes] = await Promise.all([
     supabase
       .from("pots")
@@ -51,15 +76,7 @@ export async function GET(req: NextRequest) {
       .eq("game", "math")
       .eq("day_utc", day)
       .maybeSingle(),
-    supabase
-      .from("runs")
-      .select("player,score,ended_at")
-      .eq("game", "math")
-      .eq("day_utc", day)
-      .eq("status", "finished")
-      .order("score", { ascending: false })
-      .order("ended_at", { ascending: true })
-      .limit(200),
+    runsQuery,
   ]);
 
   let potUSD = potRes.data?.amount_units

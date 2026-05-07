@@ -31,8 +31,49 @@ const PROTOCOL_CUT_USD = (ENTRY_FEE_USD * PROTOCOL_BPS) / 10_000;
 
 type Lang = "en" | "es";
 
-type ByLang = Record<
-  Lang,
+// Three games today (Grammar EN, Grammar ES, Math); easy to extend with
+// the next launch by adding a row here. Anything game-specific in the
+// page reads off this list — tile labels, accent colors, contract IDs,
+// the column order in the by-game table.
+type GameKey = "grammar-en" | "grammar-es" | "math";
+
+const GAMES: Array<{
+  key: GameKey;
+  label: string;
+  contractId: number;
+  game: "grammar" | "math";
+  lang: Lang | null;
+  accent: string;
+}> = [
+  { key: "grammar-en", label: "Grammar EN", contractId: 1, game: "grammar", lang: "en", accent: "bg-yellow/40" },
+  { key: "grammar-es", label: "Grammar ES", contractId: 2, game: "grammar", lang: "es", accent: "bg-purple/20" },
+  { key: "math",       label: "Math",       contractId: 3, game: "math",    lang: null, accent: "bg-pink/20" },
+];
+
+// Map a row from runs/wins/pots to its GameKey. Defensive: old rows
+// (pre multi-game migration) have game=null but a non-null lang, so
+// fall back to lang-based matching when game is missing. New Math rows
+// use game='math' with lang=null.
+function gameKeyOf(row: {
+  game?: string | null;
+  lang: string | null;
+}): GameKey | null {
+  if (row.game === "math") return "math";
+  if (row.lang === "en") return "grammar-en";
+  if (row.lang === "es") return "grammar-es";
+  return null;
+}
+
+function emptyByGame(): ByGame {
+  return {
+    "grammar-en": { plays: 0, paid: 0, players: 0, revenueUSD: 0, distributedUSD: 0 },
+    "grammar-es": { plays: 0, paid: 0, players: 0, revenueUSD: 0, distributedUSD: 0 },
+    "math":       { plays: 0, paid: 0, players: 0, revenueUSD: 0, distributedUSD: 0 },
+  };
+}
+
+type ByGame = Record<
+  GameKey,
   {
     plays: number;
     paid: number;
@@ -42,16 +83,29 @@ type ByLang = Record<
   }
 >;
 
+type GameTodayTile = {
+  key: GameKey;
+  label: string;
+  potUSDT: number;
+  topScore: number | null;
+  accent: string;
+};
+
+type GameTreasuryTile = {
+  key: GameKey;
+  label: string;
+  treasuryUSDT: number;
+  treasuryDays: number;
+  accent: string;
+};
+
 type Stats = {
   today: {
     dau: number;
     plays: number;
     paid: number;
     free: number;
-    enPotUSDT: number;
-    esPotUSDT: number;
-    enTopScore: number | null;
-    esTopScore: number | null;
+    games: GameTodayTile[];
     newSignups: number;
   };
   players: {
@@ -71,18 +125,13 @@ type Stats = {
     free: number;
     avgScore: number;
     perDay: Array<{ date: string; count: number }>;
-    byLang: ByLang;
+    byGame: ByGame;
   };
   economy: {
     revenueUSD: number;
     distributedUSD: number;
-    enPotUSDT: number;
-    esPotUSDT: number;
+    games: GameTreasuryTile[];
     biggestPotUSD: number;
-    enTreasuryUSDT: number;
-    esTreasuryUSDT: number;
-    enTreasuryDays: number;
-    esTreasuryDays: number;
     operatorCELO: number;
     daysClosed: number;
     botsFiltered: number;
@@ -130,10 +179,12 @@ async function loadStats(): Promise<Stats | null> {
   ] = await Promise.all([
     supabase
       .from("runs")
-      .select("lang,player,was_free,day_utc,score,paid_tx_hash")
+      .select("lang,game,player,was_free,day_utc,score,paid_tx_hash")
       .eq("status", "finished"),
-    supabase.from("wins").select("lang,amount_units,claim_tx"),
-    supabase.from("pots").select("lang,amount_units,closed,day_utc,rolled_tx"),
+    supabase.from("wins").select("lang,game,amount_units,claim_tx"),
+    supabase
+      .from("pots")
+      .select("lang,game,amount_units,closed,day_utc,rolled_tx"),
     supabase.from("welcome_airdrops").select("created_at,tx_hash"),
     supabase.from("sponsor_payouts").select("airdrop_tx_hash"),
     supabase
@@ -142,7 +193,8 @@ async function loadStats(): Promise<Stats | null> {
   ]);
 
   const runs = (runsData ?? []) as Array<{
-    lang: Lang;
+    lang: Lang | null;
+    game: string | null;
     player: string;
     was_free: boolean;
     day_utc: string;
@@ -150,12 +202,14 @@ async function loadStats(): Promise<Stats | null> {
     paid_tx_hash: string | null;
   }>;
   const wins = (winsData ?? []) as Array<{
-    lang: Lang;
+    lang: Lang | null;
+    game: string | null;
     amount_units: string | number;
     claim_tx: string | null;
   }>;
   const pots = (potsData ?? []) as Array<{
-    lang: Lang;
+    lang: Lang | null;
+    game: string | null;
     amount_units: string | number;
     closed: boolean;
     day_utc: string;
@@ -174,26 +228,43 @@ async function loadStats(): Promise<Stats | null> {
   const todayPlayers = new Set(todayRuns.map((r) => r.player));
   const todayPaid = todayRuns.filter((r) => !r.was_free).length;
   const todayFree = todayRuns.length - todayPaid;
-  const todayEnTop = bestScore(todayRuns.filter((r) => r.lang === "en"));
-  const todayEsTop = bestScore(todayRuns.filter((r) => r.lang === "es"));
   const newSignupsToday = airdrops.filter(
     (a) => a.tx_hash && a.created_at.slice(0, 10) === today,
   ).length;
 
+  // Per-game top score for today, keyed by GameKey so the tile loop
+  // below can look it up in O(1) regardless of how many games we add.
+  const todayTopByGame = new Map<GameKey, number>();
+  for (const r of todayRuns) {
+    const k = gameKeyOf(r);
+    if (!k) continue;
+    const cur = todayTopByGame.get(k);
+    if (cur === undefined || r.score > cur) todayTopByGame.set(k, r.score);
+  }
+
   // -------------------------------------------------- ON-CHAIN POTS
-  const [
-    enPotUSDT,
-    esPotUSDT,
-    enTreasury,
-    esTreasury,
-    operatorCELO,
-  ] = await Promise.all([
-    readCurrentPotUSD(1),
-    readCurrentPotUSD(2),
-    safeTreasury(1),
-    safeTreasury(2),
+  // Read pot/treasury for every game in the GAMES list so adding the
+  // next launch is a one-line change up top, not surgery here.
+  const [perGamePotUSDT, perGameTreasury, operatorCELO] = await Promise.all([
+    Promise.all(GAMES.map((g) => readCurrentPotUSD(g.contractId))),
+    Promise.all(GAMES.map((g) => safeTreasury(g.contractId))),
     readOperatorCELO(),
   ]);
+
+  const todayGameTiles: GameTodayTile[] = GAMES.map((g, i) => ({
+    key: g.key,
+    label: g.label,
+    potUSDT: perGamePotUSDT[i],
+    topScore: todayTopByGame.get(g.key) ?? null,
+    accent: g.accent,
+  }));
+  const economyGameTiles: GameTreasuryTile[] = GAMES.map((g, i) => ({
+    key: g.key,
+    label: g.label,
+    treasuryUSDT: perGameTreasury[i].usdt,
+    treasuryDays: perGameTreasury[i].days,
+    accent: g.accent,
+  }));
 
   // ---------------------------------------------------- PLAYERS
   const allPlayers = new Set(runs.map((r) => r.player));
@@ -272,29 +343,28 @@ async function loadStats(): Promise<Stats | null> {
     count: playsByDay.get(d) ?? 0,
   }));
 
-  // ----------------------------------------------- BY-LANG TABLE
-  const byLang: ByLang = {
-    en: { plays: 0, paid: 0, players: 0, revenueUSD: 0, distributedUSD: 0 },
-    es: { plays: 0, paid: 0, players: 0, revenueUSD: 0, distributedUSD: 0 },
-  };
-  const playersByLang: Record<Lang, Set<string>> = {
-    en: new Set(),
-    es: new Set(),
+  // ----------------------------------------------- BY-GAME TABLE
+  const byGame: ByGame = emptyByGame();
+  const playersByGame: Record<GameKey, Set<string>> = {
+    "grammar-en": new Set(),
+    "grammar-es": new Set(),
+    "math": new Set(),
   };
   for (const r of runs) {
-    if (r.lang !== "en" && r.lang !== "es") continue;
-    byLang[r.lang].plays++;
-    playersByLang[r.lang].add(r.player);
-    if (!r.was_free) byLang[r.lang].paid++;
+    const k = gameKeyOf(r);
+    if (!k) continue;
+    byGame[k].plays++;
+    playersByGame[k].add(r.player);
+    if (!r.was_free) byGame[k].paid++;
   }
-  for (const l of ["en", "es"] as const) {
-    byLang[l].players = playersByLang[l].size;
-    byLang[l].revenueUSD = byLang[l].paid * PROTOCOL_CUT_USD;
+  for (const g of GAMES) {
+    byGame[g.key].players = playersByGame[g.key].size;
+    byGame[g.key].revenueUSD = byGame[g.key].paid * PROTOCOL_CUT_USD;
   }
   for (const w of wins) {
-    if (w.lang !== "en" && w.lang !== "es") continue;
-    byLang[w.lang].distributedUSD +=
-      Number(w.amount_units) / TOKEN_DECIMALS;
+    const k = gameKeyOf(w);
+    if (!k) continue;
+    byGame[k].distributedUSD += Number(w.amount_units) / TOKEN_DECIMALS;
   }
 
   // ------------------------------------------------ ECONOMY ROLLUP
@@ -360,10 +430,7 @@ async function loadStats(): Promise<Stats | null> {
       plays: todayRuns.length,
       paid: todayPaid,
       free: todayFree,
-      enPotUSDT,
-      esPotUSDT,
-      enTopScore: todayEnTop,
-      esTopScore: todayEsTop,
+      games: todayGameTiles,
       newSignups: newSignupsToday,
     },
     players: {
@@ -389,18 +456,13 @@ async function loadStats(): Promise<Stats | null> {
       free: totalFree,
       avgScore,
       perDay,
-      byLang,
+      byGame,
     },
     economy: {
       revenueUSD,
       distributedUSD: totalDistributedUSD,
-      enPotUSDT,
-      esPotUSDT,
+      games: economyGameTiles,
       biggestPotUSD,
-      enTreasuryUSDT: enTreasury.usdt,
-      esTreasuryUSDT: esTreasury.usdt,
-      enTreasuryDays: enTreasury.days,
-      esTreasuryDays: esTreasury.days,
       operatorCELO,
       daysClosed,
       botsFiltered: botFilterCount ?? 0,
@@ -425,11 +487,6 @@ async function loadStats(): Promise<Stats | null> {
 }
 
 // --------------------------------------------------------- helpers
-
-function bestScore(rows: Array<{ score: number }>): number | null {
-  if (rows.length === 0) return null;
-  return rows.reduce((m, r) => (r.score > m ? r.score : m), 0);
-}
 
 function daysAgo(yyyymmdd: string, n: number): string {
   const d = new Date(yyyymmdd + "T00:00:00Z");
@@ -630,7 +687,7 @@ export default async function StatsPage() {
   return (
     <div className="flex-1 flex flex-col px-5 pt-6 pb-10 max-w-3xl mx-auto w-full gap-5">
       <header className="flex flex-col gap-2">
-        <BackLink />
+        <BackLink href="/" />
         <h1 className="font-display text-4xl tracking-wider">{t.statsHeading}</h1>
         <p className="text-xs font-mono text-muted">
           {t.statsLiveRefresh}
@@ -661,26 +718,19 @@ export default async function StatsPage() {
               value={stats.today.newSignups.toString()}
               accent="bg-pink/20"
             />
-            <Tile
-              label={t.statsEnPot}
-              value={fmtUSD(stats.today.enPotUSDT)}
-              accent="bg-yellow/40"
-              hint={
-                stats.today.enTopScore !== null
-                  ? `${t.statsTopScore} ${stats.today.enTopScore}`
-                  : t.statsNoPlaysYet
-              }
-            />
-            <Tile
-              label={t.statsEsPot}
-              value={fmtUSD(stats.today.esPotUSDT)}
-              accent="bg-purple/20"
-              hint={
-                stats.today.esTopScore !== null
-                  ? `${t.statsTopScore} ${stats.today.esTopScore}`
-                  : t.statsNoPlaysYet
-              }
-            />
+            {stats.today.games.map((g) => (
+              <Tile
+                key={g.key}
+                label={`${t.statsPot} · ${g.label}`}
+                value={fmtUSD(g.potUSDT)}
+                accent={g.accent}
+                hint={
+                  g.topScore !== null
+                    ? `${t.statsTopScore} ${g.topScore}`
+                    : t.statsNoPlaysYet
+                }
+              />
+            ))}
             <Tile
               label={t.statsOperatorGas}
               value={`${stats.economy.operatorCELO.toFixed(3)} CELO`}
@@ -791,11 +841,11 @@ export default async function StatsPage() {
             <PlaysChart data={stats.plays.perDay} />
           </Card>
 
-          <Card title={t.statsCardByLanguage}>
+          <Card title={t.statsCardByGame}>
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-muted font-display text-xs tracking-widest uppercase">
-                  <th className="py-2">{t.statsLangColLang}</th>
+                  <th className="py-2">{t.statsLangColGame}</th>
                   <th className="py-2 text-right">{t.statsLangColPlays}</th>
                   <th className="py-2 text-right">{t.statsLangColPaid}</th>
                   <th className="py-2 text-right">{t.statsLangColPlayers}</th>
@@ -804,23 +854,23 @@ export default async function StatsPage() {
                 </tr>
               </thead>
               <tbody>
-                {(["en", "es"] as const).map((l) => (
-                  <tr key={l} className="border-t border-black/5">
-                    <td className="py-2 font-display uppercase">{l}</td>
+                {GAMES.map((g) => (
+                  <tr key={g.key} className="border-t border-black/5">
+                    <td className="py-2 font-display">{g.label}</td>
                     <td className="py-2 text-right tabular-nums">
-                      {stats.plays.byLang[l].plays}
+                      {stats.plays.byGame[g.key].plays}
                     </td>
                     <td className="py-2 text-right tabular-nums">
-                      {stats.plays.byLang[l].paid}
+                      {stats.plays.byGame[g.key].paid}
                     </td>
                     <td className="py-2 text-right tabular-nums">
-                      {stats.plays.byLang[l].players}
+                      {stats.plays.byGame[g.key].players}
                     </td>
                     <td className="py-2 text-right tabular-nums">
-                      {fmtUSD(stats.plays.byLang[l].revenueUSD)}
+                      {fmtUSD(stats.plays.byGame[g.key].revenueUSD)}
                     </td>
                     <td className="py-2 text-right tabular-nums">
-                      {fmtUSD(stats.plays.byLang[l].distributedUSD)}
+                      {fmtUSD(stats.plays.byGame[g.key].distributedUSD)}
                     </td>
                   </tr>
                 ))}
@@ -848,18 +898,15 @@ export default async function StatsPage() {
               accent="bg-orange/30"
               hint={`${stats.economy.daysClosed} ${t.statsDaysClosed}`}
             />
-            <Tile
-              label={t.statsEnTreasury}
-              value={fmtUSD(stats.economy.enTreasuryUSDT)}
-              accent="bg-yellow/20"
-              hint={`${stats.economy.enTreasuryDays.toFixed(0)}${t.statsRunwayDays}`}
-            />
-            <Tile
-              label={t.statsEsTreasury}
-              value={fmtUSD(stats.economy.esTreasuryUSDT)}
-              accent="bg-purple/10"
-              hint={`${stats.economy.esTreasuryDays.toFixed(0)}${t.statsRunwayDays}`}
-            />
+            {stats.economy.games.map((g) => (
+              <Tile
+                key={g.key}
+                label={`${t.statsTreasury} · ${g.label}`}
+                value={fmtUSD(g.treasuryUSDT)}
+                accent={g.accent}
+                hint={`${g.treasuryDays.toFixed(0)}${t.statsRunwayDays}`}
+              />
+            ))}
             <Tile
               label={t.statsBotsFiltered}
               value={stats.economy.botsFiltered.toLocaleString("en-US")}

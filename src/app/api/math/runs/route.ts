@@ -18,6 +18,8 @@ import { supabase, todayUtc } from "@/lib/supabase";
 import { POT_ADDRESS } from "@/lib/chain";
 import { verifyPaymentTx } from "@/lib/onchain";
 import { generateMathQuestion } from "@/lib/math-questions";
+import { maybeAlertBotPlay } from "@/lib/bot-detection";
+import { sendTelegramMessage } from "@/lib/telegram";
 
 export const dynamic = "force-dynamic";
 
@@ -111,6 +113,17 @@ export async function POST(req: NextRequest) {
   }
   const potAmountAfter = check.potAfter;
   const wasFree = check.wasFree;
+
+  // Heads-up to ops if a known-bot wallet is paying for Math. Same
+  // dedup logic as Grammar — first paid play of the day → 1 alert.
+  void maybeAlertBotPlay({
+    player,
+    gameLabel: "Math",
+    wasFree,
+    day,
+    supabase,
+    sendTelegram: sendTelegramMessage,
+  });
 
   const { data: runRow, error: runErr } = await supabase
     .from("runs")
