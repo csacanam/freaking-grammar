@@ -80,8 +80,11 @@ function MathGameInner() {
   const [question, setQuestion] = useState<MathQuestion | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(3);
   const [outcome, setOutcome] = useState<Outcome>("loading");
-  const [readyCount, setReadyCount] = useState<number | null>(3);
-  const [readyStarted, setReadyStarted] = useState(false);
+  // Briefing → straight into Q0. Q0 carries no timer (it's the
+  // warm-up question), so a 3-2-1 countdown after the briefing was
+  // adding ceremony for nothing. The pre-briefing "showBriefing"
+  // gate stays so first-time players still see the rules.
+  const [showBriefing, setShowBriefing] = useState(true);
   const [picked, setPicked] = useState<"correct" | "incorrect" | null>(null);
 
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -114,39 +117,32 @@ function MathGameInner() {
     }
   }, [address, isConnected, isConnecting, isReconnecting, txHash, router]);
 
-  // 3-2-1-GO countdown then startMathRun.
+  // Briefing dismissed → kick off startMathRun straight away. Q0 has
+  // no timer so the player can take their time once the equation
+  // appears; no countdown ceremony needed here.
   useEffect(() => {
-    if (readyCount === null) return;
-    if (!readyStarted) return;
-    if (readyCount === 0) {
-      const id = setTimeout(async () => {
-        if (startingRef.current) return;
-        startingRef.current = true;
-        try {
-          if (!address || !txHash) throw new Error("no-address-or-tx");
-          const res = await startMathRun(address, txHash);
-          setRunId(res.runId);
-          setQuestion(res.question);
-          setQIndex(0);
-          setScore(0);
-          setSecondsLeft(timeBudgetSec(0));
-          setOutcome("playing");
-          setReadyCount(null);
-          posthog.capture("math_play_started", { run_id: res.runId });
-        } catch (e) {
-          console.error("startMathRun failed:", e);
-          startingRef.current = false;
-          setStartError((e as Error)?.message ?? "Could not start the run.");
-        }
-      }, 500);
-      return () => clearTimeout(id);
-    }
-    const id = setTimeout(
-      () => setReadyCount((c) => (c === null ? null : c - 1)),
-      1000,
-    );
-    return () => clearTimeout(id);
-  }, [readyCount, readyStarted, router, address, txHash]);
+    if (showBriefing) return;
+    if (startingRef.current) return;
+    if (!address || !txHash) return;
+    if (isConnecting || isReconnecting) return;
+    startingRef.current = true;
+    (async () => {
+      try {
+        const res = await startMathRun(address, txHash);
+        setRunId(res.runId);
+        setQuestion(res.question);
+        setQIndex(0);
+        setScore(0);
+        setSecondsLeft(timeBudgetSec(0));
+        setOutcome("playing");
+        posthog.capture("math_play_started", { run_id: res.runId });
+      } catch (e) {
+        console.error("startMathRun failed:", e);
+        startingRef.current = false;
+        setStartError((e as Error)?.message ?? "Could not start the run.");
+      }
+    })();
+  }, [showBriefing, address, txHash, isConnecting, isReconnecting]);
 
   // Q1 is timer-less (warm-up). Subsequent questions tick with the
   // smooth time-decay budget.
@@ -238,19 +234,15 @@ function MathGameInner() {
         message={startError}
         onRetry={() => {
           setStartError(null);
-          setReadyStarted(false);
-          setReadyCount(3);
+          startingRef.current = false;
+          setShowBriefing(true);
         }}
       />
     );
   }
 
-  if (readyCount !== null) {
-    return !readyStarted ? (
-      <BriefingOverlay onReady={() => setReadyStarted(true)} />
-    ) : (
-      <ReadyOverlay count={readyCount} />
-    );
+  if (showBriefing) {
+    return <BriefingOverlay onReady={() => setShowBriefing(false)} />;
   }
 
   if (!question) {
@@ -436,16 +428,6 @@ function BriefingOverlay({ onReady }: { onReady: () => void }) {
       >
         I&apos;M READY
       </button>
-    </div>
-  );
-}
-
-function ReadyOverlay({ count }: { count: number }) {
-  return (
-    <div className="flex-1 flex items-center justify-center bg-yellow/40">
-      <div className="font-display text-9xl tracking-tight tabular-nums">
-        {count > 0 ? count : "GO"}
-      </div>
     </div>
   );
 }
