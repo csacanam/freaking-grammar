@@ -57,6 +57,11 @@ export async function getMathLobby(player?: string): Promise<LobbyData> {
   return r.json();
 }
 
+export async function getMathHistory(): Promise<HistoryDay[]> {
+  const r = await fetch(`/api/math/history`, { cache: "no-store" });
+  return r.json();
+}
+
 export async function getHistory(lang: Lang): Promise<HistoryDay[]> {
   const r = await fetch(`/api/history${q({ lang })}`, { cache: "no-store" });
   return r.json();

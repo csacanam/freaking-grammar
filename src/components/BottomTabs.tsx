@@ -9,31 +9,60 @@ export function BottomTabs() {
   const searchParams = useSearchParams();
   const { t, game } = useLang();
   // Hidden on the platform picker (/) — that's the nerdos.fun landing,
-  // not a game context. Hidden inside an active /grammar/game session.
+  // not a game context. Hidden inside an active gameplay session for
+  // either game (no nav distractions while the timer is ticking).
   if (pathname === "/") return null;
   if (pathname?.startsWith("/grammar/game")) return null;
+  if (pathname?.startsWith("/math/game")) return null;
 
-  // Keep the active lang in URLs so navigation preserves it.
+  // Tabs context-switch by which game the user is in. /you is global —
+  // it shows the player's profile across every game on the platform.
+  const inMath = pathname?.startsWith("/math") ?? false;
+
+  // Grammar URLs preserve ?game= so the EN/ES selection survives nav.
+  // Math has no language to preserve so its hrefs stay clean.
   const params = new URLSearchParams(searchParams?.toString() ?? "");
   params.set("game", game);
-  const qs = `?${params.toString()}`;
+  const grammarQs = `?${params.toString()}`;
 
-  // Tabs are scoped to the Grammar app for now; when /math launches its
-  // own home + history, BottomTabs will render the matching set per
-  // pathname (or move to a per-app layout).
-  const tabs = [
-    { href: `/grammar${qs}`, path: "/grammar", key: "home", label: t.tabPlay, Icon: HomeIcon },
-    { href: `/grammar/history${qs}`, path: "/grammar/history", key: "history", label: t.tabHistory, Icon: HistoryIcon },
-    { href: `/you${qs}`, path: "/you", key: "you", label: t.tabYou, Icon: YouIcon },
-  ];
+  const tabs = inMath
+    ? [
+        { href: `/math`, path: "/math", key: "home", label: t.tabPlay, Icon: HomeIcon },
+        { href: `/math/history`, path: "/math/history", key: "history", label: t.tabHistory, Icon: HistoryIcon },
+        { href: `/you`, path: "/you", key: "you", label: t.tabYou, Icon: YouIcon },
+      ]
+    : [
+        { href: `/grammar${grammarQs}`, path: "/grammar", key: "home", label: t.tabPlay, Icon: HomeIcon },
+        { href: `/grammar/history${grammarQs}`, path: "/grammar/history", key: "history", label: t.tabHistory, Icon: HistoryIcon },
+        { href: `/you${grammarQs}`, path: "/you", key: "you", label: t.tabYou, Icon: YouIcon },
+      ];
+
+  // Active rule: exact match OR (history paths) startsWith match. The
+  // home tab is active on the bare /grammar or /math, but NOT on their
+  // /history sub-routes — those belong to the History tab.
+  const isActive = (path: string) => {
+    if (pathname === path) return true;
+    if (path.endsWith("/history")) return pathname?.startsWith(path) ?? false;
+    if (path === "/you") return pathname?.startsWith("/you") ?? false;
+    if (path === "/grammar") {
+      return (
+        pathname?.startsWith("/grammar") === true &&
+        !pathname?.startsWith("/grammar/history")
+      );
+    }
+    if (path === "/math") {
+      return (
+        pathname?.startsWith("/math") === true &&
+        !pathname?.startsWith("/math/history")
+      );
+    }
+    return false;
+  };
 
   return (
     <nav className="fixed bottom-0 inset-x-0 h-20 bg-white border-t border-black/5 flex items-stretch justify-around z-40 pb-[env(safe-area-inset-bottom)] max-w-md mx-auto rounded-t-3xl shadow-[0_-8px_24px_rgba(0,0,0,0.06)] sm:rounded-t-3xl">
       {tabs.map(({ href, path, key, label, Icon }) => {
-        const active =
-          pathname === path ||
-          (path !== "/grammar" && pathname?.startsWith(path)) ||
-          (path === "/grammar" && pathname?.startsWith("/grammar") && !pathname?.startsWith("/grammar/history"));
+        const active = isActive(path);
         return (
           <Link
             key={key}
@@ -42,7 +71,7 @@ export function BottomTabs() {
               active ? "text-ink" : "text-muted"
             }`}
           >
-            <Icon active={!!active} />
+            <Icon active={active} />
             <span className="font-display text-xs tracking-wider uppercase">{label}</span>
           </Link>
         );
