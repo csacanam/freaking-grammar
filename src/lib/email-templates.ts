@@ -4,8 +4,10 @@
 // this file is pure string building so it's easy to unit-test / preview.
 //
 // Layout notes:
-//  - Subjects reference "Freaking Grammar" so the brand lands even in
-//    crowded inboxes where the From line gets truncated.
+//  - Subjects reference "nerdos.fun" so the platform brand lands even
+//    in crowded inboxes where the From line gets truncated. The body
+//    talks about today's round generically — once Freaking Math
+//    ships, the same email works without rewording.
 //  - Preheaders show TOTALS across both games — one scan-friendly line.
 //    Body shows per-game breakdown.
 //  - Prize units shown natively (e.g. `2.40 USDT + 4,000 COPm`) rather
@@ -84,13 +86,13 @@ export function renderOpenEmail(
 
   if (lang === "es") {
     return {
-      subject: "Tienes una jugada disponible en Freaking Grammar",
+      subject: "Tienes una jugada disponible en nerdos.fun",
       preheader: `Ronda de hoy. ${total} para ganar.`,
       bodyHtml: [
         `<p style="margin:0 0 16px;">Hoy hay nueva ronda. Tu jugada gratis te espera.</p>`,
         `<p style="margin:0 0 24px;"><strong>${total}</strong> en premios entre los dos juegos — y sigue creciendo con cada jugada.</p>`,
         `<p style="margin:0 0 24px;"><a href="__APP__" style="color:#1a8060;font-weight:600;">Juega →</a></p>`,
-        `<p style="margin:0;">— Freaking Grammar</p>`,
+        `<p style="margin:0;">— nerdos.fun</p>`,
       ].join(""),
       text: [
         `Hoy hay nueva ronda. Tu jugada gratis te espera.`,
@@ -99,19 +101,19 @@ export function renderOpenEmail(
         ``,
         `Juega: __APP__`,
         ``,
-        `— Freaking Grammar`,
+        `— nerdos.fun`,
       ].join("\n"),
     };
   }
 
   return {
-    subject: "You have a play available in Freaking Grammar",
+    subject: "You have a play available in nerdos.fun",
     preheader: `Today's round. ${total} in prizes.`,
     bodyHtml: [
       `<p style="margin:0 0 16px;">Today's round is open. Your free play is waiting.</p>`,
       `<p style="margin:0 0 24px;"><strong>${total}</strong> up for grabs across both games — still growing with every play.</p>`,
       `<p style="margin:0 0 24px;"><a href="__APP__" style="color:#1a8060;font-weight:600;">Play →</a></p>`,
-      `<p style="margin:0;">— Freaking Grammar</p>`,
+      `<p style="margin:0;">— nerdos.fun</p>`,
     ].join(""),
     text: [
       `Today's round is open. Your free play is waiting.`,
@@ -120,7 +122,7 @@ export function renderOpenEmail(
       ``,
       `Play: __APP__`,
       ``,
-      `— Freaking Grammar`,
+      `— nerdos.fun`,
     ].join("\n"),
   };
 }
@@ -182,14 +184,14 @@ export function renderLastCallEmail(
     });
 
     return {
-      subject: "Quedan 2 horas para ganar en Freaking Grammar",
+      subject: "Quedan 2 horas para ganar en nerdos.fun",
       preheader: `${total} en premios hoy.`,
       bodyHtml: [
         `<p style="margin:0 0 8px;">La ronda cierra en 2 horas.</p>`,
         enBlock.html,
         esBlock.html,
         `<p style="margin:20px 0 24px;"><a href="__APP__" style="color:#1a8060;font-weight:600;">Tu turno →</a></p>`,
-        `<p style="margin:0;">— Freaking Grammar</p>`,
+        `<p style="margin:0;">— nerdos.fun</p>`,
       ].join(""),
       text: [
         `La ronda cierra en 2 horas.`,
@@ -200,7 +202,7 @@ export function renderLastCallEmail(
         ``,
         `Tu turno: __APP__`,
         ``,
-        `— Freaking Grammar`,
+        `— nerdos.fun`,
       ].join("\n"),
     };
   }
@@ -219,14 +221,14 @@ export function renderLastCallEmail(
   });
 
   return {
-    subject: "2 hours left to win in Freaking Grammar",
+    subject: "2 hours left to win in nerdos.fun",
     preheader: `${total} in prizes today.`,
     bodyHtml: [
       `<p style="margin:0 0 8px;">Round closes in 2 hours.</p>`,
       enBlock.html,
       esBlock.html,
       `<p style="margin:20px 0 24px;"><a href="__APP__" style="color:#1a8060;font-weight:600;">Take your shot →</a></p>`,
-      `<p style="margin:0;">— Freaking Grammar</p>`,
+      `<p style="margin:0;">— nerdos.fun</p>`,
     ].join(""),
     text: [
       `Round closes in 2 hours.`,
@@ -237,7 +239,7 @@ export function renderLastCallEmail(
       ``,
       `Take your shot: __APP__`,
       ``,
-      `— Freaking Grammar`,
+      `— nerdos.fun`,
     ].join("\n"),
   };
 }
