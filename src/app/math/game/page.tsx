@@ -2,13 +2,13 @@
 
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useAccount } from "wagmi";
 import {
   startMathRun,
   submitMathAnswer,
   finishMathRun,
   type MathQuestion,
 } from "@/lib/api";
-import { useCurrentPlayer } from "@/lib/wallet";
 import { useLang } from "@/lib/lang-provider";
 import { posthog } from "@/lib/posthog-provider";
 
@@ -47,7 +47,14 @@ function MathGameInner() {
   const router = useRouter();
   const sp = useSearchParams();
   const txHash = sp.get("tx") || "";
-  const { address } = useCurrentPlayer();
+  // Use wagmi directly here (not useCurrentPlayer) so we can read
+  // the auto-reconnect status. On a direct-nav to /math/game?tx=…
+  // wagmi takes a beat to rehydrate the connector — without
+  // gating on it, the bounce-home effect runs before address is
+  // populated and yanks the user back to /math mid-load.
+  const { address: rawAddress, isConnected, isConnecting, isReconnecting } =
+    useAccount();
+  const address = rawAddress ? rawAddress.toLowerCase() : "";
   // Math has no language split, but the LangProvider still gives us
   // uiLang for chrome strings (CORRECT / INCORRECT etc.).
   useLang();
@@ -67,10 +74,19 @@ function MathGameInner() {
   const startingRef = useRef(false);
   const [startError, setStartError] = useState<string | null>(null);
 
-  // Bounce home if missing wallet or txHash.
+  // Bounce home if missing wallet or txHash. Wait for wagmi to finish
+  // (re)connecting first — direct URL nav to /math/game?tx=… loads
+  // before the wagmi connector has had a chance to populate address.
   useEffect(() => {
-    if (!address || !txHash) router.replace(`/math`);
-  }, [address, txHash, router]);
+    if (isConnecting || isReconnecting) return;
+    if (!txHash) {
+      router.replace("/math");
+      return;
+    }
+    if (!isConnected || !address) {
+      router.replace("/math");
+    }
+  }, [address, isConnected, isConnecting, isReconnecting, txHash, router]);
 
   // 3-2-1-GO countdown then startMathRun.
   useEffect(() => {
