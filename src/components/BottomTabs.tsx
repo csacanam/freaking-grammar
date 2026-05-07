@@ -2,12 +2,43 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import { useLang } from "@/lib/lang-provider";
+
+const LAST_GAME_KEY = "nerdos:lastGame";
 
 export function BottomTabs() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { t, game } = useLang();
+
+  // Remember which game the user was in last so /you (a cross-game
+  // route) can route Home/History back to the same game they came
+  // from — landing on /you from /math then tapping History should go
+  // to /math/history, not bounce back to Grammar.
+  const [lastGame, setLastGame] = useState<"grammar" | "math">("grammar");
+
+  useEffect(() => {
+    // Hydrate from localStorage on mount so a hard refresh on /you
+    // doesn't lose the context. Default 'grammar' is fine for first-
+    // time visitors — it's the only game they'd have entered before.
+    const stored = localStorage.getItem(LAST_GAME_KEY);
+    if (stored === "math" || stored === "grammar") {
+      setLastGame(stored);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (pathname?.startsWith("/math")) {
+      setLastGame("math");
+      localStorage.setItem(LAST_GAME_KEY, "math");
+    } else if (pathname?.startsWith("/grammar")) {
+      setLastGame("grammar");
+      localStorage.setItem(LAST_GAME_KEY, "grammar");
+    }
+    // /you and other shared routes don't update lastGame.
+  }, [pathname]);
+
   // Hidden on the platform picker (/) — that's the nerdos.fun landing,
   // not a game context. Hidden inside an active gameplay session for
   // either game (no nav distractions while the timer is ticking).
@@ -15,9 +46,14 @@ export function BottomTabs() {
   if (pathname?.startsWith("/grammar/game")) return null;
   if (pathname?.startsWith("/math/game")) return null;
 
-  // Tabs context-switch by which game the user is in. /you is global —
-  // it shows the player's profile across every game on the platform.
-  const inMath = pathname?.startsWith("/math") ?? false;
+  // Pathname tells us where we are now. For game-specific routes, that's
+  // the source of truth. For shared routes (/you), fall back to the
+  // remembered lastGame so History routes back to the game the user
+  // was in before they bounced to their profile.
+  let inMath: boolean;
+  if (pathname?.startsWith("/math")) inMath = true;
+  else if (pathname?.startsWith("/grammar")) inMath = false;
+  else inMath = lastGame === "math";
 
   // Grammar URLs preserve ?game= so the EN/ES selection survives nav.
   // Math has no language to preserve so its hrefs stay clean.
