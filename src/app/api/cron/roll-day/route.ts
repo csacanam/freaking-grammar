@@ -50,18 +50,97 @@ export async function GET(req: NextRequest) {
   }
 
   const today = todayUtc();
-  const results: Record<string, unknown> = {};
+  const results: Record<string, LangResult> = {} as Record<string, LangResult>;
 
   for (const lang of ["en", "es"] as const) {
     const gameId = lang === "en" ? 1 : 2;
     results[lang] = await rollLang(lang, gameId, today);
   }
 
+  // Single consolidated Telegram for both languages. Sent on every
+  // settlement run (not only when bots were caught) so the operator
+  // gets a daily heartbeat with winners + any new heuristic flags
+  // attached. Per-lang messages were too fragmented and silent on
+  // smooth days; one message gives the full picture.
+  await sendSettlementSummary(results).catch(() => {});
+
   return Response.json({ today, results });
 }
 
-async function rollLang(lang: "en" | "es", gameId: number, today: string) {
-  if (!supabase) return { skipped: "no-db" };
+async function sendSettlementSummary(
+  results: Record<"en" | "es", LangResult>,
+): Promise<void> {
+  const settledAny =
+    (results.en.status === "settled" && results.en.closed.day) ||
+    (results.es.status === "settled" && results.es.closed.day);
+  if (!settledAny) return; // nothing meaningful happened (e.g. alreadyOpen)
+
+  const day =
+    (results.en.status === "settled" && results.en.closed.day) ||
+    (results.es.status === "settled" && results.es.closed.day) ||
+    "";
+
+  const lines: string[] = [`🎲 *Settlement ${day}*`];
+
+  for (const lang of ["en", "es"] as const) {
+    const r = results[lang];
+    if (r.status !== "settled") {
+      lines.push("", `*${lang.toUpperCase()}* — ${r.reason}`);
+      continue;
+    }
+    const c = r.closed;
+    const winnerLine = c.winner
+      ? `✅ Winner: \`${c.winner.slice(0, 6)}…${c.winner.slice(-4)}\` (score ${c.winnerScore})`
+      : `⚠️ No clean winner — pot rolls forward.`;
+    lines.push("", `*${lang.toUpperCase()} → ${c.day}*`, winnerLine);
+    if (r.skipped.length > 0) {
+      lines.push(`🆕 auto-flagged ${r.skipped.length} new bot(s):`);
+      for (const s of r.skipped) {
+        const stats =
+          s.reason === "heuristic" &&
+          s.correctRate !== undefined &&
+          s.p50ms !== undefined &&
+          s.sampleSize !== undefined
+            ? `correct=${(s.correctRate * 100).toFixed(1)}%, p50=${s.p50ms}ms, n=${s.sampleSize}`
+            : "blacklisted";
+        lines.push(
+          `   \`${s.player.slice(0, 6)}…${s.player.slice(-4)}\` score=${s.score} — ${stats}`,
+        );
+      }
+    }
+  }
+
+  await sendTelegramMessage(lines.join("\n"));
+}
+
+type LangResult =
+  | {
+      status: "settled";
+      closed: {
+        day: string;
+        winner: string | null;
+        winnerScore: number | null;
+        rolledTx: string | null;
+      };
+      skipped: Array<{
+        player: string;
+        score: number;
+        reason: "blacklist" | "heuristic";
+        correctRate?: number;
+        p50ms?: number;
+        sampleSize?: number;
+      }>;
+      opened: string;
+      day_number: number;
+    }
+  | { status: "skipped"; reason: string };
+
+async function rollLang(
+  lang: "en" | "es",
+  gameId: number,
+  today: string,
+): Promise<LangResult> {
+  if (!supabase) return { status: "skipped", reason: "no-db" };
 
   const { data: last } = await supabase
     .from("pots")
@@ -81,11 +160,11 @@ async function rollLang(lang: "en" | "es", gameId: number, today: string) {
       amount_units: 0,
       closed: false,
     });
-    return { opened: today, day_number: 1 };
+    return { status: "skipped", reason: `bootstrapped day ${today}` };
   }
 
   if (lastPot.day_utc === today) {
-    return { alreadyOpen: today };
+    return { status: "skipped", reason: `already open: ${today}` };
   }
 
   const prevDay = lastPot.day_utc;
@@ -222,37 +301,29 @@ async function rollLang(lang: "en" | "es", gameId: number, today: string) {
     }
   }
 
-  // Alert ops only when something interesting happens. Already-known
-  // bots are filtered out at the SQL layer (NOT IN bot_wallets) so they
-  // never land in `skipped` and don't generate daily noise. What ends
-  // up here is exclusively NEW heuristic catches, which is exactly the
-  // signal worth pinging Telegram for.
-  if (skipped.length > 0) {
-    const lines = skipped.map((s) => {
-      const stats =
-        s.flag.flagged && s.flag.reason === "heuristic"
-          ? `correct=${(s.flag.correctRate * 100).toFixed(1)}%, p50=${s.flag.p50ms}ms, n=${s.flag.sampleSize}`
-          : "blacklisted"; // unreachable in the settlement loop today
-      return `🆕 \`${s.player.slice(0, 6)}…${s.player.slice(-4)}\` score=${s.score} — ${stats}`;
-    });
-    await sendTelegramMessage(
-      [
-        `🤖 *${lang.toUpperCase()} ${prevDay}* — auto-flagged ${skipped.length} new bot(s)`,
-        ...lines,
-        winner
-          ? `✅ Winner: \`${winner.slice(0, 6)}…${winner.slice(-4)}\` (score ${winnerScore})`
-          : `⚠️ No clean winner — pot rolls forward.`,
-      ].join("\n"),
-    ).catch(() => {});
-  }
-
+  // Per-language Telegram is gone — the GET handler now sends a single
+  // consolidated summary (winners + skips for both EN and ES) after
+  // both langs settle. Returning the full skip stats so the message
+  // builder can render them.
   return {
+    status: "settled",
     closed: { day: prevDay, winner, winnerScore, rolledTx },
-    skipped: skipped.map((s) => ({
-      player: s.player,
-      score: s.score,
-      reason: s.flag.flagged ? s.flag.reason : null,
-    })),
+    skipped: skipped.map((s) =>
+      s.flag.flagged && s.flag.reason === "heuristic"
+        ? {
+            player: s.player,
+            score: s.score,
+            reason: "heuristic" as const,
+            correctRate: s.flag.correctRate,
+            p50ms: s.flag.p50ms,
+            sampleSize: s.flag.sampleSize,
+          }
+        : {
+            player: s.player,
+            score: s.score,
+            reason: "blacklist" as const,
+          },
+    ),
     opened: today,
     day_number: lastPot.day_number + 1,
   };
