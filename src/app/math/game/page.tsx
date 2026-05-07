@@ -24,16 +24,17 @@ function timeBudgetSec(q: number): number {
 
 // One backdrop per session — picked once at mount and kept for the
 // whole run. Original Freaking Math feels like a "new vibe" each time
-// you launch the game; rotating per question turned out to be too
-// strobe-y. The palette stays in the platform family (same accents
-// Grammar uses for its PotCard stripes).
+// you launch the game; rotating per question was too strobe-y. The
+// palette stays in the platform family (same accents Grammar uses for
+// its PotCard stripes), but full-saturation solid colours so white
+// numbers read crisp against them. Yellow + orange are dropped from
+// the rotation — they're too light for white text to land.
 const MATH_BACKDROPS = [
-  "bg-teal/30",
-  "bg-purple/25",
-  "bg-yellow/30",
-  "bg-pink/30",
-  "bg-blue/20",
-  "bg-orange/30",
+  "bg-teal",
+  "bg-purple",
+  "bg-pink",
+  "bg-blue",
+  "bg-red",
 ];
 
 // Display-friendly operator glyphs. The server sends "x" / "/" because
@@ -266,44 +267,49 @@ function MathGameInner() {
     : Math.min(100, (secondsLeft / Math.max(0.5, totalSeconds)) * 100);
 
   return (
-    <div className={`flex-1 flex flex-col select-none touch-manipulation ${backdrop}`}>
+    <div className={`flex-1 flex flex-col select-none touch-manipulation text-white ${backdrop}`}>
       {/* SCORE */}
       <div className="pt-8 pb-4 text-center">
-        <div className="font-display text-xs tracking-[0.4em] text-muted">SCORE</div>
+        <div className="font-display text-xs tracking-[0.4em] text-white/70">SCORE</div>
         <div className="font-display text-6xl tracking-tight tabular-nums leading-none mt-1">
           {score}
         </div>
       </div>
 
-      {/* EQUATION */}
-      <div className="flex-1 flex items-center justify-center px-6">
-        <div className="font-display text-7xl tracking-tight tabular-nums text-center leading-none">
-          <span className="opacity-90">{question.left}</span>
-          <span className="mx-3 opacity-60">{opGlyph(question.op)}</span>
-          <span className="opacity-90">{question.right}</span>
-          <span className="mx-3 opacity-60">=</span>
+      {/* EQUATION — two-line layout (op on top, "= shown" below) so
+          each line gets its own row of vertical space and the digits
+          can be massive. Matches the original Freaking Math feel. */}
+      <div className="flex-1 flex flex-col items-center justify-center px-6 gap-2">
+        <div className="font-display text-[7rem] tracking-tight tabular-nums leading-none">
+          <span>{question.left}</span>
+          <span className="mx-4">{opGlyph(question.op)}</span>
+          <span>{question.right}</span>
+        </div>
+        <div className="font-display text-[7rem] tracking-tight tabular-nums leading-none">
+          <span className="mr-3">=</span>
           <span>{question.shown}</span>
         </div>
       </div>
 
-      {/* TIMER BAR */}
+      {/* TIMER BAR — base track on white/15 so it reads against
+          any solid backdrop in the rotation. */}
       <div className="px-6 mb-5">
-        <div className="h-2 bg-black/10 rounded-full overflow-hidden">
+        <div className="h-2 bg-white/15 rounded-full overflow-hidden">
           <div
             className={`h-full rounded-full transition-[width] duration-100 ease-linear ${
               noTimerThisQuestion
-                ? "bg-teal"
+                ? "bg-white"
                 : secondsLeft < 1
-                ? "bg-red"
+                ? "bg-yellow"
                 : secondsLeft < 1.5
                 ? "bg-orange"
-                : "bg-teal"
+                : "bg-white"
             }`}
             style={{ width: `${timerPct}%` }}
           />
         </div>
         {noTimerThisQuestion && (
-          <div className="mt-2 text-center text-[10px] font-display tracking-[0.3em] uppercase text-muted">
+          <div className="mt-2 text-center text-[10px] font-display tracking-[0.3em] uppercase text-white/70">
             First one — take your time
           </div>
         )}
@@ -350,35 +356,37 @@ function ChoiceButton({
   onClick: () => void;
   disabled: boolean;
 }) {
-  const bg = variant === "correct" ? "bg-teal" : "bg-red";
+  // White buttons + coloured icons. The body backdrop rotates through
+  // teal / purple / pink / blue / red, so green-on-teal or red-on-red
+  // buttons would have blended into the page colour on those rounds.
   return (
     <button
       onClick={onClick}
       disabled={disabled}
       aria-label={ariaLabel}
-      className={`${bg} rounded-3xl h-32 transition-all flex items-center justify-center
-        ${picked ? "ring-[8px] ring-inset ring-white scale-[1.02]" : ""}
+      className={`bg-white rounded-3xl h-32 transition-all flex items-center justify-center
+        ${picked ? "ring-[8px] ring-inset ring-white/80 scale-[1.02]" : ""}
         ${dimmed ? "opacity-40 scale-[0.98]" : ""}
-        ${disabled && !picked && !dimmed ? "cursor-default" : "active:brightness-110"}
-        shadow-[0_6px_0_0_rgba(0,0,0,0.14)]`}
+        ${disabled && !picked && !dimmed ? "cursor-default" : "active:brightness-95"}
+        shadow-[0_6px_0_0_rgba(0,0,0,0.18)]`}
     >
       {variant === "correct" ? <CheckIcon /> : <CrossIcon />}
     </button>
   );
 }
 
-// Inline SVG so the strokes scale with the button height and the
-// colour matches the Tailwind palette via currentColor.
+// Inline SVG so the strokes scale with the button height. Stroke
+// colour is the meaning carrier — green for ✓, red for ✗.
 function CheckIcon() {
   return (
     <svg
       viewBox="0 0 100 100"
       fill="none"
-      stroke="white"
-      strokeWidth="14"
+      stroke="#1ea869"
+      strokeWidth="16"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className="w-20 h-20 drop-shadow-[0_2px_0_rgba(0,0,0,0.18)]"
+      className="w-20 h-20"
       aria-hidden
     >
       <path d="M22 52 l18 20 l40 -44" />
@@ -391,10 +399,10 @@ function CrossIcon() {
     <svg
       viewBox="0 0 100 100"
       fill="none"
-      stroke="white"
-      strokeWidth="14"
+      stroke="#e74c3c"
+      strokeWidth="16"
       strokeLinecap="round"
-      className="w-20 h-20 drop-shadow-[0_2px_0_rgba(0,0,0,0.18)]"
+      className="w-20 h-20"
       aria-hidden
     >
       <path d="M26 26 L74 74" />
