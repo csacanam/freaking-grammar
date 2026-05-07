@@ -182,14 +182,21 @@ create table if not exists bot_wallets (
   notes         text
 );
 
--- Seed the six known sybils (one operator, identified manually). idempotent.
+-- Seed known sybils (one operator, identified manually + via on-chain
+-- forensics). Idempotent. The two 2026-05-07 entries trace upstream
+-- to 0xdead181... which was already in the original ring — same
+-- operator spinning up new vanity wallets after we caught the first
+-- batch. Pattern: lots of zeros in the middle of the address, generated
+-- with a vanity miner.
 insert into bot_wallets (player, reason, notes) values
   ('0x247116c752420ec7fe870d1549a1c2e8d44675c6', 'manual', 'master, funded the rest'),
   ('0x1d7d4da72a32b0ab37b92c773c15412381c7203a', 'manual', '4-day winner before detection'),
   ('0x351d9ac846d3a4e71c2103b91ed7aca67d85be5e', 'manual', 'sibling sybil'),
   ('0xf6826a75a9a9fb41f14732e5ca03df402d2e52ea', 'manual', 'sibling sybil'),
-  ('0xdead181ffb8e104ec9347dbf2b8f5884e1ba5f3b', 'manual', 'vanity address sibling'),
-  ('0xa41836014a58f004ee0746c7c66305fdcc252cbd', 'manual', 'sibling sybil')
+  ('0xdead181ffb8e104ec9347dbf2b8f5884e1ba5f3b', 'manual', 'vanity sibling — funder for the 2026-05-07 wallets'),
+  ('0xa41836014a58f004ee0746c7c66305fdcc252cbd', 'manual', 'sibling sybil'),
+  ('0xab6fd32100000ba1a94a96977333a1a7f485dd75', 'manual', 'sweep 2026-05-07: directly funded by 0xdead181...; same operator, same vanity pattern'),
+  ('0x7f674712b4e5c17a00001360f0cf35e1cef4c514', 'manual', 'sweep 2026-05-07: funded via relay 0x18de9f... by 0xdead181...; same operator, same vanity pattern')
 on conflict (player) do nothing;
 
 -- ----------------------------------------------- multi-game (Math)

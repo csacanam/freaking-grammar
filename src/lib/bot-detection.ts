@@ -64,6 +64,21 @@ export async function checkBotPlayer(
     return { flagged: true, reason: "blacklist" };
   }
 
+  // Math heuristic is intentionally disabled. Empirical sweep on
+  // 2026-05-07 showed Math p50 distributions for confirmed bots
+  // (~2016ms pooled, n=15) and confirmed humans (~1990ms pooled, n=31)
+  // are statistically indistinguishable — the tight 1.5–2.5s clock
+  // forces every player toward the budget floor, collapsing the gap
+  // that makes Grammar's heuristic reliable. Flagging on Math timing
+  // alone would generate false positives. Bots that play Grammar AND
+  // Math still get caught via Grammar (and the blacklist propagates
+  // globally), so we lose only the rare Math-only bot — which is
+  // unlikely given the picker exposes all games. Revisit when we
+  // have ≥30 days of Math human data to recalibrate.
+  if (scope?.game === "math") {
+    return { flagged: false };
+  }
+
   const since = new Date(
     Date.now() - HEURISTIC_LOOKBACK_DAYS * 86_400_000,
   ).toISOString();
