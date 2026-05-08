@@ -1237,39 +1237,111 @@ function PlaysChart({
 }: {
   data: Array<{ date: string; count: number }>;
 }) {
-  const max = Math.max(...data.map((d) => d.count), 1);
-  const width = 600;
-  const height = 90;
-  const barWidth = width / data.length;
+  // Round the peak to a "nice" number so the Y-axis labels are
+  // readable (10, 20, 50 instead of 17, 34, 89). Keeps the bars from
+  // pegging against the top edge.
+  const rawMax = Math.max(...data.map((d) => d.count), 1);
+  const niceMax = niceCeil(rawMax);
+
+  // The SVG itself is bar-only; axis lines + tick labels live as
+  // overlaid HTML so we can style them with Tailwind and the type
+  // doesn't blur from preserveAspectRatio="none" stretching.
+  const barW = 100 / data.length;
+
+  // X ticks: pick ~5 evenly-spaced dates so the eye can read them
+  // without crowding. Always include first and last (today).
+  const tickCount = 5;
+  const xTickIndexes = Array.from({ length: tickCount }, (_, i) =>
+    Math.round((i * (data.length - 1)) / (tickCount - 1)),
+  );
+
+  // Y ticks: 0, half, peak. Three values are enough to read the chart
+  // and keep the gridline noise low.
+  const yTicks = [0, Math.round(niceMax / 2), niceMax];
+
   return (
-    <div>
-      <svg
-        viewBox={`0 0 ${width} ${height}`}
-        className="w-full"
-        preserveAspectRatio="none"
+    <div className="flex gap-2">
+      {/* Y-axis labels — column on the left */}
+      <div
+        className="flex flex-col justify-between text-[10px] text-muted font-mono tabular-nums"
+        style={{ height: 96 }}
       >
-        {data.map((d, i) => {
-          const h = (d.count / max) * (height - 8);
-          return (
-            <rect
-              key={d.date}
-              x={i * barWidth + 1}
-              y={height - h}
-              width={barWidth - 2}
-              height={Math.max(h, 1)}
-              fill={d.count > 0 ? "#68c3a0" : "#eaeaea"}
-              rx={2}
+        {[...yTicks].reverse().map((v) => (
+          <span key={v} className="leading-none">
+            {v}
+          </span>
+        ))}
+      </div>
+
+      {/* Plot area: gridlines + bars + X-axis labels */}
+      <div className="flex-1 min-w-0">
+        <div className="relative" style={{ height: 96 }}>
+          {/* Horizontal gridlines aligned with the Y ticks. The bottom
+              one doubles as the X-axis baseline. */}
+          {yTicks.map((v) => (
+            <div
+              key={v}
+              className="absolute left-0 right-0 border-t border-black/10"
+              style={{ top: `${(1 - v / niceMax) * 100}%` }}
             />
-          );
-        })}
-      </svg>
-      <div className="flex justify-between text-[10px] text-muted mt-1 font-mono">
-        <span>{data[0].date.slice(5)}</span>
-        <span>peak {max}/d</span>
-        <span>today</span>
+          ))}
+          <svg
+            viewBox="0 0 100 100"
+            className="absolute inset-0 w-full h-full"
+            preserveAspectRatio="none"
+          >
+            {data.map((d, i) => {
+              const h = (d.count / niceMax) * 100;
+              return (
+                <rect
+                  key={d.date}
+                  x={i * barW + barW * 0.1}
+                  y={100 - h}
+                  width={barW * 0.8}
+                  height={Math.max(h, 0.5)}
+                  fill={d.count > 0 ? "#68c3a0" : "#eaeaea"}
+                />
+              );
+            })}
+          </svg>
+        </div>
+        {/* X-axis labels — only render at the chosen tick indexes,
+            using percentage positioning so they stay aligned with the
+            bars even when the chart resizes. */}
+        <div className="relative h-4 mt-1">
+          {xTickIndexes.map((idx) => {
+            const d = data[idx];
+            if (!d) return null;
+            const left = (idx + 0.5) * barW;
+            return (
+              <span
+                key={d.date}
+                className="absolute text-[10px] text-muted font-mono -translate-x-1/2"
+                style={{ left: `${left}%` }}
+              >
+                {d.date.slice(5)}
+              </span>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
+}
+
+// Round a count up to the next "nice" number so the Y-axis tops out
+// somewhere readable. 17 → 20, 34 → 50, 89 → 100, 137 → 200, etc.
+function niceCeil(n: number): number {
+  if (n <= 5) return 5;
+  if (n <= 10) return 10;
+  const exp = Math.pow(10, Math.floor(Math.log10(n)));
+  const norm = n / exp;
+  let nice;
+  if (norm <= 1) nice = 1;
+  else if (norm <= 2) nice = 2;
+  else if (norm <= 5) nice = 5;
+  else nice = 10;
+  return nice * exp;
 }
 
 function ContractRow({
