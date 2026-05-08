@@ -285,11 +285,11 @@ function MathGameInner() {
   }
 
   if (!question) {
-    return (
-      <div className="flex-1 flex items-center justify-center bg-teal/30 font-display text-xl">
-        …
-      </div>
-    );
+    // Briefing → startMathRun network call → first equation. We match
+    // the session backdrop so the briefing-to-game transition is one
+    // continuous colour instead of flashing through a separate teal
+    // loader screen for the ~300ms the request takes.
+    return <div className={`flex-1 ${backdrop}`} />;
   }
 
   const totalSeconds = timeBudgetSec(qIndex);
