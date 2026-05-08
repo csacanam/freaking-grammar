@@ -281,6 +281,41 @@ alter table run_questions add column if not exists math_op     text check (math_
 alter table run_questions add column if not exists math_shown  integer;  -- the result the player saw
 alter table run_questions add column if not exists math_truth  boolean;  -- whether the shown result is correct
 
+-- ----------------------------------------------- pots PK fix
+-- The first multi-game pass relaxed lang on pots to allow nulls (for
+-- Math) but didn't migrate the primary key — it stayed at (lang,
+-- day_utc), and PK columns can't be null in Postgres. Result: every
+-- insert with lang=null silently failed. The Math `pots` table stayed
+-- empty even after roll-day's bootstrap branch tried to seed it,
+-- which then makes every subsequent roll-day re-bootstrap instead of
+-- settling, so the day-1 humans never get paid.
+--
+-- Fix: add a stored generated `game_id` column derived from game+lang
+-- (1=Grammar EN, 2=Grammar ES, 3=Math) and move PK to (game_id,
+-- day_utc). Existing app code keeps inserting {game, lang, ...} as
+-- before; the column computes itself, so no code changes needed.
+alter table pots add column if not exists game_id smallint
+  generated always as (
+    case
+      when game = 'math' then 3
+      when lang = 'en' then 1
+      when lang = 'es' then 2
+    end
+  ) stored;
+
+do $$
+declare pk_name text;
+begin
+  select conname into pk_name from pg_constraint
+  where conrelid = 'pots'::regclass and contype = 'p';
+  if pk_name is not null then
+    execute format('alter table pots drop constraint %I', pk_name);
+  end if;
+end $$;
+
+alter table pots add primary key (game_id, day_utc);
+create index if not exists pots_game_id_day_idx on pots (game_id, day_utc desc);
+
 -- ------------------------------------------------------- grants
 -- External funding (Celo Foundation, ecosystem grants, hackathon prizes,
 -- etc.) tracked separately from `runs.was_free=false` revenue. The point
