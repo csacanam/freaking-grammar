@@ -10,6 +10,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { supabase, TOKEN_DECIMALS, todayUtc } from "@/lib/supabase";
 import { fmtUSD } from "@/lib/format";
 import { BackLink } from "@/components/BackLink";
+import { PlaysChart } from "@/components/PlaysChart";
 import {
   celoClient,
   FREAKING_POT_ABI,
@@ -157,6 +158,8 @@ type Stats = {
     usdtOut: number;
     potAddress: string;
     operatorAddress: string | null;
+    contractGasCELO: number; // total CELO burned on txs to the pot contract
+    contractGasTxs: number;  // sample size for the gas figure (Blockscout-paginated)
   };
   posthog: PostHogStats | null;
 };
@@ -240,11 +243,13 @@ async function loadStats(): Promise<Stats | null> {
   // -------------------------------------------------- ON-CHAIN POTS
   // Read pot/treasury for every game in the GAMES list so adding the
   // next launch is a one-line change up top, not surgery here.
-  const [perGamePotUSDT, perGameTreasury, operatorCELO] = await Promise.all([
-    Promise.all(GAMES.map((g) => readCurrentPotUSD(g.contractId))),
-    Promise.all(GAMES.map((g) => safeTreasury(g.contractId))),
-    readOperatorCELO(),
-  ]);
+  const [perGamePotUSDT, perGameTreasury, operatorCELO, contractGas] =
+    await Promise.all([
+      Promise.all(GAMES.map((g) => readCurrentPotUSD(g.contractId))),
+      Promise.all(GAMES.map((g) => safeTreasury(g.contractId))),
+      readOperatorCELO(),
+      readContractGas(),
+    ]);
 
   const todayGameTiles: GameTodayTile[] = GAMES.map((g, i) => ({
     key: g.key,
@@ -476,6 +481,8 @@ async function loadStats(): Promise<Stats | null> {
       usdtOut,
       potAddress: POT_ADDRESS.toLowerCase(),
       operatorAddress: operatorAddrPrint?.toLowerCase() ?? null,
+      contractGasCELO: contractGas.celo,
+      contractGasTxs: contractGas.txs,
     },
   };
 }
@@ -544,6 +551,54 @@ async function readOperatorCELO(): Promise<number> {
   } catch {
     return 0;
   }
+}
+
+// Total CELO burned as gas across every transaction sent TO the pot
+// contract — plays, rollDays, fundTreasuries, claims, sponsorPots,
+// etc. This is the protocol-effort metric Talent Protocol exposes
+// publicly: "this many actual on-chain calls happened, costing this
+// much network gas". Source: Blockscout's v2 REST API (no key needed
+// on Celo); paginated, capped at 50 pages × 50 items so a runaway
+// chatty contract can't blow up the request.
+async function readContractGas(): Promise<{ celo: number; txs: number }> {
+  if (isAddressEqual(POT_ADDRESS, zeroAddress)) return { celo: 0, txs: 0 };
+  const BS = "https://celo.blockscout.com/api/v2";
+  const MAX_PAGES = 50;
+  let totalWei = 0n;
+  let txs = 0;
+  let cursor: string | null = `${BS}/addresses/${POT_ADDRESS}/transactions?filter=to`;
+  for (let page = 0; page < MAX_PAGES && cursor; page++) {
+    try {
+      const res = await fetch(cursor, {
+        next: { revalidate: 3600 },
+        headers: { accept: "application/json" },
+      });
+      if (!res.ok) break;
+      const j = (await res.json()) as {
+        items?: Array<{
+          gas_used?: string | number | null;
+          gas_price?: string | number | null;
+          status?: string;
+        }>;
+        next_page_params?: Record<string, string | number> | null;
+      };
+      for (const t of j.items ?? []) {
+        const used = BigInt(t.gas_used ?? "0");
+        const price = BigInt(t.gas_price ?? "0");
+        totalWei += used * price;
+        txs++;
+      }
+      const npp = j.next_page_params;
+      cursor = npp
+        ? `${BS}/addresses/${POT_ADDRESS}/transactions?filter=to&${new URLSearchParams(
+            Object.fromEntries(Object.entries(npp).map(([k, v]) => [k, String(v)])),
+          ).toString()}`
+        : null;
+    } catch {
+      break; // upstream flaky; return what we summed so far
+    }
+  }
+  return { celo: Number(totalWei) / 1e18, txs };
 }
 
 async function loadSponsors(): Promise<Stats["sponsors"]> {
@@ -945,6 +1000,12 @@ export default async function StatsPage() {
               accent="bg-purple/20"
               hint={`${stats.onchain.welcomeAirdrops} ${t.statsAirdrops} · ${stats.onchain.rollDays} ${t.statsRolls}`}
             />
+            <Tile
+              label={t.statsContractGas}
+              value={`${stats.onchain.contractGasCELO.toFixed(4)} CELO`}
+              accent="bg-red/10"
+              hint={`${stats.onchain.contractGasTxs.toLocaleString("en-US")} ${t.statsContractGasHint}`}
+            />
           </section>
 
           <Card title={t.statsCardTxByType}>
@@ -1230,118 +1291,6 @@ function DistributionRow({
       </span>
     </div>
   );
-}
-
-function PlaysChart({
-  data,
-}: {
-  data: Array<{ date: string; count: number }>;
-}) {
-  // Round the peak to a "nice" number so the Y-axis labels are
-  // readable (10, 20, 50 instead of 17, 34, 89). Keeps the bars from
-  // pegging against the top edge.
-  const rawMax = Math.max(...data.map((d) => d.count), 1);
-  const niceMax = niceCeil(rawMax);
-
-  // The SVG itself is bar-only; axis lines + tick labels live as
-  // overlaid HTML so we can style them with Tailwind and the type
-  // doesn't blur from preserveAspectRatio="none" stretching.
-  const barW = 100 / data.length;
-
-  // X ticks: pick ~5 evenly-spaced dates so the eye can read them
-  // without crowding. Always include first and last (today).
-  const tickCount = 5;
-  const xTickIndexes = Array.from({ length: tickCount }, (_, i) =>
-    Math.round((i * (data.length - 1)) / (tickCount - 1)),
-  );
-
-  // Y ticks: 0, half, peak. Three values are enough to read the chart
-  // and keep the gridline noise low.
-  const yTicks = [0, Math.round(niceMax / 2), niceMax];
-
-  return (
-    <div className="flex gap-2">
-      {/* Y-axis labels — column on the left */}
-      <div
-        className="flex flex-col justify-between text-[10px] text-muted font-mono tabular-nums"
-        style={{ height: 96 }}
-      >
-        {[...yTicks].reverse().map((v) => (
-          <span key={v} className="leading-none">
-            {v}
-          </span>
-        ))}
-      </div>
-
-      {/* Plot area: gridlines + bars + X-axis labels */}
-      <div className="flex-1 min-w-0">
-        <div className="relative" style={{ height: 96 }}>
-          {/* Horizontal gridlines aligned with the Y ticks. The bottom
-              one doubles as the X-axis baseline. */}
-          {yTicks.map((v) => (
-            <div
-              key={v}
-              className="absolute left-0 right-0 border-t border-black/10"
-              style={{ top: `${(1 - v / niceMax) * 100}%` }}
-            />
-          ))}
-          <svg
-            viewBox="0 0 100 100"
-            className="absolute inset-0 w-full h-full"
-            preserveAspectRatio="none"
-          >
-            {data.map((d, i) => {
-              const h = (d.count / niceMax) * 100;
-              return (
-                <rect
-                  key={d.date}
-                  x={i * barW + barW * 0.1}
-                  y={100 - h}
-                  width={barW * 0.8}
-                  height={Math.max(h, 0.5)}
-                  fill={d.count > 0 ? "#68c3a0" : "#eaeaea"}
-                />
-              );
-            })}
-          </svg>
-        </div>
-        {/* X-axis labels — only render at the chosen tick indexes,
-            using percentage positioning so they stay aligned with the
-            bars even when the chart resizes. */}
-        <div className="relative h-4 mt-1">
-          {xTickIndexes.map((idx) => {
-            const d = data[idx];
-            if (!d) return null;
-            const left = (idx + 0.5) * barW;
-            return (
-              <span
-                key={d.date}
-                className="absolute text-[10px] text-muted font-mono -translate-x-1/2"
-                style={{ left: `${left}%` }}
-              >
-                {d.date.slice(5)}
-              </span>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Round a count up to the next "nice" number so the Y-axis tops out
-// somewhere readable. 17 → 20, 34 → 50, 89 → 100, 137 → 200, etc.
-function niceCeil(n: number): number {
-  if (n <= 5) return 5;
-  if (n <= 10) return 10;
-  const exp = Math.pow(10, Math.floor(Math.log10(n)));
-  const norm = n / exp;
-  let nice;
-  if (norm <= 1) nice = 1;
-  else if (norm <= 2) nice = 2;
-  else if (norm <= 5) nice = 5;
-  else nice = 10;
-  return nice * exp;
 }
 
 function ContractRow({
