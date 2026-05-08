@@ -19,6 +19,7 @@ import { useAccount } from "wagmi";
 import { usePrivy } from "@privy-io/react-auth";
 import { useLang } from "@/lib/lang-provider";
 import { posthog } from "@/lib/posthog-provider";
+import { detectHost } from "@/lib/host";
 
 export function PostHogIdentifyBridge() {
   const { address } = useAccount();
@@ -41,7 +42,20 @@ export function PostHogIdentifyBridge() {
       props.connector = "external";
     }
 
-    posthog.identify(lower, props);
+    // Acquisition source — only set on first identify per wallet so the
+    // value reflects how they ENTERED the app, not where they happened
+    // to be when their wallet reconnected weeks later. PostHog's
+    // auto-captured $initial_referring_domain catches browser visitors
+    // (Twitter, Telegram chat links, Google) but is empty inside
+    // Farcaster/Telegram mini-apps because iframe contexts strip
+    // referrer. detectHost() fills that gap; for plain web visitors we
+    // skip the set so PostHog's referrer signal stays the source of
+    // truth.
+    const host = detectHost();
+    const setOnce: Record<string, unknown> = {};
+    if (host !== "web") setOnce.acquisition_source = host;
+
+    posthog.identify(lower, props, setOnce);
     identifiedFor.current = lower;
   }, [address, user?.email?.address, user?.wallet?.walletClientType, uiLang]);
 

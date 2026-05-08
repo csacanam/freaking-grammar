@@ -105,16 +105,44 @@ export async function fetchPostHogStats(): Promise<PostHogStats | null> {
       GROUP BY device
       ORDER BY visitors DESC
     `),
+    // Acquisition source — merged signal:
+    //   1. person.properties.acquisition_source: explicitly set on first
+    //      identify when we're inside a mini-app context (farcaster,
+    //      telegram, minipay, base) where iframe sandboxing strips
+    //      referrer. This is the strongest signal.
+    //   2. Otherwise we bucket $initial_referring_domain into recognised
+    //      categories so "t.co" and "twitter.com" land in one row instead
+    //      of two, and "Direct" gets its own labelled row instead of
+    //      showing as null.
+    // Buckets cover the channels that actually drive traffic to
+    // nerdos.fun today; anything else passes through as the raw domain
+    // so we can spot new sources organically.
     hogQL(`
       SELECT
-        properties.$initial_referring_domain AS source,
+        coalesce(
+          person.properties.acquisition_source,
+          multiIf(
+            properties.$initial_referring_domain LIKE '%t.co%'
+              OR properties.$initial_referring_domain LIKE '%twitter.com%'
+              OR properties.$initial_referring_domain LIKE '%x.com%', 'twitter',
+            properties.$initial_referring_domain LIKE '%t.me%'
+              OR properties.$initial_referring_domain LIKE '%telegram%', 'telegram',
+            properties.$initial_referring_domain LIKE '%warpcast.com%'
+              OR properties.$initial_referring_domain LIKE '%farcaster%', 'farcaster',
+            properties.$initial_referring_domain LIKE '%google.%', 'google',
+            properties.$initial_referring_domain LIKE '%bing.%', 'bing',
+            properties.$initial_referring_domain IS NULL
+              OR properties.$initial_referring_domain = '', 'direct',
+            properties.$initial_referring_domain
+          )
+        ) AS source,
         uniq(distinct_id) AS visitors
       FROM events
       WHERE event = '$pageview'
         AND timestamp > now() - INTERVAL 30 DAY
       GROUP BY source
       ORDER BY visitors DESC
-      LIMIT 5
+      LIMIT 10
     `),
   ]);
 
@@ -148,10 +176,29 @@ export async function fetchPostHogStats(): Promise<PostHogStats | null> {
       visitors: Number(row[1] ?? 0),
     })),
     sources: (sources ?? []).map((row) => ({
-      source: row[0] ? String(row[0]) : "Direct",
+      source: prettySource(row[0]),
       visitors: Number(row[1] ?? 0),
     })),
   };
+}
+
+// Title-case known acquisition buckets so the stats panel reads
+// uniformly ("Farcaster" instead of "farcaster") while passing unknown
+// referrer domains through verbatim ("randomsite.io").
+function prettySource(raw: unknown): string {
+  if (!raw) return "Direct";
+  const s = String(raw);
+  switch (s.toLowerCase()) {
+    case "direct":    return "Direct";
+    case "farcaster": return "Farcaster";
+    case "telegram":  return "Telegram";
+    case "twitter":   return "Twitter / X";
+    case "google":    return "Google";
+    case "bing":      return "Bing";
+    case "minipay":   return "MiniPay";
+    case "base":      return "Base App";
+    default:          return s;
+  }
 }
 
 // ISO alpha-2 country code → emoji flag. Returns empty string when
