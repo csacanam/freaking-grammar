@@ -79,8 +79,9 @@ export async function getUnclaimed(lang: Lang, player?: string): Promise<Unclaim
 
 export type OpenRun = {
   txHash: string;
-  lang: Lang;
-  gameId: 1 | 2;
+  game: "grammar" | "math";
+  lang: Lang | null;     // null for Math (no language split)
+  gameId: 1 | 2 | 3;
   paidAtIso: string;
 };
 

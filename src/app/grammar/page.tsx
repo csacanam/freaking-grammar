@@ -133,7 +133,7 @@ export default function LobbyPage() {
       </div>
 
       <div className="px-5 pt-4 pb-10 flex flex-col gap-4">
-        <ResumePaidBanner runs={openRuns} />
+        <ResumePaidBanner runs={openRuns} filter="grammar" />
         <UnclaimedBanner totalUSD={totalUnclaimed} />
         {GAMES.map((g) => (
           <PotCard key={g} game={g} lobby={lobbies[g]} />

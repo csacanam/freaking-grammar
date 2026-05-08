@@ -29,10 +29,22 @@ export const dynamic = "force-dynamic";
 
 type ResumablePlay = {
   txHash: string;
-  lang: Lang;
-  gameId: 1 | 2;
+  game: "grammar" | "math";
+  lang: Lang | null;     // null for Math (no language split)
+  gameId: 1 | 2 | 3;
   paidAtIso: string;
 };
+
+// Maps the on-chain gameId to the discriminator pair the resume banner
+// needs. Anything outside the known set returns null and gets skipped.
+function pairForGameId(
+  gameId: number,
+): { game: "grammar" | "math"; lang: Lang | null; gameId: 1 | 2 | 3 } | null {
+  if (gameId === 1) return { game: "grammar", lang: "en", gameId: 1 };
+  if (gameId === 2) return { game: "grammar", lang: "es", gameId: 2 };
+  if (gameId === 3) return { game: "math", lang: null, gameId: 3 };
+  return null;
+}
 
 const PLAYED_EVENT = parseAbiItem(
   "event Played(uint256 indexed gameId, uint256 indexed day, address indexed player, bool wasFree, uint256 potAfter)",
@@ -145,13 +157,15 @@ export async function GET(req: NextRequest) {
 
   const resumable: ResumablePlay[] = [];
   for (const p of playedToday) {
+    const pair = pairForGameId(p.gameId);
+    if (!pair) continue; // unknown gameId — future game we don't yet know how to route
+
     const row = rowByTx.get(p.txHash.toLowerCase());
     if (!row) {
       // No row at all — server rejected before insert.
       resumable.push({
         txHash: p.txHash,
-        lang: p.gameId === 2 ? "es" : "en",
-        gameId: p.gameId === 2 ? 2 : 1,
+        ...pair,
         paidAtIso: new Date(p.blockTime * 1000).toISOString(),
       });
       continue;
@@ -160,8 +174,7 @@ export async function GET(req: NextRequest) {
     if (answeredRunIds.has(row.id)) continue;
     resumable.push({
       txHash: p.txHash,
-      lang: p.gameId === 2 ? "es" : "en",
-      gameId: p.gameId === 2 ? 2 : 1,
+      ...pair,
       paidAtIso: new Date(p.blockTime * 1000).toISOString(),
     });
   }
