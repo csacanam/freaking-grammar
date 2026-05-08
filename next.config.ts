@@ -7,6 +7,11 @@ const nextConfig: NextConfig = {
   // search engines + Farcaster's preview cache update too. The bare /
   // is intentionally not redirected — that route now serves the
   // platform picker.
+  //
+  // Stats moved the other way: it used to live at /grammar/stats but
+  // covers all games now (Grammar EN/ES + Math), so it's promoted to
+  // /stats. The /grammar/stats redirect catches anyone who bookmarked
+  // the old path.
   async redirects() {
     return [
       { source: "/game", destination: "/grammar/game", permanent: true },
@@ -16,7 +21,7 @@ const nextConfig: NextConfig = {
         permanent: true,
       },
       { source: "/history", destination: "/grammar/history", permanent: true },
-      { source: "/stats", destination: "/grammar/stats", permanent: true },
+      { source: "/grammar/stats", destination: "/stats", permanent: true },
     ];
   },
 };

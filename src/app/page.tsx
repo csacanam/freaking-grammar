@@ -57,7 +57,7 @@ export default function PickerHome() {
       </div>
 
       <Link
-        href="/grammar/stats"
+        href="/stats"
         className="self-center mt-8 inline-flex items-center gap-2 text-base font-display tracking-[0.2em] uppercase text-muted hover:text-ink"
       >
         <span aria-hidden>📊</span>
