@@ -29,7 +29,14 @@ export default function PickerHome() {
               wrong for a lowercase domain identity. Section labels and
               stage chrome stay on font-display where caps read fine. */}
           <h1 className="text-4xl font-bold tracking-tight">nerdos.fun</h1>
-          <p className="text-base text-muted">{t.nerdosTagline}</p>
+          {/* Tagline displays as two stacked lines on the picker so the
+              "who" and the "why" each get their own beat. Source string
+              stays one line (used as-is for meta tags / OG / Farcaster
+              description); we just inject a newline after the first
+              sentence and let `whitespace-pre-line` honour it here. */}
+          <p className="text-base text-muted whitespace-pre-line leading-snug">
+            {t.nerdosTagline.replace(". ", ".\n")}
+          </p>
         </div>
       </header>
 
