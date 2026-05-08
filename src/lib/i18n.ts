@@ -13,7 +13,7 @@ export const dict = {
     tabHistory: "History",
     tabYou: "You",
     statsLinkLabel: "Live stats",
-    nerdosTagline: "Games for nerdos. Daily rewards.",
+    nerdosTagline: "Daily games for nerdos. Rewards for curious minds.",
     nerdosPickAGame: "Pick a game",
     grammarCardTitle: "Freaking Grammar",
     grammarCardBlurb:
@@ -304,7 +304,7 @@ export const dict = {
     tabHistory: "Historial",
     tabYou: "Tú",
     statsLinkLabel: "Estadísticas en vivo",
-    nerdosTagline: "Juegos para nerdos. Recompensas diarias.",
+    nerdosTagline: "Juegos diarios para nerdos. Premios para mentes curiosas.",
     nerdosPickAGame: "Elige un juego",
     grammarCardTitle: "Freaking Grammar",
     grammarCardBlurb:

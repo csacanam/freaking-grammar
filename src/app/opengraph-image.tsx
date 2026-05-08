@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og";
 
-export const alt = "nerdos.fun — games for nerdos, daily rewards";
+export const alt = "nerdos.fun — daily games for nerdos, rewards for curious minds";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 // Static share-card: the puzzle doesn't change between renders so we can
@@ -144,13 +144,18 @@ export default function OpenGraphImage() {
           <div
             style={{
               display: "flex",
-              fontSize: 36,
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 4,
+              fontSize: 32,
               letterSpacing: "0.04em",
               fontWeight: 800,
               color: "white",
+              lineHeight: 1.1,
             }}
           >
-            Games for nerdos. Daily rewards.
+            <span>Daily games for nerdos.</span>
+            <span>Rewards for curious minds.</span>
           </div>
         </div>
       </div>

@@ -34,9 +34,9 @@ export async function GET() {
       // (tagline must be 30 chars or fewer). Description must avoid
       // these special chars: @, #, $, %, ^, &, *, +, =, /, \, |, ~, «, ».
       // Copy below has been audited against both rules.
-      subtitle: "Daily games. Real rewards.",
+      subtitle: "Rewards for curious minds.",
       description:
-        "Daily games for nerdos. Pick the right answer in 5 seconds, build a streak, win the USDT prize. Grammar and Math are live.",
+        "Daily games for nerdos. Rewards for curious minds. Pick the right answer in 5 seconds, build a streak, win the USDT prize. Grammar and Math are live.",
       iconUrl: `${SITE_URL}/icon-1024.png`,
       splashImageUrl: `${SITE_URL}/splash-200.png`,
       splashBackgroundColor: "#68c3a0",
@@ -46,9 +46,9 @@ export async function GET() {
       // adds one tap — worth it for the rebrand.
       homeUrl: SITE_URL,
       heroImageUrl: `${SITE_URL}/opengraph-image`,
-      tagline: "Daily rewards for nerdos.",
+      tagline: "Daily games for nerdos.",
       ogTitle: "nerdos.fun",
-      ogDescription: "Games for nerdos. Daily rewards.",
+      ogDescription: "Daily games for nerdos. Rewards for curious minds.",
       ogImageUrl: `${SITE_URL}/opengraph-image`,
       primaryCategory: "games",
       // Warpcast caps this array at 5. Switched from grammar-specific

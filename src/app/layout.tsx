@@ -42,10 +42,10 @@ const fcFrameEmbed = {
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: "nerdos.fun",
-  description: "Games for nerdos. Daily rewards.",
+  description: "Daily games for nerdos. Rewards for curious minds.",
   openGraph: {
     title: "nerdos.fun",
-    description: "Games for nerdos. Daily rewards.",
+    description: "Daily games for nerdos. Rewards for curious minds.",
     url: SITE_URL,
     siteName: "nerdos.fun",
     images: [{ url: "/opengraph-image", width: 1200, height: 630 }],
@@ -53,7 +53,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "nerdos.fun",
-    description: "Games for nerdos. Daily rewards.",
+    description: "Daily games for nerdos. Rewards for curious minds.",
     images: ["/opengraph-image"],
   },
   other: {
