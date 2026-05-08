@@ -20,7 +20,6 @@ import { getStats, getUnclaimed, type UnclaimedWin } from "@/lib/api";
 import { useCurrentPlayer } from "@/lib/wallet";
 import { ACTIVE_CHAIN, POT_ADDRESS } from "@/lib/chain";
 import { useLang } from "@/lib/lang-provider";
-import { gameIdFor, type Lang } from "@/lib/i18n";
 import FreakingPotArtifact from "@/lib/contracts/FreakingPot.json";
 import { SakaLabsCredit } from "@/components/SakaLabsCredit";
 import { PlayerName } from "@/components/PlayerName";
@@ -28,20 +27,16 @@ import { WalletSection } from "@/components/WalletSection";
 
 const FREAKING_POT_ABI = FreakingPotArtifact.abi;
 
-const LANGS: Lang[] = ["en", "es"];
-
 type AggregatedStats = {
   gamesPlayed: number;
   wins: number;
   totalEarnedUSD: number;
 };
 
-type TaggedWin = UnclaimedWin & { lang: Lang };
-
 export default function YouPage() {
   const { t } = useLang();
   const [stats, setStats] = useState<AggregatedStats | null>(null);
-  const [unclaimed, setUnclaimed] = useState<TaggedWin[] | null>(null);
+  const [unclaimed, setUnclaimed] = useState<UnclaimedWin[] | null>(null);
   const [claiming, setClaiming] = useState(false);
   const [claimError, setClaimError] = useState<string | null>(null);
   const { address: player } = useCurrentPlayer();
@@ -58,34 +53,16 @@ export default function YouPage() {
 
   useEffect(() => {
     if (!player) return;
-    // Aggregate stats + unclaimed across BOTH games — a "You" page scoped to
-    // one pot hides the other game's winnings. Each item is tagged with its
-    // lang so Claim All can split into per-game txs below.
-    Promise.all(
-      LANGS.flatMap((l) => [
-        getStats(l, player),
-        getUnclaimed(l, player).then((ws) =>
-          ws.map((w) => ({ ...w, lang: l })),
-        ),
-      ]),
-    ).then((results) => {
-      const statsByLang = [results[0], results[2]] as [
-        Awaited<ReturnType<typeof getStats>>,
-        Awaited<ReturnType<typeof getStats>>,
-      ];
-      const winsByLang = [results[1], results[3]] as [TaggedWin[], TaggedWin[]];
-      setStats({
-        gamesPlayed: statsByLang[0].gamesPlayed + statsByLang[1].gamesPlayed,
-        wins: statsByLang[0].wins + statsByLang[1].wins,
-        totalEarnedUSD:
-          statsByLang[0].totalEarnedUSD + statsByLang[1].totalEarnedUSD,
-      });
-      setUnclaimed(
-        [...winsByLang[0], ...winsByLang[1]].sort((a, b) =>
-          b.date.localeCompare(a.date),
-        ),
-      );
-    });
+    // The endpoints aggregate across every game now — Math is included
+    // automatically. Each unclaimed win carries its gameId so the claim
+    // flow below can group per game and call claimMultiple once per
+    // game.
+    Promise.all([getStats(player), getUnclaimed(player)]).then(
+      ([s, wins]) => {
+        setStats(s);
+        setUnclaimed(wins.sort((a, b) => b.date.localeCompare(a.date)));
+      },
+    );
   }, [player]);
 
   const total = (unclaimed ?? []).reduce((s, w) => s + w.amountUSD, 0);
@@ -113,20 +90,24 @@ export default function YouPage() {
       }
       if (!publicClient) throw new Error("no-rpc");
 
-      // Split wins by game and send one claimMultiple() call per game. The
-      // contract tracks pots per (gameId, day), so we can't batch across games.
-      const byLang: Record<Lang, bigint[]> = { en: [], es: [] };
-      for (const w of unclaimed) byLang[w.lang].push(BigInt(w.dayNumber));
+      // Split wins by gameId and send one claimMultiple() call per
+      // game. The contract tracks pots per (gameId, day), so we can't
+      // batch across games. Works for any number of games — Math
+      // (gameId=3) plugs into the same loop as Grammar EN/ES.
+      const byGameId = new Map<number, bigint[]>();
+      for (const w of unclaimed) {
+        if (!byGameId.has(w.gameId)) byGameId.set(w.gameId, []);
+        byGameId.get(w.gameId)!.push(BigInt(w.dayNumber));
+      }
 
-      for (const l of LANGS) {
-        const days = byLang[l];
+      for (const [gameId, days] of byGameId) {
         if (days.length === 0) continue;
         const hash = await writeContractAsync({
           chainId: ACTIVE_CHAIN.id,
           address: POT_ADDRESS,
           abi: FREAKING_POT_ABI,
           functionName: "claimMultiple",
-          args: [days, BigInt(gameIdFor(l))],
+          args: [days, BigInt(gameId)],
         });
         await publicClient.waitForTransactionReceipt({ hash });
       }
@@ -216,22 +197,30 @@ export default function YouPage() {
         {unclaimed && unclaimed.length > 0 && (
           <div className="rounded-3xl bg-white border border-black/5 overflow-hidden shadow-[0_4px_0_0_rgba(0,0,0,0.04)]">
             <ul className="divide-y divide-black/5">
-              {unclaimed.map((w) => (
+              {unclaimed.map((w) => {
+                // Per-game badge: Grammar EN/ES use the existing teal/
+                // purple tints; Math (lang=null) gets orange to match
+                // its lobby accent stripe.
+                const badgeLabel =
+                  w.game === "math" ? "MATH" : (w.lang ?? "").toUpperCase();
+                const badgeClass =
+                  w.game === "math"
+                    ? "bg-orange/20 text-orange"
+                    : w.lang === "en"
+                    ? "bg-teal/20 text-teal"
+                    : "bg-purple/20 text-purple";
+                return (
                 <li
-                  key={`${w.lang}-${w.date}`}
+                  key={`${w.gameId}-${w.date}`}
                   className="flex items-center justify-between px-4 py-3"
                 >
                   <div>
                     <div className="text-xs font-display tracking-widest uppercase text-muted flex items-center gap-2">
                       <span>{w.date}</span>
                       <span
-                        className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${
-                          w.lang === "en"
-                            ? "bg-teal/20 text-teal"
-                            : "bg-purple/20 text-purple"
-                        }`}
+                        className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${badgeClass}`}
                       >
-                        {w.lang.toUpperCase()}
+                        {badgeLabel}
                       </span>
                     </div>
                     <div className="font-display text-2xl">{fmtUSD(w.amountUSD)}</div>
@@ -240,7 +229,8 @@ export default function YouPage() {
                     {t.readyBadge}
                   </span>
                 </li>
-              ))}
+                );
+              })}
             </ul>
             <div className="p-3 bg-black/[0.02] flex flex-col gap-2">
               <Button full disabled={claiming} onClick={handleClaimAll}>

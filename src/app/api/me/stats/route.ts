@@ -1,5 +1,8 @@
+// Per-wallet aggregate across every game (Grammar EN/ES, Math, etc.).
+// Drop-in for the old per-lang stats endpoint, which silently excluded
+// Math (lang=null) and yielded 0 plays / 0 wins for Math-only wallets.
+
 import type { NextRequest } from "next/server";
-import { validateLang } from "@/lib/i18n";
 import { supabase, TOKEN_DECIMALS } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -7,7 +10,6 @@ export const dynamic = "force-dynamic";
 const MOCK = { gamesPlayed: 12, wins: 1, totalEarnedUSD: 3.88 };
 
 export async function GET(req: NextRequest) {
-  const lang = validateLang(req.nextUrl.searchParams.get("lang"));
   const player = req.nextUrl.searchParams.get("player")?.toLowerCase();
 
   if (!supabase || !player) return Response.json(MOCK);
@@ -16,13 +18,11 @@ export async function GET(req: NextRequest) {
     supabase
       .from("runs")
       .select("*", { count: "exact", head: true })
-      .eq("lang", lang)
       .eq("player", player)
       .eq("status", "finished"),
     supabase
       .from("wins")
       .select("amount_units")
-      .eq("lang", lang)
       .eq("player", player),
   ]);
 

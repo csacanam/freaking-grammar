@@ -50,10 +50,10 @@ export default function LobbyPage() {
     );
 
     if (address) {
-      Promise.all([getUnclaimed("en", address), getUnclaimed("es", address)])
-        .then(([en, es]) => {
-          if (alive) setUnclaimed([...en, ...es]);
-        });
+      // Cross-game in one call — the endpoint includes Math wins now.
+      getUnclaimed(address).then((wins) => {
+        if (alive) setUnclaimed(wins);
+      });
       getOpenRuns(address).then((runs) => {
         if (alive) setOpenRuns(runs);
       });

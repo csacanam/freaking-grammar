@@ -8,8 +8,16 @@ import { PayAndPlayButton } from "@/components/PayAndPlayButton";
 import { PlayerName } from "@/components/PlayerName";
 import { SakaLabsCredit } from "@/components/SakaLabsCredit";
 import { ResumePaidBanner } from "@/components/ResumePaidBanner";
+import { UnclaimedBanner } from "@/components/UnclaimedBanner";
 import { fmtUSD } from "@/lib/format";
-import { getMathLobby, getOpenRuns, type LobbyData, type OpenRun } from "@/lib/api";
+import {
+  getMathLobby,
+  getOpenRuns,
+  getUnclaimed,
+  type LobbyData,
+  type OpenRun,
+  type UnclaimedWin,
+} from "@/lib/api";
 import { useCurrentPlayer } from "@/lib/wallet";
 import { useLang } from "@/lib/lang-provider";
 
@@ -25,10 +33,12 @@ export default function MathLobbyPage() {
   const { address } = useCurrentPlayer();
   const [lobby, setLobby] = useState<LobbyData | null>(null);
   const [openRuns, setOpenRuns] = useState<OpenRun[]>([]);
+  const [unclaimed, setUnclaimed] = useState<UnclaimedWin[]>([]);
 
   useEffect(() => {
     let alive = true;
     setOpenRuns([]);
+    setUnclaimed([]);
     (async () => {
       const data = await getMathLobby(address ?? undefined);
       if (alive) setLobby(data);
@@ -37,11 +47,19 @@ export default function MathLobbyPage() {
       getOpenRuns(address).then((runs) => {
         if (alive) setOpenRuns(runs);
       });
+      // Cross-game banner — surfaces ANY unclaimed win on this wallet,
+      // including Grammar wins. The home for either game shows the
+      // same total so a winner doesn't have to remember where they won.
+      getUnclaimed(address).then((wins) => {
+        if (alive) setUnclaimed(wins);
+      });
     }
     return () => {
       alive = false;
     };
   }, [address]);
+
+  const totalUnclaimed = unclaimed.reduce((s, w) => s + w.amountUSD, 0);
 
   const resetIso = useMemo(() => {
     const d = new Date();
@@ -89,6 +107,7 @@ export default function MathLobbyPage() {
 
       <div className="px-5 pt-4 pb-10 flex flex-col gap-4">
         <ResumePaidBanner runs={openRuns} filter="math" />
+        <UnclaimedBanner totalUSD={totalUnclaimed} />
         <div className="rounded-3xl bg-white border border-black/5 shadow-[0_6px_0_0_rgba(0,0,0,0.06)] flex flex-col overflow-hidden">
           <div className="h-1.5 bg-orange" />
           <div className="p-5 flex flex-col gap-4">

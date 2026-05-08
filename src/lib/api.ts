@@ -36,6 +36,9 @@ export type UnclaimedWin = {
   date: string;
   amountUSD: number;
   dayNumber: number;
+  game: "grammar" | "math";
+  gameId: number;
+  lang: "en" | "es" | null;
 };
 
 function q(params: Record<string, string | undefined>): string {
@@ -67,13 +70,16 @@ export async function getHistory(lang: Lang): Promise<HistoryDay[]> {
   return r.json();
 }
 
-export async function getStats(lang: Lang, player?: string): Promise<StatsData> {
-  const r = await fetch(`/api/me/stats${q({ lang, player })}`, { cache: "no-store" });
+// Both endpoints below dropped their `lang` param when Math launched —
+// they aggregate across every game now so a Math-only winner sees their
+// stats and unclaimed prize, not just Grammar activity.
+export async function getStats(player?: string): Promise<StatsData> {
+  const r = await fetch(`/api/me/stats${q({ player })}`, { cache: "no-store" });
   return r.json();
 }
 
-export async function getUnclaimed(lang: Lang, player?: string): Promise<UnclaimedWin[]> {
-  const r = await fetch(`/api/me/unclaimed${q({ lang, player })}`, { cache: "no-store" });
+export async function getUnclaimed(player?: string): Promise<UnclaimedWin[]> {
+  const r = await fetch(`/api/me/unclaimed${q({ player })}`, { cache: "no-store" });
   return r.json();
 }
 
