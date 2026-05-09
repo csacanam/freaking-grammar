@@ -33,6 +33,11 @@ const csp = [
     // Privy
     "https://auth.privy.io",
     "https://*.rpc.privy.systems",
+    // Privy custom domain — when HttpOnly cookies is enabled in the
+    // Privy dashboard, requests are routed via privy.nerdos.fun
+    // (CNAME to Privy's infra) instead of auth.privy.io. 'self'
+    // doesn't cover subdomains, so it has to be listed explicitly.
+    "https://privy.nerdos.fun",
     // Alchemy — Privy's embedded wallet + wagmi's default ETH client
     // hit Alchemy for ENS resolution and L1 reads even though our
     // primary chain is Celo. The wildcard covers their per-network
