@@ -33,6 +33,11 @@ const csp = [
     // Privy
     "https://auth.privy.io",
     "https://*.rpc.privy.systems",
+    // Alchemy — Privy's embedded wallet + wagmi's default ETH client
+    // hit Alchemy for ENS resolution and L1 reads even though our
+    // primary chain is Celo. The wildcard covers their per-network
+    // subdomains (eth-mainnet, base-mainnet, etc.).
+    "https://*.g.alchemy.com",
     // WalletConnect / Coinbase Wallet
     "https://explorer-api.walletconnect.com",
     "wss://relay.walletconnect.com",
