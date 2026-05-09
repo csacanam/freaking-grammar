@@ -68,10 +68,13 @@ const csp = [
 ].join("; ");
 
 const securityHeaders = [
-  // Report violations to the console without enforcing — flip the
-  // header name to "Content-Security-Policy" once we've confirmed a
-  // clean run with real users on prod.
-  { key: "Content-Security-Policy-Report-Only", value: csp },
+  // Enforced after a clean Report-Only run on real prod traffic
+  // (login, wallet connect, both games, claim flow). If a future
+  // dependency upgrade introduces a new origin, we'll see hard
+  // failures in the browser console immediately — flip the header
+  // name back to "Content-Security-Policy-Report-Only" for a short
+  // diagnostic window if that ever happens.
+  { key: "Content-Security-Policy", value: csp },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   // We don't ask for any of these in the app; locking them down stops
