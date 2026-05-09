@@ -16,15 +16,18 @@ const csp = [
   "default-src 'self'",
   // Cloudflare CAPTCHA is loaded by Privy's auth iframe; 'unsafe-eval'
   // covers a couple of viem/wagmi paths and React strict-mode dev
-  // tooling. Tight enough to block most XSS, loose enough not to
+  // tooling. PostHog lazy-loads its session-recording, autocapture,
+  // surveys, and web-vitals modules from us-assets.i.posthog.com on
+  // first init. Tight enough to block most XSS, loose enough not to
   // surprise the integration in prod.
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com https://us-assets.i.posthog.com",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
-  // Privy hosts its login UX in an iframe at auth.privy.io; WalletConnect
-  // verifies wallet origins through verify.walletconnect.{com,org}.
-  "frame-src 'self' https://auth.privy.io https://verify.walletconnect.com https://verify.walletconnect.org",
+  // Privy hosts its login UX in an iframe at auth.privy.io and (when
+  // HttpOnly cookies are enabled) on the privy.<domain> CNAME.
+  // WalletConnect verifies wallet origins through verify.walletconnect.{com,org}.
+  "frame-src 'self' https://auth.privy.io https://privy.nerdos.fun https://verify.walletconnect.com https://verify.walletconnect.org",
   // Allow Warpcast and Farcaster to embed nerdos.fun (this app IS a
   // Farcaster mini-app; locking frame-ancestors to 'none' kills that).
   "frame-ancestors 'self' https://warpcast.com https://*.warpcast.com https://farcaster.xyz https://*.farcaster.xyz",
@@ -43,14 +46,17 @@ const csp = [
     // primary chain is Celo. The wildcard covers their per-network
     // subdomains (eth-mainnet, base-mainnet, etc.).
     "https://*.g.alchemy.com",
-    // WalletConnect / Coinbase Wallet
+    // WalletConnect / Reown Web3Modal / Coinbase Wallet
     "https://explorer-api.walletconnect.com",
+    "https://pulse.walletconnect.org",
+    "https://api.web3modal.org",
     "wss://relay.walletconnect.com",
     "wss://relay.walletconnect.org",
     "wss://www.walletlink.org",
-    // PostHog (events posted from the browser SDK)
+    // PostHog (events + lazy-loaded feature modules from the assets host)
     "https://us.i.posthog.com",
     "https://us.posthog.com",
+    "https://us-assets.i.posthog.com",
     // Celo RPC + block explorer used directly from the client
     "https://forno.celo.org",
     "https://ethereum-rpc.publicnode.com",
