@@ -22,6 +22,7 @@ import { supabase } from "@/lib/supabase";
 import { CELO_RPC_URL } from "@/lib/chain";
 import { celoClient } from "@/lib/onchain";
 import { sendTelegramMessage } from "@/lib/telegram";
+import { verifyTurnstile } from "@/lib/turnstile";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +45,7 @@ export async function POST(req: NextRequest) {
     address?: string;
     email?: string;
     lang?: string;
+    turnstileToken?: string;
   };
   const address = body.address?.toLowerCase();
   if (!address || !/^0x[0-9a-f]{40}$/.test(address)) {
@@ -51,6 +53,24 @@ export async function POST(req: NextRequest) {
   }
   const email = body.email ?? null;
   const lang = body.lang === "en" || body.lang === "es" ? body.lang : null;
+
+  // Anti-Sybil: when TURNSTILE_SECRET_KEY is configured, require the
+  // client to submit a valid Cloudflare Turnstile token before we
+  // spend gas on a new wallet. The check is a no-op until the env
+  // var is set, so this ships safely; turning it on is purely an env
+  // change in Vercel. Sourcing the caller IP from x-forwarded-for
+  // gives Turnstile better signal to weigh against its risk model.
+  const remoteIp =
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    req.headers.get("x-real-ip") ||
+    undefined;
+  const turnstile = await verifyTurnstile(body.turnstileToken, remoteIp);
+  if (!turnstile.ok) {
+    return Response.json(
+      { error: "captcha-failed", reason: turnstile.reason },
+      { status: 403 },
+    );
+  }
 
   // Idempotency: already airdropped?
   const { data: existing } = await supabase
