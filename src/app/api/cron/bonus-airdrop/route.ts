@@ -179,14 +179,44 @@ export async function GET(req: NextRequest) {
           });
           await celoClient.waitForTransactionReceipt({ hash });
 
-          await supabase.from("sponsor_payouts").insert({
-            campaign_id: c.id,
-            lang,
-            day_utc: dayKey,
-            winner,
-            amount_units: daily.toString(),
-            airdrop_tx_hash: hash,
-          });
+          // game_id is NOT NULL since the multi-game migration. Missing
+          // this field caused every insert here to silently fail with a
+          // constraint error, which silently broke the idempotency
+          // check below — sponsor_payouts was never written, so every
+          // subsequent cron run re-paid the same (campaign, lang, day)
+          // combinations from scratch. Surfaced 2026-05-11 after
+          // tracing why ~52k COPm left the operator wallet while the
+          // table showed zero rows since May 6. Now derive game_id
+          // from the lang and check insert errors so it can't happen
+          // silently again.
+          const gameId = lang === "en" ? 1 : lang === "es" ? 2 : null;
+          if (gameId === null) continue; // future games handled separately
+          const { error: insertErr } = await supabase
+            .from("sponsor_payouts")
+            .insert({
+              campaign_id: c.id,
+              lang,
+              game: "grammar",
+              game_id: gameId,
+              day_utc: dayKey,
+              winner,
+              amount_units: daily.toString(),
+              airdrop_tx_hash: hash,
+            });
+          if (insertErr) {
+            console.error(
+              `bonus-airdrop: insert failed AFTER on-chain transfer (campaign=${c.name} lang=${lang} day=${dayKey} tx=${hash}):`,
+              insertErr,
+            );
+            results.push({
+              campaign: c.name,
+              lang,
+              day: dayKey,
+              error: `insert-after-transfer: ${insertErr.message}`,
+              txHash: hash,
+            });
+            continue;
+          }
           spent += daily;
           results.push({
             campaign: c.name,
