@@ -72,7 +72,11 @@ export async function GET(req: NextRequest) {
   // winner yet when we first ran — without this backfill that day would
   // stay unpaid forever. The unique(campaign_id, lang, day_utc) index
   // guarantees idempotency: replayed runs no-op instead of double-paying.
-  const LOOKBACK_DAYS = 3;
+  //
+  // 7 days gives more cushion than the original 3 — May 7-10 2026 went
+  // unpaid because the external cron silently stopped on May 6 and the
+  // 3-day window only caught up partially when we discovered it.
+  const LOOKBACK_DAYS = 7;
   const now = new Date();
   const dayKeys: string[] = [];
   for (let i = 1; i <= LOOKBACK_DAYS; i++) {
