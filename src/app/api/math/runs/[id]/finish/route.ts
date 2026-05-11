@@ -16,7 +16,16 @@ export async function POST(
 
   const { id: runId } = await params;
   const body = (await req.json().catch(() => ({}))) as { reason?: string };
-  const reason = body.reason === "abandoned" ? "abandoned" : "timeout";
+  // The client can only signal "I left the page" (abandoned). Every
+  // other terminal state — wrong answer, timeout, too-fast — is
+  // produced by the /answer endpoint, which closes the run server-side
+  // before the client ever calls /finish. Whitelist here so a client
+  // can't sneak an arbitrary value in (the 2026-05-09 audit posted
+  // reason="correct" and got a 200; harmless because we already
+  // sanitized for the status column, but no point letting it pass at
+  // all).
+  const reason: "abandoned" | "timeout" =
+    body.reason === "abandoned" ? "abandoned" : "timeout";
 
   const { data: runRow } = await supabase
     .from("runs")
