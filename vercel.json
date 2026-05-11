@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/sweep-bots",
       "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/cron/bonus-airdrop",
+      "schedule": "5 0 * * *"
     }
   ]
 }
