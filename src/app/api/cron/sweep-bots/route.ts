@@ -40,19 +40,26 @@ export async function GET(req: NextRequest) {
     .toISOString()
     .slice(0, 10);
 
-  // Heuristic only fires on Grammar evidence, so we only need to scan
-  // players who've played Grammar in the lookback window. Math-only
-  // bots are out of scope by design (heuristic is disabled there).
+  // Scan players in both games separately so each is evaluated
+  // against the timing distribution of the right game (Grammar's
+  // p50 threshold is 2400ms, Math's is 800ms — see bot-detection.ts).
+  // A wallet that plays both gets two independent checks; whichever
+  // fires first puts them on the global blacklist.
   const { data: rows } = await supabase
     .from("runs")
-    .select("player")
-    .eq("game", "grammar")
+    .select("player,game")
+    .in("game", ["grammar", "math"])
     .gte("day_utc", since)
     .neq("status", "open");
 
-  const players = new Set<string>();
-  for (const r of (rows ?? []) as Array<{ player: string }>) {
-    players.add(r.player.toLowerCase());
+  const playersByGame = new Map<"grammar" | "math", Set<string>>([
+    ["grammar", new Set()],
+    ["math", new Set()],
+  ]);
+  for (const r of (rows ?? []) as Array<{ player: string; game: string }>) {
+    if (r.game === "grammar" || r.game === "math") {
+      playersByGame.get(r.game)!.add(r.player.toLowerCase());
+    }
   }
 
   // Skip wallets that are already on the blacklist — re-checking them
@@ -60,29 +67,29 @@ export async function GET(req: NextRequest) {
   // blacklist hit anyway. Pre-loading is cheaper because each skip
   // avoids the per-wallet round-trip.
   const blacklist = await loadBotBlacklist(supabase);
-  const candidates = [...players].filter((p) => !blacklist.has(p));
 
   type Hit = {
     player: string;
+    game: "grammar" | "math";
     correctRate: number;
     p50ms: number;
     sampleSize: number;
   };
   const newlyFlagged: Hit[] = [];
 
-  for (const player of candidates) {
-    const flag = await checkBotPlayer(player, supabase, blacklist, {
-      game: "grammar",
-    });
-    // Only collect heuristic hits — blacklist hits can't happen here
-    // because we filtered them out, and `flagged: false` means clean.
-    if (flag.flagged && flag.reason === "heuristic") {
-      newlyFlagged.push({
-        player,
-        correctRate: flag.correctRate,
-        p50ms: flag.p50ms,
-        sampleSize: flag.sampleSize,
-      });
+  for (const [game, players] of playersByGame) {
+    for (const player of players) {
+      if (blacklist.has(player)) continue;
+      const flag = await checkBotPlayer(player, supabase, blacklist, { game });
+      if (flag.flagged && flag.reason === "heuristic") {
+        newlyFlagged.push({
+          player,
+          game,
+          correctRate: flag.correctRate,
+          p50ms: flag.p50ms,
+          sampleSize: flag.sampleSize,
+        });
+      }
     }
   }
 
@@ -95,18 +102,22 @@ export async function GET(req: NextRequest) {
     for (const f of newlyFlagged) {
       const short = `${f.player.slice(0, 6)}…${f.player.slice(-4)}`;
       lines.push(
-        `• \`${f.player}\` (${short})\n  ${(f.correctRate * 100).toFixed(1)}% correct · p50 ${f.p50ms}ms · n=${f.sampleSize}`,
+        `• \`${f.player}\` (${short})\n  via ${f.game} · ${(f.correctRate * 100).toFixed(1)}% correct · p50 ${f.p50ms}ms · n=${f.sampleSize}`,
       );
     }
     lines.push("");
     lines.push(
-      `Scope: Grammar evidence over the last ${LOOKBACK_DAYS} days. Persisted to bot_wallets — settlement and live leaderboards skip them automatically.`,
+      `Scope: Grammar + Math evidence over the last ${LOOKBACK_DAYS} days. Persisted to bot_wallets — settlement and live leaderboards skip them automatically.`,
     );
     await sendTelegramMessage(lines.join("\n"));
   }
 
+  const totalScanned = [...playersByGame.values()].reduce(
+    (s, g) => s + g.size,
+    0,
+  );
   return Response.json({
-    scanned: candidates.length,
+    scanned: totalScanned,
     skipped_blacklisted: blacklist.size,
     newly_flagged: newlyFlagged.length,
     flags: newlyFlagged,
