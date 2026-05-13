@@ -27,7 +27,11 @@ const csp = [
   // Privy hosts its login UX in an iframe at auth.privy.io and (when
   // HttpOnly cookies are enabled) on the privy.<domain> CNAME.
   // WalletConnect verifies wallet origins through verify.walletconnect.{com,org}.
-  "frame-src 'self' https://auth.privy.io https://privy.nerdos.fun https://verify.walletconnect.com https://verify.walletconnect.org",
+  // Cloudflare Turnstile (welcome-gas anti-Sybil) renders its invisible
+  // challenge inside an iframe served by challenges.cloudflare.com —
+  // without this entry CSP silently blocks the widget, the callback
+  // never fires, and WelcomeGasBridge waits forever for a token.
+  "frame-src 'self' https://challenges.cloudflare.com https://auth.privy.io https://privy.nerdos.fun https://verify.walletconnect.com https://verify.walletconnect.org",
   // Allow Warpcast and Farcaster to embed nerdos.fun (this app IS a
   // Farcaster mini-app; locking frame-ancestors to 'none' kills that).
   "frame-ancestors 'self' https://warpcast.com https://*.warpcast.com https://farcaster.xyz https://*.farcaster.xyz",
