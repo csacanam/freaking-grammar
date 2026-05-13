@@ -42,3 +42,8 @@ next-env.d.ts
 
 # supabase seed data — contains all correct answers, never commit
 supabase/seed_*.sql
+
+# Output of scripts/find-csp-regression-victims.mjs (or any future incident
+# discovery script): contains user emails, wallets, and Privy DIDs. Stays
+# local — kept out of git so re-runs never accidentally commit PII.
+affected.json
