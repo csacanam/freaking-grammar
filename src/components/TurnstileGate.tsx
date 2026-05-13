@@ -2,12 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 
-// Invisible Cloudflare Turnstile widget. Renders a hidden container,
-// loads the Cloudflare script on first mount, gets challenged, and
-// exposes the resulting token via the `onToken` callback. The
-// "managed" execution mode is invisible to humans (no checkbox, no
-// "I'm not a robot") — bots get the friction, humans don't see
-// anything unless Cloudflare's risk score spikes.
+// Visible Cloudflare Turnstile widget. Renders the standard
+// "I'm not a robot" challenge inline, exposes the token via
+// `onToken` once the user passes. Visible mode (`appearance: "always"`)
+// is the right default after we found the invisible / interaction-only
+// mode rejecting too many legitimate users — mobile WebViews, residential
+// LATAM IPs, reduced-fingerprint Chrome on Android. Each rejection cost
+// us a manual refund, so the small UX cost of an explicit checkbox is
+// the better trade.
 //
 // If NEXT_PUBLIC_TURNSTILE_SITE_KEY isn't configured, the component
 // no-ops and onToken is never called — the rest of the app keeps
@@ -58,7 +60,7 @@ export function TurnstileGate({
       if (widgetIdRef.current) return; // already rendered
       const id = api.render(containerRef.current, {
         sitekey: siteKey,
-        appearance: "interaction-only",
+        appearance: "always",
         callback: (token: string) => {
           if (!cancelled) onToken(token);
         },
@@ -107,7 +109,42 @@ export function TurnstileGate({
 
   if (!siteKey) return null;
 
-  // Hidden container — Turnstile draws inside it but the widget itself
-  // stays invisible under "interaction-only" appearance.
-  return <div ref={containerRef} aria-hidden style={{ display: "none" }} />;
+  // Centered card with a short label so the user understands why this
+  // checkbox suddenly appeared. Bilingual single line — same rationale
+  // as the apology email: we don't have lang for first-time users at
+  // this exact point in the flow, so EN + ES in one line covers
+  // everyone without a guess.
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 12,
+        margin: "20px auto",
+        padding: "16px",
+        maxWidth: 360,
+        background: "#f8f8f8",
+        border: "1px solid #eeeaea",
+        borderRadius: 12,
+      }}
+    >
+      <p
+        style={{
+          margin: 0,
+          fontSize: 14,
+          color: "#1a1a1a",
+          textAlign: "center",
+          lineHeight: 1.4,
+        }}
+      >
+        🎁 One quick check to unlock your free play
+        <br />
+        <span style={{ color: "#666" }}>
+          Una verificación rápida para tu jugada gratis
+        </span>
+      </p>
+      <div ref={containerRef} />
+    </div>
+  );
 }

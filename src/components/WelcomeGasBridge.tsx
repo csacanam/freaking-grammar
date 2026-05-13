@@ -12,11 +12,15 @@ import { TurnstileGate } from "@/components/TurnstileGate";
 // etc.) — those users fund their own gas.
 //
 // Anti-Sybil: the request is gated on a Cloudflare Turnstile token when
-// NEXT_PUBLIC_TURNSTILE_SITE_KEY is configured. Turnstile challenges
-// happen invisibly; humans don't see anything, bots get rejected at
-// /api/welcome-gas. Without the env var the gate no-ops and the
-// request fires as before, so dev environments don't need captcha
-// set up to test.
+// NEXT_PUBLIC_TURNSTILE_SITE_KEY is configured. The widget renders
+// visibly ("I'm not a robot" checkbox); user clicks once, gets a
+// token, the airdrop fires. We tried invisible / interaction-only
+// first but Cloudflare's risk model rejected too many legitimate
+// users (mobile WebViews, residential LATAM IPs) and each rejection
+// turned into a manual refund. Visible mode trades ~2s of friction
+// for ~zero false positives. Without the env var the gate no-ops
+// and the request fires immediately, so dev environments don't need
+// captcha set up to test.
 export function WelcomeGasBridge() {
   const { ready, authenticated, user } = usePrivy();
   const { uiLang } = useLang();
@@ -41,10 +45,9 @@ export function WelcomeGasBridge() {
     if (!addr) return;
     if (firedRef.current === addr) return;
 
-    // When Turnstile is enabled, wait for the invisible challenge to
-    // produce a token before firing. The widget settles in <1s for a
-    // legitimate browser; this effect re-runs once setTurnstileToken
-    // resolves so the airdrop fires shortly after.
+    // When Turnstile is enabled, wait for the user to solve the
+    // visible widget. The effect re-runs once setTurnstileToken
+    // resolves so the airdrop fires immediately after the click.
     if (turnstileRequired && !turnstileToken) return;
 
     firedRef.current = addr;
@@ -70,5 +73,21 @@ export function WelcomeGasBridge() {
     });
   }, [ready, authenticated, user, uiLang, turnstileRequired, turnstileToken]);
 
-  return <TurnstileGate onToken={onToken} />;
+  // Only mount the widget when it's actually needed: a Privy-embedded
+  // wallet is connected and we don't have a token yet. Without these
+  // gates the visible captcha would render globally on every page for
+  // every visitor, including unauthenticated ones — confusing and
+  // unnecessary. Once the user solves it (or if the bridge already
+  // fired for this address), unmount.
+  const wallet = user?.wallet;
+  const needsCaptcha =
+    turnstileRequired &&
+    ready &&
+    authenticated &&
+    wallet?.walletClientType === "privy" &&
+    !!wallet?.address &&
+    firedRef.current !== wallet.address.toLowerCase() &&
+    !turnstileToken;
+
+  return needsCaptcha ? <TurnstileGate onToken={onToken} /> : null;
 }

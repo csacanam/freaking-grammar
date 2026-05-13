@@ -66,6 +66,22 @@ export async function POST(req: NextRequest) {
     undefined;
   const turnstile = await verifyTurnstile(body.turnstileToken, remoteIp);
   if (!turnstile.ok) {
+    // Logged + Telegram-pinged so we hear about false positives in
+    // real time instead of waiting for users to complain. Turnstile's
+    // invisible mode is conservative — every legit user it rejects
+    // becomes a manual refund candidate, and we want the signal now.
+    const ua = req.headers.get("user-agent") ?? "";
+    console.error(
+      `welcome-gas captcha-failed reason=${turnstile.reason} addr=${address} ip=${remoteIp ?? "?"} ua="${ua}"`,
+    );
+    notifyCaptchaRejection({
+      address,
+      email,
+      reason: turnstile.reason,
+      ip: remoteIp,
+      ua,
+    }).catch((e) => console.error("welcome-gas notify-rejection failed:", e));
+
     return Response.json(
       { error: "captcha-failed", reason: turnstile.reason },
       { status: 403 },
@@ -185,6 +201,30 @@ async function notifyAirdrop(args: {
     `💸 0.1 CELO · tx \`${args.txHash.slice(0, 10)}…\``,
     `🧾 ${totalAirdrops} onboardings total`,
     `⛽ Operator: ${operatorCELO.toFixed(3)} CELO (~${remainingAirdrops} airdrops left)`,
+  ].filter((s): s is string => s !== null);
+  await sendTelegramMessage(lines.join("\n"));
+}
+
+// Real-time signal for Turnstile false positives. Cloudflare's risk model
+// occasionally flags legitimate users (mobile WebViews, residential VPNs,
+// reduced-fingerprint Chrome) and the only way to find out used to be a
+// support ticket. This ping surfaces the rejection immediately with enough
+// context (reason, IP, UA) to decide whether to refund manually and whether
+// the failure rate is high enough to loosen the Cloudflare config.
+async function notifyCaptchaRejection(args: {
+  address: string;
+  email: string | null;
+  reason: string;
+  ip: string | undefined;
+  ua: string;
+}) {
+  const lines = [
+    "*🚫 Welcome gas captcha-rejected*",
+    `→ \`${args.address}\``,
+    args.email ? `📧 ${args.email}` : null,
+    `❓ reason: \`${args.reason}\``,
+    args.ip ? `🌐 ip: \`${args.ip}\`` : null,
+    args.ua ? `🖥 ua: \`${args.ua.slice(0, 80)}\`` : null,
   ].filter((s): s is string => s !== null);
   await sendTelegramMessage(lines.join("\n"));
 }
