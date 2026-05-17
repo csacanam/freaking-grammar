@@ -43,7 +43,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { celo } from "viem/chains";
-import { supabase, todayUtc } from "@/lib/supabase";
+import { fetchAllPaged, supabase, todayUtc } from "@/lib/supabase";
 import { celoClient } from "@/lib/onchain";
 import { CELO_RPC_URL } from "@/lib/chain";
 import { sendTelegramMessage } from "@/lib/telegram";
@@ -93,29 +93,44 @@ export async function GET(req: NextRequest) {
   if (!supabase) {
     return Response.json({ error: "db-unconfigured" }, { status: 503 });
   }
+  // Re-bind so TS keeps the non-null narrowing inside the fetchAllPaged
+  // callbacks below.
+  const db = supabase;
 
-  // 1. Privy users (welcome_airdrops with a real airdrop tx).
-  const { data: airdrops, error: airdropsErr } = await supabase
-    .from("welcome_airdrops")
-    .select("address,email")
-    .not("tx_hash", "is", null);
-  if (airdropsErr) {
+  // 1. Privy users (welcome_airdrops with a real airdrop tx). Paginated
+  // because welcome_airdrops keeps growing — Supabase silently caps each
+  // single page at 1000 rows.
+  let privyUsers: Subscriber[];
+  try {
+    privyUsers = await fetchAllPaged<Subscriber>((from, to) =>
+      db
+        .from("welcome_airdrops")
+        .select("address,email")
+        .not("tx_hash", "is", null)
+        .range(from, to),
+    );
+  } catch (e) {
     return Response.json(
-      { error: "db-query-failed", detail: airdropsErr.message },
+      { error: "db-query-failed", detail: (e as Error).message },
       { status: 500 },
     );
   }
-  const privyUsers = (airdrops ?? []) as Subscriber[];
 
-  // 2. Recent runs to find active players.
+  // 2. Recent runs to find active players. The 7-day window already keeps
+  // this small today, but paginate so it doesn't silently truncate the
+  // moment plays/day × 7 crosses 1000 (would mean some active users get
+  // skipped on refill).
   const cutoff = daysAgoUtc(ACTIVE_DAYS);
-  const { data: recentRuns } = await supabase
-    .from("runs")
-    .select("player")
-    .eq("status", "finished")
-    .gte("day_utc", cutoff);
+  const recentRuns = await fetchAllPaged<{ player: string }>((from, to) =>
+    db
+      .from("runs")
+      .select("player")
+      .eq("status", "finished")
+      .gte("day_utc", cutoff)
+      .range(from, to),
+  );
   const playsByPlayer = new Map<string, number>();
-  for (const r of (recentRuns ?? []) as Array<{ player: string }>) {
+  for (const r of recentRuns) {
     const key = r.player.toLowerCase();
     playsByPlayer.set(key, (playsByPlayer.get(key) ?? 0) + 1);
   }
@@ -244,12 +259,18 @@ async function loadOnCooldown(
   const cutoffIso = new Date(
     Date.now() - REFILL_COOLDOWN_HOURS * 3600_000,
   ).toISOString();
-  const { data } = await supabase!
-    .from("gas_refills")
-    .select("address")
-    .in("address", addresses)
-    .gte("refilled_at", cutoffIso);
-  return new Set(((data ?? []) as Array<{ address: string }>).map((r) => r.address));
+  // Paginate defensively — `addresses` shrinks the result set today, but
+  // once it crosses 1000 active users the 1000-row cap would silently
+  // skip cooldown entries and let us double-refill people.
+  const rows = await fetchAllPaged<{ address: string }>((from, to) =>
+    supabase!
+      .from("gas_refills")
+      .select("address")
+      .in("address", addresses)
+      .gte("refilled_at", cutoffIso)
+      .range(from, to),
+  );
+  return new Set(rows.map((r) => r.address));
 }
 
 function formatMessage(args: {

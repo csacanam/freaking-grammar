@@ -15,7 +15,7 @@
 // channel signal-to-noise high.
 
 import type { NextRequest } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { fetchAllPaged, supabase } from "@/lib/supabase";
 import { checkBotPlayer, loadBotBlacklist } from "@/lib/bot-detection";
 import { sendTelegramMessage } from "@/lib/telegram";
 
@@ -35,6 +35,7 @@ export async function GET(req: NextRequest) {
   if (!supabase) {
     return Response.json({ error: "db-unconfigured" }, { status: 503 });
   }
+  const db = supabase;
 
   const since = new Date(Date.now() - LOOKBACK_DAYS * 86_400_000)
     .toISOString()
@@ -45,18 +46,27 @@ export async function GET(req: NextRequest) {
   // p50 threshold is 2400ms, Math's is 800ms — see bot-detection.ts).
   // A wallet that plays both gets two independent checks; whichever
   // fires first puts them on the global blacklist.
-  const { data: rows } = await supabase
-    .from("runs")
-    .select("player,game")
-    .in("game", ["grammar", "math"])
-    .gte("day_utc", since)
-    .neq("status", "open");
+  //
+  // Paginated: a 14-day window already holds 700+ rows at current
+  // volume and is days away from crossing the 1000-row cap Supabase
+  // silently enforces per request. Without this, recent players would
+  // start dropping off the bot-detection scan and slip through.
+  const rows = await fetchAllPaged<{ player: string; game: string }>(
+    (from, to) =>
+      db
+        .from("runs")
+        .select("player,game")
+        .in("game", ["grammar", "math"])
+        .gte("day_utc", since)
+        .neq("status", "open")
+        .range(from, to),
+  );
 
   const playersByGame = new Map<"grammar" | "math", Set<string>>([
     ["grammar", new Set()],
     ["math", new Set()],
   ]);
-  for (const r of (rows ?? []) as Array<{ player: string; game: string }>) {
+  for (const r of rows) {
     if (r.game === "grammar" || r.game === "math") {
       playersByGame.get(r.game)!.add(r.player.toLowerCase());
     }

@@ -15,7 +15,7 @@
 //                      keep respecting engagement state.
 
 import type { NextRequest } from "next/server";
-import { supabase, todayUtc } from "@/lib/supabase";
+import { fetchAllPaged, supabase, todayUtc } from "@/lib/supabase";
 import { fetchDailyEmailData } from "@/lib/email-data";
 import { renderLastCallEmail } from "@/lib/email-templates";
 import { sendDailyEmail } from "@/lib/email";
@@ -40,6 +40,7 @@ export async function GET(req: NextRequest) {
   if (!process.env.RESEND_API_KEY) {
     return Response.json({ error: "resend-unconfigured" }, { status: 503 });
   }
+  const db = supabase;
 
   const dryRun = req.nextUrl.searchParams.get("dry") === "1";
   const only = req.nextUrl.searchParams.get("only")?.toLowerCase() ?? null;
@@ -47,23 +48,39 @@ export async function GET(req: NextRequest) {
 
   const day = todayUtc();
 
-  // Every subscriber...
-  const { data: subs, error: subsErr } = await supabase
-    .from("welcome_airdrops")
-    .select("address,email,lang")
-    .eq("email_subscribed", true)
-    .not("email", "is", null);
-  if (subsErr) {
+  // Every subscriber. Paginated because welcome_airdrops keeps growing
+  // and the 1000-row Supabase cap would silently drop subscribers from
+  // the daily send the moment we crossed it.
+  let allSubs: Array<{
+    address: string;
+    email: string;
+    lang: Lang | null;
+  }>;
+  try {
+    allSubs = await fetchAllPaged<{
+      address: string;
+      email: string;
+      lang: Lang | null;
+    }>((from, to) =>
+      db
+        .from("welcome_airdrops")
+        .select("address,email,lang")
+        .eq("email_subscribed", true)
+        .not("email", "is", null)
+        .range(from, to),
+    );
+  } catch (e) {
     return Response.json(
-      { error: "db-query-failed", detail: subsErr.message },
+      { error: "db-query-failed", detail: (e as Error).message },
       { status: 500 },
     );
   }
 
   // ...minus anyone who already has at least one finished run today.
   // `open` rows don't count — a user who started but bailed without
-  // finishing still deserves the nudge.
-  const { data: playedToday } = await supabase
+  // finishing still deserves the nudge. (Single-day filter keeps this
+  // well under the cap for the foreseeable future.)
+  const { data: playedToday } = await db
     .from("runs")
     .select("player")
     .eq("day_utc", day)
@@ -73,12 +90,6 @@ export async function GET(req: NextRequest) {
       r.player.toLowerCase(),
     ),
   );
-
-  const allSubs = (subs ?? []) as Array<{
-    address: string;
-    email: string;
-    lang: Lang | null;
-  }>;
   let subscribers = force
     ? allSubs
     : allSubs.filter((s) => !playedSet.has(s.address.toLowerCase()));

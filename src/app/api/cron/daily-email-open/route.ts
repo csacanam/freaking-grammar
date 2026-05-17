@@ -21,7 +21,7 @@
 // ignore both flags.
 
 import type { NextRequest } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { fetchAllPaged, supabase } from "@/lib/supabase";
 import { fetchDailyEmailData } from "@/lib/email-data";
 import { renderOpenEmail } from "@/lib/email-templates";
 import { sendDailyEmail } from "@/lib/email";
@@ -46,27 +46,38 @@ export async function GET(req: NextRequest) {
   if (!process.env.RESEND_API_KEY) {
     return Response.json({ error: "resend-unconfigured" }, { status: 503 });
   }
+  const db = supabase;
 
   const dryRun = req.nextUrl.searchParams.get("dry") === "1";
   const only = req.nextUrl.searchParams.get("only")?.toLowerCase() ?? null;
 
-  const { data: subs, error } = await supabase
-    .from("welcome_airdrops")
-    .select("address,email,lang")
-    .eq("email_subscribed", true)
-    .not("email", "is", null);
-  if (error) {
-    return Response.json(
-      { error: "db-query-failed", detail: error.message },
-      { status: 500 },
-    );
-  }
-
-  let subscribers = (subs ?? []) as Array<{
+  // Paginated — welcome_airdrops keeps growing and Supabase silently caps
+  // single-page reads at 1000. Without this, subscribers past row 1000
+  // would stop getting daily emails the moment we crossed that line.
+  let subscribers: Array<{
     address: string;
     email: string;
     lang: Lang | null;
   }>;
+  try {
+    subscribers = await fetchAllPaged<{
+      address: string;
+      email: string;
+      lang: Lang | null;
+    }>((from, to) =>
+      db
+        .from("welcome_airdrops")
+        .select("address,email,lang")
+        .eq("email_subscribed", true)
+        .not("email", "is", null)
+        .range(from, to),
+    );
+  } catch (e) {
+    return Response.json(
+      { error: "db-query-failed", detail: (e as Error).message },
+      { status: 500 },
+    );
+  }
   if (only) {
     subscribers = subscribers.filter((s) => s.email.toLowerCase() === only);
     if (subscribers.length === 0) {
