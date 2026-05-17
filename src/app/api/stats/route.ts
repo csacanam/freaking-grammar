@@ -54,9 +54,14 @@ export async function GET() {
     { data: potsData },
     { data: grantsData },
   ] = await Promise.all([
-    supabase.from("runs").select("lang,game,player,was_free"),
-    supabase.from("wins").select("lang,game,amount_units"),
-    supabase.from("pots").select("lang,game,amount_units,closed"),
+    // PostgREST silently caps at 1000 rows by default — once `runs`
+    // crossed 1000, the headline `totalPlays` froze at 1000 with no
+    // error. Explicit range with plenty of headroom (≈80× current
+    // volume) so it doesn't bite again before someone refactors this
+    // to SQL-side aggregation.
+    supabase.from("runs").select("lang,game,player,was_free").range(0, 99999),
+    supabase.from("wins").select("lang,game,amount_units").range(0, 99999),
+    supabase.from("pots").select("lang,game,amount_units,closed").range(0, 99999),
     // External funding (grants, hackathon prizes, ecosystem subsidies).
     // Tracked separately from `runs.was_free=false` revenue so consumers
     // like sakalabs.io can chart real protocol earnings against

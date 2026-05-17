@@ -178,16 +178,26 @@ async function loadStats(): Promise<Stats | null> {
     { data: airdropsData },
     { data: sponsorPayoutsData },
   ] = await Promise.all([
+    // PostgREST silently caps at 1000 rows by default; without explicit
+    // ranges every count on this page froze at 1000 once `runs` crossed
+    // that line. Same fix as in src/app/api/stats/route.ts — large
+    // headroom (≈80× current volume) so it doesn't bite again before
+    // someone moves these to SQL-side aggregation.
     supabase
       .from("runs")
       .select("lang,game,player,was_free,day_utc,score,paid_tx_hash")
-      .eq("status", "finished"),
-    supabase.from("wins").select("lang,game,amount_units,claim_tx"),
+      .eq("status", "finished")
+      .range(0, 99999),
+    supabase
+      .from("wins")
+      .select("lang,game,amount_units,claim_tx")
+      .range(0, 99999),
     supabase
       .from("pots")
-      .select("lang,game,amount_units,closed,day_utc,rolled_tx"),
-    supabase.from("welcome_airdrops").select("created_at,tx_hash"),
-    supabase.from("sponsor_payouts").select("airdrop_tx_hash"),
+      .select("lang,game,amount_units,closed,day_utc,rolled_tx")
+      .range(0, 99999),
+    supabase.from("welcome_airdrops").select("created_at,tx_hash").range(0, 99999),
+    supabase.from("sponsor_payouts").select("airdrop_tx_hash").range(0, 99999),
   ]);
 
   const runs = (runsData ?? []) as Array<{
