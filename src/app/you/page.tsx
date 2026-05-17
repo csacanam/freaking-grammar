@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
 import {
   useAccount,
   useDisconnect,
@@ -45,8 +44,7 @@ export default function YouPage() {
   const { login: privyLogin } = useLogin();
   const { logout: privyLogout } = useLogout();
   const { authenticated: privyAuthenticated } = usePrivy();
-  const { disconnect } = useDisconnect();
-  const router = useRouter();
+  const { disconnectAsync } = useDisconnect();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
   const publicClient = usePublicClient({ chainId: ACTIVE_CHAIN.id });
@@ -252,18 +250,49 @@ export default function YouPage() {
         <section className="mt-auto pt-4 pb-6">
           <button
             onClick={async () => {
-              // Privy session must be cleared first — otherwise useWallets()
-              // still reports the embedded wallet and PrivyEmbeddedBridge
-              // auto-reconnects right after disconnect().
-              if (privyAuthenticated) {
-                try {
+              // Goal of this handler: leave the browser in the same state
+              // as if the user had never signed in, so the next login is
+              // a true cold start (no "last used wallet" hints, no auto-
+              // reconnect, no stale React/wagmi/Privy in-memory state).
+              //
+              // Order matters:
+              //   1. Privy logout FIRST so useWallets() empties out —
+              //      otherwise PrivyEmbeddedBridge would re-add the
+              //      embedded wallet connector right after disconnect().
+              //   2. wagmi disconnect (awaited via disconnectAsync so we
+              //      know the store has actually flushed before we move
+              //      on; the sync `disconnect()` is fire-and-forget).
+              //   3. Wipe wagmi / WalletConnect / Reown localStorage
+              //      entries by hand. wagmi's `disconnect()` clears its
+              //      own active connector but not WC pairing metadata,
+              //      and RainbowKit/Reown leave their own keys behind —
+              //      both surface as a "last used" hint on the next
+              //      login modal.
+              //   4. Hard navigate (window.location, not router.push) so
+              //      every provider re-mounts cold. Soft nav leaves
+              //      hooks holding stale closures of the previous user.
+              try {
+                if (privyAuthenticated) {
                   await privyLogout();
-                } catch {
-                  // fall through — still attempt wagmi disconnect
                 }
+              } catch {
+                /* still try to clean up the wagmi side */
               }
-              disconnect();
-              router.push("/");
+              try {
+                await disconnectAsync();
+              } catch {
+                /* nothing connected, or already disconnected */
+              }
+              try {
+                for (const k of Object.keys(localStorage)) {
+                  if (/^(wagmi|wc@|walletconnect|W3M\/|@w3m\/|@reown\/)/i.test(k)) {
+                    localStorage.removeItem(k);
+                  }
+                }
+              } catch {
+                /* private mode / disabled storage — best effort */
+              }
+              window.location.href = "/";
             }}
             className="w-full rounded-2xl border border-black/10 bg-white px-5 h-12 font-display text-sm tracking-widest uppercase text-muted hover:text-red hover:border-red/30 transition shadow-[0_2px_0_0_rgba(0,0,0,0.04)]"
           >
