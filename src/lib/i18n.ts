@@ -243,9 +243,11 @@ export const dict = {
     youSignInTitle: "Sign in to see your stats",
     youSignInBlurb:
       "Your wins, unclaimed rewards and wallet balances appear here once you connect.",
-    // Disconnect
-    disconnectWallet: "Disconnect wallet",
-    disconnectHint: "Switch to a different wallet to play from another account.",
+    // Disconnect — labelled "log out" because the click runs
+    // privyLogout(), ending the Privy session entirely, not just
+    // dropping a wagmi wallet connection.
+    disconnectWallet: "Log out",
+    disconnectHint: "Sign out to switch to a different account.",
     // Play stages (button label while a tx is in flight)
     stageSwitching: "Switching network…",
     stageApproving: "Approving USDT…",
@@ -532,9 +534,9 @@ export const dict = {
     youSignInTitle: "Entra para ver tus stats",
     youSignInBlurb:
       "Tus victorias, premios pendientes y saldos aparecen acá cuando te conectes.",
-    // Disconnect
-    disconnectWallet: "Desconectar wallet",
-    disconnectHint: "Cambia a otra wallet para jugar desde otra cuenta.",
+    // Disconnect — see EN note above
+    disconnectWallet: "Cerrar sesión",
+    disconnectHint: "Cierra sesión para cambiar de cuenta.",
     // Play stages (button label while a tx is in flight)
     stageSwitching: "Cambiando red…",
     stageApproving: "Autorizando USDT…",
