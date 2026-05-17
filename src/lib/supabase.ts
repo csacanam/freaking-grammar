@@ -24,6 +24,35 @@ export function nextUtcMidnightIso(): string {
 // USDT has 6 decimals — same on Celo and Base.
 export const TOKEN_DECIMALS = 1_000_000;
 
+// Paginated fetch helper. Supabase enforces `db.max_rows = 1000`
+// server-side regardless of what `.range()` the client asks for, so a
+// bare `.select()` silently truncates the moment any table crosses
+// 1000 rows (first bite was `runs` → frozen `totalPlays`). This walks
+// the table in 1000-row chunks and concatenates, which works because
+// the cap is *per request*, not per query.
+//
+// `build(from, to)` should return a Supabase query promise with the
+// range applied. Caller types the row shape via the generic so the
+// returned array is properly typed without a cast at the call site.
+export async function fetchAllPaged<T>(
+  build: (
+    from: number,
+    to: number,
+  ) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+  chunkSize = 1000,
+): Promise<T[]> {
+  const out: T[] = [];
+  for (let from = 0; ; from += chunkSize) {
+    const to = from + chunkSize - 1;
+    const { data, error } = await build(from, to);
+    if (error) throw new Error(`fetchAllPaged: ${error.message}`);
+    if (!data || data.length === 0) break;
+    out.push(...data);
+    if (data.length < chunkSize) break;
+  }
+  return out;
+}
+
 // Rank = 1 + number of distinct players with a strictly better best score today.
 // Ties share a rank, and the current player is included using `score` when they
 // don't have a higher score stored yet (mid-run).

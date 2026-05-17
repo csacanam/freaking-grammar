@@ -7,7 +7,12 @@
 import { headers } from "next/headers";
 import { erc20Abi, isAddressEqual, zeroAddress, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { supabase, TOKEN_DECIMALS, todayUtc } from "@/lib/supabase";
+import {
+  fetchAllPaged,
+  supabase,
+  TOKEN_DECIMALS,
+  todayUtc,
+} from "@/lib/supabase";
 import { fmtUSD } from "@/lib/format";
 import { BackLink } from "@/components/BackLink";
 import { PlaysChart } from "@/components/PlaysChart";
@@ -166,70 +171,68 @@ type Stats = {
 
 async function loadStats(): Promise<Stats | null> {
   if (!supabase) return null;
+  // Re-bind so TS keeps the non-null narrowing inside the fetchAllPaged
+  // arrow callbacks below.
+  const db = supabase;
 
   const today = todayUtc();
   const cutoff7 = daysAgo(today, 7);
   const cutoff30 = daysAgo(today, 30);
 
-  const [
-    { data: runsData },
-    { data: winsData },
-    { data: potsData },
-    { data: airdropsData },
-    { data: sponsorPayoutsData },
-  ] = await Promise.all([
-    // PostgREST silently caps at 1000 rows by default; without explicit
-    // ranges every count on this page froze at 1000 once `runs` crossed
-    // that line. Same fix as in src/app/api/stats/route.ts — large
-    // headroom (≈80× current volume) so it doesn't bite again before
-    // someone moves these to SQL-side aggregation.
-    supabase
-      .from("runs")
-      .select("lang,game,player,was_free,day_utc,score,paid_tx_hash")
-      .eq("status", "finished")
-      .range(0, 99999),
-    supabase
-      .from("wins")
-      .select("lang,game,amount_units,claim_tx")
-      .range(0, 99999),
-    supabase
-      .from("pots")
-      .select("lang,game,amount_units,closed,day_utc,rolled_tx")
-      .range(0, 99999),
-    supabase.from("welcome_airdrops").select("created_at,tx_hash").range(0, 99999),
-    supabase.from("sponsor_payouts").select("airdrop_tx_hash").range(0, 99999),
+  // Supabase enforces `db.max_rows = 1000` server-side regardless of the
+  // `.range()` the client asks for, so a bare `.select()` silently
+  // truncates the moment any table crosses 1000 rows. fetchAllPaged
+  // walks 1000-row chunks and concatenates. See src/lib/supabase.ts.
+  const [runs, wins, pots, airdrops, sponsorPayouts] = await Promise.all([
+    fetchAllPaged<{
+      lang: Lang | null;
+      game: string | null;
+      player: string;
+      was_free: boolean;
+      day_utc: string;
+      score: number;
+      paid_tx_hash: string | null;
+    }>((from, to) =>
+      db
+        .from("runs")
+        .select("lang,game,player,was_free,day_utc,score,paid_tx_hash")
+        .eq("status", "finished")
+        .range(from, to),
+    ),
+    fetchAllPaged<{
+      lang: Lang | null;
+      game: string | null;
+      amount_units: string | number;
+      claim_tx: string | null;
+    }>((from, to) =>
+      db
+        .from("wins")
+        .select("lang,game,amount_units,claim_tx")
+        .range(from, to),
+    ),
+    fetchAllPaged<{
+      lang: Lang | null;
+      game: string | null;
+      amount_units: string | number;
+      closed: boolean;
+      day_utc: string;
+      rolled_tx: string | null;
+    }>((from, to) =>
+      db
+        .from("pots")
+        .select("lang,game,amount_units,closed,day_utc,rolled_tx")
+        .range(from, to),
+    ),
+    fetchAllPaged<{ created_at: string; tx_hash: string | null }>((from, to) =>
+      db
+        .from("welcome_airdrops")
+        .select("created_at,tx_hash")
+        .range(from, to),
+    ),
+    fetchAllPaged<{ airdrop_tx_hash: string | null }>((from, to) =>
+      db.from("sponsor_payouts").select("airdrop_tx_hash").range(from, to),
+    ),
   ]);
-
-  const runs = (runsData ?? []) as Array<{
-    lang: Lang | null;
-    game: string | null;
-    player: string;
-    was_free: boolean;
-    day_utc: string;
-    score: number;
-    paid_tx_hash: string | null;
-  }>;
-  const wins = (winsData ?? []) as Array<{
-    lang: Lang | null;
-    game: string | null;
-    amount_units: string | number;
-    claim_tx: string | null;
-  }>;
-  const pots = (potsData ?? []) as Array<{
-    lang: Lang | null;
-    game: string | null;
-    amount_units: string | number;
-    closed: boolean;
-    day_utc: string;
-    rolled_tx: string | null;
-  }>;
-  const airdrops = (airdropsData ?? []) as Array<{
-    created_at: string;
-    tx_hash: string | null;
-  }>;
-  const sponsorPayouts = (sponsorPayoutsData ?? []) as Array<{
-    airdrop_tx_hash: string | null;
-  }>;
 
   // ------------------------------------------------------- TODAY
   const todayRuns = runs.filter((r) => r.day_utc === today);

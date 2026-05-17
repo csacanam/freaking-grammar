@@ -3,7 +3,7 @@
 // game. CORS is wide open — this is all public protocol data.
 
 import { isAddressEqual, zeroAddress } from "viem";
-import { supabase, TOKEN_DECIMALS } from "@/lib/supabase";
+import { fetchAllPaged, supabase, TOKEN_DECIMALS } from "@/lib/supabase";
 import { POT_ADDRESS } from "@/lib/chain";
 import { celoClient, FREAKING_POT_ABI, readTreasuryState } from "@/lib/onchain";
 
@@ -47,48 +47,59 @@ export async function GET() {
       headers: CORS,
     });
   }
+  // Re-bind so TS keeps the non-null narrowing inside the fetchAllPaged
+  // arrow callbacks below (the original `supabase` symbol loses its
+  // narrowing once we step into closures).
+  const db = supabase;
 
-  const [
-    { data: runsData },
-    { data: winsData },
-    { data: potsData },
-    { data: grantsData },
-  ] = await Promise.all([
-    // PostgREST silently caps at 1000 rows by default — once `runs`
-    // crossed 1000, the headline `totalPlays` froze at 1000 with no
-    // error. Explicit range with plenty of headroom (≈80× current
-    // volume) so it doesn't bite again before someone refactors this
-    // to SQL-side aggregation.
-    supabase.from("runs").select("lang,game,player,was_free").range(0, 99999),
-    supabase.from("wins").select("lang,game,amount_units").range(0, 99999),
-    supabase.from("pots").select("lang,game,amount_units,closed").range(0, 99999),
-    // External funding (grants, hackathon prizes, ecosystem subsidies).
-    // Tracked separately from `runs.was_free=false` revenue so consumers
-    // like sakalabs.io can chart real protocol earnings against
-    // subsidies and judge sustainability honestly.
-    supabase
-      .from("grants")
-      .select("source,amount_units,token_symbol,received_at,note,tx_hash")
-      .order("received_at", { ascending: false }),
-  ]);
+  const [runsData, winsData, potsData, { data: grantsData }] =
+    await Promise.all([
+      // Supabase enforces `db.max_rows = 1000` server-side regardless of
+      // the client-side `.range()` we ask for — first time we crossed
+      // 1000 runs, `totalPlays` froze with no error. Paginating in 1000-
+      // row chunks is the workaround that doesn't need a dashboard
+      // setting change. Real fix long-term is SQL-side aggregation via
+      // an RPC; not worth it until row volume bites again.
+      fetchAllPaged<{
+        lang: string | null;
+        game: string | null;
+        player: string;
+        was_free: boolean;
+      }>((from, to) =>
+        db.from("runs").select("lang,game,player,was_free").range(from, to),
+      ),
+      fetchAllPaged<{
+        lang: string | null;
+        game: string | null;
+        amount_units: string | number;
+      }>((from, to) =>
+        db.from("wins").select("lang,game,amount_units").range(from, to),
+      ),
+      fetchAllPaged<{
+        lang: string | null;
+        game: string | null;
+        amount_units: string | number;
+        closed: boolean;
+      }>((from, to) =>
+        db
+          .from("pots")
+          .select("lang,game,amount_units,closed")
+          .range(from, to),
+      ),
+      // External funding (grants, hackathon prizes, ecosystem subsidies).
+      // Tracked separately from `runs.was_free=false` revenue so consumers
+      // like sakalabs.io can chart real protocol earnings against
+      // subsidies and judge sustainability honestly.
+      db
+        .from("grants")
+        .select("source,amount_units,token_symbol,received_at,note,tx_hash")
+        .order("received_at", { ascending: false }),
+    ]);
 
-  const runs = (runsData ?? []) as Array<{
-    lang: string | null;
-    game: string | null;
-    player: string;
-    was_free: boolean;
-  }>;
-  const wins = (winsData ?? []) as Array<{
-    lang: string | null;
-    game: string | null;
-    amount_units: string | number;
-  }>;
-  const pots = (potsData ?? []) as Array<{
-    lang: string | null;
-    game: string | null;
-    amount_units: string | number;
-    closed: boolean;
-  }>;
+  // fetchAllPaged already gave us typed arrays, so no cast needed.
+  const runs = runsData;
+  const wins = winsData;
+  const pots = potsData;
 
   type GameAgg = {
     plays: number;
