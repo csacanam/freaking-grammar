@@ -42,13 +42,13 @@ async function flipSubscription(
 
 function confirmationHtml(message: string, ok: boolean): string {
   return `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Freaking Grammar — Unsubscribe</title></head>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>nerdos.fun — Unsubscribe</title></head>
 <body style="margin:0;padding:48px 16px;background:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1a1a1a;">
 <div style="max-width:440px;margin:0 auto;text-align:center;font-size:16px;line-height:1.55;">
 <h1 style="font-size:22px;margin:0 0 16px;">${ok ? "You're unsubscribed" : "Something went wrong"}</h1>
 <p style="margin:0 0 24px;color:${ok ? "#1a1a1a" : "#a03030"};">${escape(message)}</p>
 <p style="margin:32px 0 0;font-size:13px;color:#9a9a9a;">
-${ok ? "You won't receive any more daily Freaking Grammar emails." : "Head to your inbox and try the link again, or contact hi@sakalabs.io if it keeps failing."}
+${ok ? "You won't receive any more daily nerdos.fun emails." : "Head to your inbox and try the link again, or contact hi@sakalabs.io if it keeps failing."}
 </p>
 </div></body></html>`;
 }

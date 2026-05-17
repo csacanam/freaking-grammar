@@ -420,7 +420,7 @@ function formatMessage(args: {
 }): string {
   const { states, sponsorStates, fund, gasWarn, baseUrl } = args;
   const lines: string[] = [];
-  lines.push("*🏦 Freaking Grammar — Treasury*");
+  lines.push("*🏦 nerdos.fun — Treasury*");
   lines.push("");
 
   if (fund.ran && "error" in fund && fund.error) {

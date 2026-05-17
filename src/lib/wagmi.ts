@@ -50,7 +50,7 @@ const rainbowKitConnectors = connectorsForWallets(
     },
   ],
   {
-    appName: "Freaking Grammar",
+    appName: "nerdos.fun",
     projectId: WALLETCONNECT_PROJECT_ID,
   },
 );

@@ -7,7 +7,7 @@ export const LANGS: readonly Lang[] = ["en", "es"] as const;
 
 export const dict = {
   en: {
-    appName: "Freaking Grammar",
+    appName: "Grammar",
     tagline: "Test your grammar agility",
     tabPlay: "Home",
     tabHistory: "History",
@@ -15,17 +15,17 @@ export const dict = {
     statsLinkLabel: "Live stats",
     nerdosTagline: "Daily games for nerdos. Rewards for curious minds.",
     nerdosPickAGame: "Pick a game",
-    grammarCardTitle: "Freaking Grammar",
+    grammarCardTitle: "Grammar",
     grammarCardBlurb:
       "Complete the sentence by choosing the correct word before time runs out.",
-    mathCardTitle: "Freaking Math",
+    mathCardTitle: "Math",
     mathCardBlurb:
       "Decide whether the math operation is correct or incorrect before time runs out.",
     cardLive: "Live",
     cardSoon: "Soon",
     backToPicker: "nerdos.fun",
-    // Freaking Math chrome
-    mathTitle: "Freaking Math",
+    // Math chrome
+    mathTitle: "Math",
     mathRule1: "You see an equation. Decide if the result shown is right or wrong.",
     mathRule2: "2.5 seconds at first — the timer gets shorter every question.",
     mathRule3: "One wrong answer = game over. Highest streak wins the daily prize.",
@@ -300,7 +300,7 @@ export const dict = {
     copyAddress: "Copy address",
   },
   es: {
-    appName: "Freaking Grammar",
+    appName: "Gramática",
     tagline: "Pon a prueba tu agilidad en la gramática",
     tabPlay: "Inicio",
     tabHistory: "Historial",
@@ -308,16 +308,16 @@ export const dict = {
     statsLinkLabel: "Estadísticas en vivo",
     nerdosTagline: "Juegos diarios para nerdos. Premios para mentes curiosas.",
     nerdosPickAGame: "Elige un juego",
-    grammarCardTitle: "Freaking Grammar",
+    grammarCardTitle: "Gramática",
     grammarCardBlurb:
       "Completa la frase eligiendo la palabra correcta antes de que se acabe el tiempo.",
-    mathCardTitle: "Freaking Math",
+    mathCardTitle: "Matemáticas",
     mathCardBlurb:
       "Decide si la operación matemática es correcta o incorrecta antes de que se acabe el tiempo.",
     cardLive: "En vivo",
     cardSoon: "Pronto",
     backToPicker: "nerdos.fun",
-    mathTitle: "Freaking Math",
+    mathTitle: "Matemáticas",
     mathRule1: "Ves una ecuación. Decide si el resultado mostrado es correcto o incorrecto.",
     mathRule2: "2.5 segundos al inicio — el reloj baja cada pregunta.",
     mathRule3: "Una respuesta mala = se acaba. La racha más larga gana el premio del día.",

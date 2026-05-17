@@ -98,7 +98,7 @@ export default function MathLobbyPage() {
           <div className="flex items-center gap-2">
             <span className="text-2xl">🔢</span>
             <span className="font-display text-xl tracking-wider">
-              Freaking Math
+              {t.mathTitle}
             </span>
           </div>
           <SakaLabsCredit />
