@@ -54,22 +54,70 @@ export async function POST(req: NextRequest) {
   const email = body.email ?? null;
   const lang = body.lang === "en" || body.lang === "es" ? body.lang : null;
 
-  // Anti-Sybil: when TURNSTILE_SECRET_KEY is configured, require the
-  // client to submit a valid Cloudflare Turnstile token before we
-  // spend gas on a new wallet. The check is a no-op until the env
-  // var is set, so this ships safely; turning it on is purely an env
-  // change in Vercel. Sourcing the caller IP from x-forwarded-for
-  // gives Turnstile better signal to weigh against its risk model.
+  // Idempotency FIRST, before the captcha. Reason: the bridge re-mounts on
+  // every page navigation and refires this endpoint to check its own state;
+  // if captcha were enforced up-front, every returning user would see the
+  // Turnstile modal on every page load even though their airdrop landed
+  // weeks ago. By checking the DB first we let returning users sail through
+  // with no captcha while keeping the actual "send CELO" step still gated.
+  const { data: existing } = await supabase
+    .from("welcome_airdrops")
+    .select("address,tx_hash")
+    .eq("address", address)
+    .maybeSingle();
+  if (existing) {
+    return Response.json({
+      status: "already-airdropped",
+      txHash: (existing as { tx_hash: string | null }).tx_hash,
+    });
+  }
+
+  // Skip if the wallet already has enough CELO — happens if the user funded
+  // it themselves or re-logged after an earlier fund from outside. Log a
+  // sentinel row (amount=0, tx_hash=null) so future hits short-circuit on
+  // the existing-row branch above. No captcha required: the worst-case
+  // abuse is a 0-CELO row insert with no economic value to the attacker.
+  try {
+    const bal = await celoClient.getBalance({
+      address: address as `0x${string}`,
+    });
+    if (bal >= BALANCE_THRESHOLD_WEI) {
+      await supabase.from("welcome_airdrops").insert({
+        address,
+        email,
+        lang,
+        amount_wei: "0",
+        tx_hash: null,
+      });
+      return Response.json({ status: "already-funded", balance: bal.toString() });
+    }
+  } catch {
+    /* RPC hiccup — proceed with airdrop */
+  }
+
+  // From here on we're spending CELO on a brand-new address, so this is
+  // where the anti-Sybil captcha actually matters. If the client deliberately
+  // didn't send a token (preflight call from the bridge), return 401 with a
+  // distinct status so the bridge knows to show the modal — vs 403 which is
+  // a real Turnstile verification failure worth alerting on.
   const remoteIp =
     req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     req.headers.get("x-real-ip") ||
     undefined;
+
+  if (!body.turnstileToken) {
+    return Response.json(
+      { error: "captcha-required" },
+      { status: 401 },
+    );
+  }
+
   const turnstile = await verifyTurnstile(body.turnstileToken, remoteIp);
   if (!turnstile.ok) {
     // Logged + Telegram-pinged so we hear about false positives in
-    // real time instead of waiting for users to complain. Turnstile's
-    // invisible mode is conservative — every legit user it rejects
-    // becomes a manual refund candidate, and we want the signal now.
+    // real time instead of waiting for users to complain. Reaching this
+    // branch means the user did submit a token but Cloudflare rejected
+    // it — almost always a legitimate user with a bad fingerprint.
     const ua = req.headers.get("user-agent") ?? "";
     console.error(
       `welcome-gas captcha-failed reason=${turnstile.reason} addr=${address} ip=${remoteIp ?? "?"} ua="${ua}"`,
@@ -86,41 +134,6 @@ export async function POST(req: NextRequest) {
       { error: "captcha-failed", reason: turnstile.reason },
       { status: 403 },
     );
-  }
-
-  // Idempotency: already airdropped?
-  const { data: existing } = await supabase
-    .from("welcome_airdrops")
-    .select("address,tx_hash")
-    .eq("address", address)
-    .maybeSingle();
-  if (existing) {
-    return Response.json({
-      status: "already-airdropped",
-      txHash: (existing as { tx_hash: string | null }).tx_hash,
-    });
-  }
-
-  // Skip if the wallet already has enough CELO — happens if the user funded
-  // it themselves or re-logged after an earlier fund from outside.
-  try {
-    const bal = await celoClient.getBalance({
-      address: address as `0x${string}`,
-    });
-    if (bal >= BALANCE_THRESHOLD_WEI) {
-      // Log with a null tx_hash so we don't retry, but note they were funded
-      // elsewhere. Keeps the email record for support.
-      await supabase.from("welcome_airdrops").insert({
-        address,
-        email,
-        lang,
-        amount_wei: "0",
-        tx_hash: null,
-      });
-      return Response.json({ status: "already-funded", balance: bal.toString() });
-    }
-  } catch {
-    /* RPC hiccup — proceed with airdrop */
   }
 
   const account = privateKeyToAccount(

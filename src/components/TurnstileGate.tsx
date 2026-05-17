@@ -107,44 +107,118 @@ export function TurnstileGate({
     };
   }, [siteKey, onToken]);
 
+  // Lock background scroll while the dialog is open so the page can't
+  // be interacted with behind the modal — reinforces "you must do this
+  // to continue."
+  useEffect(() => {
+    if (!siteKey) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [siteKey]);
+
   if (!siteKey) return null;
 
-  // Centered card with a short label so the user understands why this
-  // checkbox suddenly appeared. Bilingual single line — same rationale
-  // as the apology email: we don't have lang for first-time users at
-  // this exact point in the flow, so EN + ES in one line covers
-  // everyone without a guess.
+  // Modal overlay. A non-technical user landing on a sudden inline
+  // captcha got confused (looked like a half-broken widget); centering
+  // it in a proper dialog with a clear headline + bilingual explanation
+  // makes it obvious that this is *the* thing they need to do right now
+  // to unlock their account. Backdrop is non-dismissable (no click-to-
+  // close, no ESC handler) — leaving without solving means no airdrop,
+  // which is the failure mode this whole flow is trying to prevent.
+  // Bilingual copy because we don't have the user's lang at this exact
+  // moment in the Privy flow.
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="turnstile-gate-title"
       style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 1000,
+        background: "rgba(10, 12, 16, 0.6)",
+        backdropFilter: "blur(4px)",
+        WebkitBackdropFilter: "blur(4px)",
         display: "flex",
-        flexDirection: "column",
         alignItems: "center",
-        gap: 12,
-        margin: "20px auto",
-        padding: "16px",
-        maxWidth: 360,
-        background: "#f8f8f8",
-        border: "1px solid #eeeaea",
-        borderRadius: 12,
+        justifyContent: "center",
+        padding: 16,
       }}
     >
-      <p
+      <div
         style={{
-          margin: 0,
-          fontSize: 14,
+          background: "#ffffff",
+          borderRadius: 20,
+          padding: "28px 24px",
+          maxWidth: 380,
+          width: "100%",
+          boxShadow: "0 24px 48px rgba(0, 0, 0, 0.24)",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 16,
+          fontFamily:
+            "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
           color: "#1a1a1a",
-          textAlign: "center",
-          lineHeight: 1.4,
         }}
       >
-        🎁 One quick check to unlock your free play
-        <br />
-        <span style={{ color: "#666" }}>
-          Una verificación rápida para tu jugada gratis
-        </span>
-      </p>
-      <div ref={containerRef} />
+        <div style={{ fontSize: 40, lineHeight: 1 }}>🎁</div>
+        <h2
+          id="turnstile-gate-title"
+          style={{
+            margin: 0,
+            fontSize: 20,
+            fontWeight: 700,
+            textAlign: "center",
+            lineHeight: 1.3,
+          }}
+        >
+          One quick check
+          <br />
+          <span style={{ color: "#666", fontWeight: 600 }}>
+            Una verificación rápida
+          </span>
+        </h2>
+        <p
+          style={{
+            margin: 0,
+            fontSize: 14,
+            textAlign: "center",
+            lineHeight: 1.5,
+            color: "#444",
+          }}
+        >
+          Confirm you&apos;re human and we&apos;ll set up your free play
+          right away.
+          <br />
+          <span style={{ color: "#888" }}>
+            Confirma que eres humano y dejamos lista tu jugada gratis.
+          </span>
+        </p>
+        <div
+          ref={containerRef}
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            minHeight: 70,
+            width: "100%",
+          }}
+        />
+        <p
+          style={{
+            margin: 0,
+            fontSize: 12,
+            color: "#999",
+            textAlign: "center",
+          }}
+        >
+          This closes automatically when you&apos;re done · Se cierra solo
+          al terminar
+        </p>
+      </div>
     </div>
   );
 }
