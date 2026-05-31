@@ -24,7 +24,12 @@ import type { Lang } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
 
-const SEND_SPACING_MS = 350;
+// Same rationale as daily-email-open/route.ts: the old 1-by-1 loop with
+// a 350ms sleep blew cron-job.org's 30s timeout the moment subscribers
+// crossed ~85 rows, so most runs only flushed the first slice before
+// being killed. SendGrid handles 100/sec on the free tier, so 20
+// concurrent sends per batch is well under that ceiling.
+const SEND_BATCH_SIZE = 20;
 
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
@@ -143,20 +148,25 @@ export async function GET(req: NextRequest) {
 
   let sent = 0;
   const failures: Array<{ email: string; error: string }> = [];
-  for (let i = 0; i < subscribers.length; i++) {
-    const s = subscribers[i];
-    const lang = (s.lang === "en" || s.lang === "es" ? s.lang : "es") as Lang;
-    const res = await sendDailyEmail({
-      to: s.email,
-      address: s.address,
-      lang,
-      type: "last-call",
-      data,
-    });
-    if (res.ok) sent += 1;
-    else failures.push({ email: s.email, error: res.error ?? "unknown" });
-    if (i < subscribers.length - 1) {
-      await sleep(SEND_SPACING_MS);
+  for (let i = 0; i < subscribers.length; i += SEND_BATCH_SIZE) {
+    const batch = subscribers.slice(i, i + SEND_BATCH_SIZE);
+    const results = await Promise.all(
+      batch.map((s) => {
+        const lang = (s.lang === "en" || s.lang === "es"
+          ? s.lang
+          : "es") as Lang;
+        return sendDailyEmail({
+          to: s.email,
+          address: s.address,
+          lang,
+          type: "last-call",
+          data,
+        }).then((res) => ({ email: s.email, res }));
+      }),
+    );
+    for (const { email, res } of results) {
+      if (res.ok) sent += 1;
+      else failures.push({ email, error: res.error ?? "unknown" });
     }
   }
 
@@ -194,8 +204,4 @@ async function notifyLastCallRun(args: {
       : null,
   ].filter((l): l is string => l !== null);
   await sendTelegramMessage(lines.join("\n"));
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
 }
