@@ -2,7 +2,6 @@ import type { NextRequest } from "next/server";
 import {
   createWalletClient,
   erc20Abi,
-  http,
   isAddressEqual,
   maxUint256,
   parseEther,
@@ -11,7 +10,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { celo } from "viem/chains";
-import { CELO_RPC_URL, POT_ADDRESS, STABLECOIN, ACTIVE_CHAIN } from "@/lib/chain";
+import { CELO_TRANSPORT, POT_ADDRESS, STABLECOIN, ACTIVE_CHAIN } from "@/lib/chain";
 import {
   FREAKING_POT_ABI,
   celoClient,
@@ -176,7 +175,7 @@ async function autoFund(pkHex: Hex): Promise<AutoFundReport> {
   const walletClient = createWalletClient({
     account,
     chain: celo,
-    transport: http(CELO_RPC_URL),
+    transport: CELO_TRANSPORT,
   });
   const token = STABLECOIN[ACTIVE_CHAIN.id];
 

@@ -37,7 +37,6 @@ import type { NextRequest } from "next/server";
 import {
   createWalletClient,
   formatEther,
-  http,
   parseEther,
   type Hex,
 } from "viem";
@@ -45,7 +44,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { celo } from "viem/chains";
 import { fetchAllPaged, supabase, todayUtc } from "@/lib/supabase";
 import { celoClient } from "@/lib/onchain";
-import { CELO_RPC_URL } from "@/lib/chain";
+import { CELO_TRANSPORT } from "@/lib/chain";
 import { sendTelegramMessage } from "@/lib/telegram";
 
 export const dynamic = "force-dynamic";
@@ -195,7 +194,7 @@ export async function GET(req: NextRequest) {
       const walletClient = createWalletClient({
         account,
         chain: celo,
-        transport: http(CELO_RPC_URL),
+        transport: CELO_TRANSPORT,
       });
       for (const u of red) {
         const lower = u.address.toLowerCase();

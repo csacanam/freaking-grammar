@@ -2,6 +2,9 @@
 
 import { http } from "viem";
 import { celo, base, mainnet } from "viem/chains";
+// CELO_TRANSPORT wraps the Alchemy URL (or whatever is in
+// NEXT_PUBLIC_CELO_RPC_URL) with a Forno fallback so wagmi reads
+// keep working even when the primary provider 429s.
 // IMPORTANT: import createConfig from `wagmi`, NOT `@privy-io/wagmi`.
 // @privy-io/wagmi's createConfig drops every non-mock connector and
 // disables EIP-6963 discovery; its WagmiProvider then runs
@@ -20,7 +23,7 @@ import {
   trustWallet,
   walletConnectWallet,
 } from "@rainbow-me/rainbowkit/wallets";
-import { CELO_RPC_URL, MAINNET_RPC_URL } from "./chain";
+import { CELO_TRANSPORT, MAINNET_RPC_URL } from "./chain";
 
 // Client-only. RainbowKit handles the connect modal. EIP-6963 detection
 // for installed desktop wallets + WalletConnect deep-links for mobile apps
@@ -58,7 +61,7 @@ const rainbowKitConnectors = connectorsForWallets(
 export const wagmiConfig = createConfig({
   chains: [celo, base, mainnet],
   transports: {
-    [celo.id]: http(CELO_RPC_URL),
+    [celo.id]: CELO_TRANSPORT,
     [base.id]: http(),
     [mainnet.id]: http(MAINNET_RPC_URL),
   },

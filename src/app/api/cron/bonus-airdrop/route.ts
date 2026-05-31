@@ -10,14 +10,13 @@ import type { NextRequest } from "next/server";
 import {
   createWalletClient,
   erc20Abi,
-  http,
   zeroAddress,
   type Hex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { celo } from "viem/chains";
 import { supabase } from "@/lib/supabase";
-import { CELO_RPC_URL } from "@/lib/chain";
+import { CELO_TRANSPORT } from "@/lib/chain";
 import { celoClient } from "@/lib/onchain";
 
 export const dynamic = "force-dynamic";
@@ -64,7 +63,7 @@ export async function GET(req: NextRequest) {
   const walletClient = createWalletClient({
     account,
     chain: celo,
-    transport: http(CELO_RPC_URL),
+    transport: CELO_TRANSPORT,
   });
 
   // Scan the last N days so we recover from missed invocations. If the

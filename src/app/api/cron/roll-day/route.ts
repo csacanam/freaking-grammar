@@ -1,9 +1,9 @@
 import type { NextRequest } from "next/server";
-import { createWalletClient, http, zeroAddress, type Hex } from "viem";
+import { createWalletClient, zeroAddress, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { celo } from "viem/chains";
 import { supabase, todayUtc } from "@/lib/supabase";
-import { CELO_RPC_URL, POT_ADDRESS } from "@/lib/chain";
+import { CELO_TRANSPORT, POT_ADDRESS } from "@/lib/chain";
 import { FREAKING_POT_ABI, celoClient, readPotAmount } from "@/lib/onchain";
 import {
   checkBotPlayer,
@@ -380,7 +380,7 @@ async function rollDayOnChain(
     const walletClient = createWalletClient({
       account,
       chain: celo,
-      transport: http(CELO_RPC_URL),
+      transport: CELO_TRANSPORT,
     });
 
     const hash = await walletClient.writeContract({

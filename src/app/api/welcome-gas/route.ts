@@ -12,14 +12,13 @@
 import type { NextRequest } from "next/server";
 import {
   createWalletClient,
-  http,
   parseEther,
   type Hex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { celo } from "viem/chains";
 import { supabase } from "@/lib/supabase";
-import { CELO_RPC_URL } from "@/lib/chain";
+import { CELO_TRANSPORT } from "@/lib/chain";
 import { celoClient } from "@/lib/onchain";
 import { sendTelegramMessage } from "@/lib/telegram";
 import { verifyTurnstile } from "@/lib/turnstile";
@@ -142,7 +141,7 @@ export async function POST(req: NextRequest) {
   const walletClient = createWalletClient({
     account,
     chain: celo,
-    transport: http(CELO_RPC_URL),
+    transport: CELO_TRANSPORT,
   });
 
   let txHash: Hex;
