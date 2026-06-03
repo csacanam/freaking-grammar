@@ -20,6 +20,7 @@ import { ACTIVE_CHAIN, STABLECOIN } from "@/lib/chain";
 import { friendlyError } from "@/lib/format";
 import { useLang } from "@/lib/lang-provider";
 import { tpl } from "@/lib/i18n";
+import { useIsMiniPay } from "@/lib/minipay";
 
 const COPM_TOKEN = {
   address: "0x8A567e2aE79CA692Bd748aB832081C45de4041eA" as `0x${string}`,
@@ -61,12 +62,20 @@ function formatBalance(
 // Universal wallet section — works with any connected wallet (Privy embedded,
 // MetaMask, Rabby, MiniPay, Farcaster). Shows the address + balances for the
 // tokens the app deals with and lets the user move them out.
+//
+// MiniPay branch: hides the CELO row entirely. MiniPay handles fees out of
+// band via CIP-64 fee abstraction, so the user never needs to look at,
+// manage, or top up CELO. The listing rules forbid showing it. USDT and
+// COPm stay visible — USDT because the app charges in it, COPm because
+// it's the user's own bonus token from sponsor campaigns (informational,
+// not "required" by the app).
 export function WalletSection() {
   const { t } = useLang();
   const { address, chainId } = useAccount();
   const publicClient = usePublicClient({ chainId: ACTIVE_CHAIN.id });
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
+  const inMiniPay = useIsMiniPay();
 
   const [balances, setBalances] = useState<TokenBalance[]>([]);
   const [copied, setCopied] = useState(false);
@@ -180,7 +189,10 @@ export function WalletSection() {
       </div>
 
       {/* Per-token cards — each with big balance, human label, purpose copy,
-          and context-specific actions (Add money / Send). */}
+          and context-specific actions (Add money / Send). Inside MiniPay
+          the CELO card is filtered out (fee abstraction = user never
+          needs to think about CELO; MiniPay listing rules forbid showing
+          it). */}
       <div className="flex flex-col gap-2">
         {balances.length === 0 && (
           <>
@@ -189,7 +201,9 @@ export function WalletSection() {
             <div className="h-20 bg-black/[0.03] animate-pulse rounded-xl" />
           </>
         )}
-        {balances.map((b) => (
+        {balances
+          .filter((b) => !(inMiniPay && b.symbol === "CELO"))
+          .map((b) => (
           <div
             key={b.symbol}
             className={`rounded-2xl border ${b.tint} px-4 py-3 flex flex-col gap-2`}
