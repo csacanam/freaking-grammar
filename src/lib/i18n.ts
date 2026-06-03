@@ -224,6 +224,10 @@ export const dict = {
     descUSDT: "Digital US Dollar",
     descCOPm: "Digital Colombian Peso",
     descCELO: "Used for transaction fees",
+    // NeedFundsModal — MiniPay branch (single-CTA → add_cash deeplink)
+    mpDepositTitle: "Add USDT to play",
+    mpDepositHint: "Open the Deposit screen in MiniPay to top up.",
+    mpDepositCta: "Deposit",
     // NeedFundsModal
     notEnoughUSDT: "Not enough USDT",
     notEnoughCELO: "Not enough CELO",
@@ -514,6 +518,10 @@ export const dict = {
     descUSDT: "Dólar digital",
     descCOPm: "Peso colombiano digital",
     descCELO: "Usado para pagar tarifas de red",
+    // NeedFundsModal — MiniPay branch
+    mpDepositTitle: "Agrega USDT para jugar",
+    mpDepositHint: "Abre la pantalla de Depósito en MiniPay para recargar.",
+    mpDepositCta: "Depositar",
     // NeedFundsModal
     notEnoughUSDT: "No tienes USDT suficiente",
     notEnoughCELO: "No tienes CELO suficiente",

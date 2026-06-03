@@ -4,14 +4,25 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import { useLang } from "@/lib/lang-provider";
 import { tpl } from "@/lib/i18n";
+import { isMiniPay } from "@/lib/minipay";
 
 // Shown when an action can't proceed because the wallet is short on USDT
 // (paid play) or CELO (gas), AND from the /you → Wallet "Add money" button
 // where there's no low-balance trigger yet. Mode changes the header copy
 // from alarming ("Not enough X") to neutral ("Add X to your wallet"); the
 // body is the same three-option structure regardless.
+//
+// Inside MiniPay the three-option screen is replaced by a single Deposit
+// CTA that opens MiniPay's add_cash deeplink — MiniPay listings ban
+// external bridges/swaps and the CELO option (fee abstraction means
+// users never need it). See celopedia minipay-requirements.md §3 / §6.
 type Token = "USDT" | "CELO";
 type Mode = "insufficient" | "add";
+
+// MiniPay's Deposit screen, scoped to USDT (the only token nerdos.fun
+// charges). Canonical deeplink list:
+// https://docs.minipay.xyz/technical-references/deeplinks.html
+const MINIPAY_DEPOSIT_URL = "https://link.minipay.xyz/add_cash?tokens=USDT";
 
 // Squid Router deep-links — destination is the Celo token we want.
 const SQUID_BRIDGE: Record<Token, string> = {
@@ -44,6 +55,13 @@ export function NeedFundsModal({
 }) {
   const { t } = useLang();
   const [copied, setCopied] = useState(false);
+  // window.ethereum.isMiniPay is only available client-side; flip to true
+  // after mount so SSR + first-paint stay consistent with the non-MiniPay
+  // branch (avoids hydration mismatch) and then re-render once we know.
+  const [inMiniPay, setInMiniPay] = useState(false);
+  useEffect(() => {
+    setInMiniPay(isMiniPay());
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -55,6 +73,50 @@ export function NeedFundsModal({
   }, [open, onClose]);
 
   if (!open) return null;
+
+  // MiniPay branch: a single Deposit CTA pointing at add_cash. The
+  // three-option screen (copy address / Squid bridge / Uniswap swap)
+  // is forbidden here — MiniPay listings ban external bridges and the
+  // CELO mode entirely (fee abstraction = users never see CELO).
+  if (inMiniPay) {
+    return (
+      <div
+        className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-4"
+        onClick={onClose}
+      >
+        <div
+          className="bg-white rounded-3xl max-w-sm w-full shadow-2xl overflow-hidden flex flex-col"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="bg-yellow/40 px-6 pt-6 pb-5 flex items-center gap-3">
+            <Image src="/mascot.png" alt="" width={48} height={48} />
+            <div>
+              <h2 className="font-display text-2xl tracking-wide leading-tight">
+                {t.mpDepositTitle}
+              </h2>
+              <p className="text-[11px] text-muted mt-1 leading-snug">
+                {t.mpDepositHint}
+              </p>
+            </div>
+          </div>
+          <div className="px-6 py-5">
+            <a
+              href={MINIPAY_DEPOSIT_URL}
+              className="flex items-center justify-center px-4 py-3 rounded-xl bg-teal text-white font-display text-sm tracking-wider uppercase"
+            >
+              {t.mpDepositCta}
+            </a>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-full py-3 text-xs font-display tracking-widest uppercase text-muted border-t border-black/5 hover:text-ink"
+          >
+            {t.close}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const isInsufficient = mode === "insufficient";
   const title = isInsufficient
