@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import { useLang } from "@/lib/lang-provider";
 import { tpl } from "@/lib/i18n";
-import { isMiniPay } from "@/lib/minipay";
+import { useIsMiniPay } from "@/lib/minipay";
 
 // Shown when an action can't proceed because the wallet is short on USDT
 // (paid play) or CELO (gas), AND from the /you → Wallet "Add money" button
@@ -55,13 +55,7 @@ export function NeedFundsModal({
 }) {
   const { t } = useLang();
   const [copied, setCopied] = useState(false);
-  // window.ethereum.isMiniPay is only available client-side; flip to true
-  // after mount so SSR + first-paint stay consistent with the non-MiniPay
-  // branch (avoids hydration mismatch) and then re-render once we know.
-  const [inMiniPay, setInMiniPay] = useState(false);
-  useEffect(() => {
-    setInMiniPay(isMiniPay());
-  }, []);
+  const inMiniPay = useIsMiniPay();
 
   useEffect(() => {
     if (!open) return;

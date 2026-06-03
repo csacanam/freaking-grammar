@@ -247,6 +247,10 @@ export const dict = {
     youSignInTitle: "Sign in to see your stats",
     youSignInBlurb:
       "Your wins, unclaimed rewards and wallet balances appear here once you connect.",
+    // Shown inside MiniPay while the auto-connect is settling. MiniPay
+    // listings ban Connect-Wallet buttons, so the email + RainbowKit
+    // sign-in pair gets replaced by this single status line.
+    miniPayConnecting: "Connecting to MiniPay…",
     // Disconnect — labelled "log out" because the click runs
     // privyLogout(), ending the Privy session entirely, not just
     // dropping a wagmi wallet connection.
@@ -542,6 +546,7 @@ export const dict = {
     youSignInTitle: "Entra para ver tus stats",
     youSignInBlurb:
       "Tus victorias, premios pendientes y saldos aparecen acá cuando te conectes.",
+    miniPayConnecting: "Conectando con MiniPay…",
     // Disconnect — see EN note above
     disconnectWallet: "Cerrar sesión",
     disconnectHint: "Cierra sesión para cambiar de cuenta.",

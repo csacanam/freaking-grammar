@@ -23,6 +23,7 @@ import FreakingPotArtifact from "@/lib/contracts/FreakingPot.json";
 import { SakaLabsCredit } from "@/components/SakaLabsCredit";
 import { PlayerName } from "@/components/PlayerName";
 import { WalletSection } from "@/components/WalletSection";
+import { useIsMiniPay } from "@/lib/minipay";
 
 const FREAKING_POT_ABI = FreakingPotArtifact.abi;
 
@@ -45,6 +46,7 @@ export default function YouPage() {
   const { logout: privyLogout } = useLogout();
   const { authenticated: privyAuthenticated } = usePrivy();
   const { disconnectAsync } = useDisconnect();
+  const inMiniPay = useIsMiniPay();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
   const publicClient = usePublicClient({ chainId: ACTIVE_CHAIN.id });
@@ -137,7 +139,13 @@ export default function YouPage() {
         <SakaLabsCredit />
       </header>
 
-      {!isConnected && (
+      {!isConnected && inMiniPay && (
+        <section className="flex-1 flex flex-col items-center justify-center gap-3 text-center py-10">
+          <Image src="/mascot.png" alt="" width={64} height={64} priority />
+          <p className="text-sm text-muted">{t.miniPayConnecting}</p>
+        </section>
+      )}
+      {!isConnected && !inMiniPay && (
         <section className="flex-1 flex flex-col items-center justify-center gap-5 text-center py-10">
           <Image src="/mascot.png" alt="" width={96} height={96} priority />
           <div>

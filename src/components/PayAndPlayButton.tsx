@@ -30,6 +30,7 @@ import {
 } from "@/lib/chain";
 import { useLang } from "@/lib/lang-provider";
 import { gameIdFor, type Lang, type Strings } from "@/lib/i18n";
+import { useIsMiniPay } from "@/lib/minipay";
 import FreakingPotArtifact from "@/lib/contracts/FreakingPot.json";
 
 const FREAKING_POT_ABI = FreakingPotArtifact.abi;
@@ -70,6 +71,7 @@ export function PayAndPlayButton({
   const publicClient = usePublicClient({ chainId: ACTIVE_CHAIN.id });
   const { openConnectModal } = useConnectModal();
   const { login: privyLogin } = useLogin();
+  const inMiniPay = useIsMiniPay();
 
   const [stage, setStage] = useState<Stage>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -244,6 +246,20 @@ export function PayAndPlayButton({
   // Secondary = self-custody wallet via the RainbowKit modal — same picker
   // we've always had, just scoped to this button. The "OR" divider makes
   // both feel like valid first-class choices.
+  //
+  // MiniPay branch: neither sign-in option applies inside MiniPay — the
+  // user is already in their wallet and MiniPayBridge is auto-connecting
+  // in the background. Show a quiet "Connecting…" placeholder instead so
+  // we don't (a) flash a Connect-Wallet button (forbidden by listing
+  // rules) or (b) tempt the user into the Privy email flow they can't
+  // complete from a wallet context.
+  if (needsConnect && inMiniPay) {
+    return (
+      <Button full disabled>
+        {t.miniPayConnecting}
+      </Button>
+    );
+  }
   if (needsConnect) {
     return (
       <div className="flex flex-col gap-2">
