@@ -225,9 +225,16 @@ export const dict = {
     descUSDT: "Digital US Dollar",
     descCOPm: "Digital Colombian Peso",
     descCELO: "Used for transaction fees",
-    // NeedFundsModal — MiniPay branch (single-CTA → add_cash deeplink)
+    // NeedFundsModal — MiniPay branch (single-CTA → add_cash deeplink).
+    // The hint explicitly names swap-from-USDC/USDm because nerdos.fun
+    // only accepts USDT — MiniPay's listing rules require a graceful
+    // single-token explainer so a user holding USDC/USDm doesn't bounce
+    // off thinking the app is broken. The add_cash screen handles both
+    // swap and external deposit; we don't have to branch on user
+    // balances client-side.
     mpDepositTitle: "Add USDT to play",
-    mpDepositHint: "Open the Deposit screen in MiniPay to top up.",
+    mpDepositHint:
+      "Top up in MiniPay — deposit USDT or swap from USDC or USDm.",
     mpDepositCta: "Deposit",
     // NeedFundsModal
     notEnoughUSDT: "Not enough USDT",
@@ -524,9 +531,10 @@ export const dict = {
     descUSDT: "Dólar digital",
     descCOPm: "Peso colombiano digital",
     descCELO: "Usado para pagar tarifas de red",
-    // NeedFundsModal — MiniPay branch
+    // NeedFundsModal — MiniPay branch (single-token explainer baked in)
     mpDepositTitle: "Agrega USDT para jugar",
-    mpDepositHint: "Abre la pantalla de Depósito en MiniPay para recargar.",
+    mpDepositHint:
+      "Recarga en MiniPay — deposita USDT o cámbialo desde USDC o USDm.",
     mpDepositCta: "Depositar",
     // NeedFundsModal
     notEnoughUSDT: "No tienes USDT suficiente",
