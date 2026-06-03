@@ -123,6 +123,7 @@ type Stats = {
     distribution: Array<{ label: string; count: number }>;
     retentionDay2: { cohort: number; returned: number; pct: number };
     retentionDay7: { cohort: number; returned: number; pct: number };
+    retentionDay30: { cohort: number; returned: number; pct: number };
     paidConversionPct: number;
   };
   plays: {
@@ -329,6 +330,10 @@ async function loadStats(): Promise<Stats | null> {
   }
   const retentionDay2 = retention(1); // day 1 → day 2 = 1 day later
   const retentionDay7 = retention(7);
+  // D30 is one of the three retention numbers MiniPay reviewers look at
+  // on the listing readiness form, alongside D1/D7 — long-tail retention
+  // is what separates real growth from acquisition-only spikes.
+  const retentionDay30 = retention(30);
 
   const paidConversionPct =
     allPlayers.size > 0
@@ -461,6 +466,7 @@ async function loadStats(): Promise<Stats | null> {
       ],
       retentionDay2,
       retentionDay7,
+      retentionDay30,
       paidConversionPct,
     },
     plays: {
@@ -869,6 +875,16 @@ export default async function StatsPage() {
                   </td>
                   <td className="py-2 text-right tabular-nums font-display">
                     {stats.players.retentionDay7.pct.toFixed(0)}%
+                  </td>
+                </tr>
+                <tr className="border-t border-black/5">
+                  <td className="py-2">{t.statsRetentionDay1to30}</td>
+                  <td className="py-2 text-right tabular-nums">
+                    {stats.players.retentionDay30.returned} /{" "}
+                    {stats.players.retentionDay30.cohort}
+                  </td>
+                  <td className="py-2 text-right tabular-nums font-display">
+                    {stats.players.retentionDay30.pct.toFixed(0)}%
                   </td>
                 </tr>
               </tbody>
