@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import {
   useAccount,
   useDisconnect,
@@ -309,6 +310,18 @@ export default function YouPage() {
           <p className="text-[11px] text-muted text-center mt-2">
             {t.disconnectHint}
           </p>
+          {/* Legal footer — Terms + Privacy as small discrete links so
+              MiniPay reviewers (and users) can find them, without
+              competing visually with the Cerrar-sesión button. */}
+          <div className="flex items-center justify-center gap-4 mt-4 text-[11px] font-display tracking-widest uppercase text-muted">
+            <Link href="/terms" className="hover:text-ink">
+              {t.termsLink}
+            </Link>
+            <span aria-hidden>·</span>
+            <Link href="/privacy" className="hover:text-ink">
+              {t.privacyLink}
+            </Link>
+          </div>
         </section>
       )}
     </div>

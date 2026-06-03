@@ -47,3 +47,9 @@ supabase/seed_*.sql
 # discovery script): contains user emails, wallets, and Privy DIDs. Stays
 # local — kept out of git so re-runs never accidentally commit PII.
 affected.json
+
+# Agent-skill installs (celopedia, etc) — vendored locally per-machine
+# via `npx skills add`. Not source code, regenerable.
+.agents/
+.claude/
+skills-lock.json

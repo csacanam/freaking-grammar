@@ -259,6 +259,10 @@ export const dict = {
     // listings ban Connect-Wallet buttons, so the email + RainbowKit
     // sign-in pair gets replaced by this single status line.
     miniPayConnecting: "Connecting to MiniPay…",
+    // Legal links — rendered in the /you footer. Short labels so the row
+    // doesn't crowd the disconnect button.
+    termsLink: "Terms",
+    privacyLink: "Privacy",
     // Disconnect — labelled "log out" because the click runs
     // privyLogout(), ending the Privy session entirely, not just
     // dropping a wagmi wallet connection.
@@ -557,6 +561,8 @@ export const dict = {
     youSignInBlurb:
       "Tus victorias, premios pendientes y saldos aparecen acá cuando te conectes.",
     miniPayConnecting: "Conectando con MiniPay…",
+    termsLink: "Términos",
+    privacyLink: "Privacidad",
     // Disconnect — see EN note above
     disconnectWallet: "Cerrar sesión",
     disconnectHint: "Cierra sesión para cambiar de cuenta.",
