@@ -77,6 +77,29 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className="h-full antialiased">
+      <head>
+        {/* Preconnect hints for the third-party origins the wallet stack
+            and analytics hit on first paint. Resolves DNS + TLS in
+            parallel with the main HTML so the actual fetches don't pay
+            handshake latency. Origins picked from
+            docs/minipay-origin-manifest.md — only the ones that fire
+            during initial load, not the lazy WalletConnect / Reown ones
+            that wait for a user click. */}
+        <link rel="preconnect" href="https://auth.privy.io" crossOrigin="" />
+        <link rel="preconnect" href="https://us.i.posthog.com" crossOrigin="" />
+        <link
+          rel="preconnect"
+          href="https://us-assets.i.posthog.com"
+          crossOrigin=""
+        />
+        <link
+          rel="preconnect"
+          href="https://challenges.cloudflare.com"
+          crossOrigin=""
+        />
+        <link rel="dns-prefetch" href="https://forno.celo.org" />
+        <link rel="dns-prefetch" href="https://celo-mainnet.g.alchemy.com" />
+      </head>
       <body className="min-h-dvh flex flex-col bg-bg text-ink">
         <Providers>
           <main className="flex-1 flex flex-col pb-20">{children}</main>

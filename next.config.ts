@@ -120,7 +120,27 @@ const nextConfig: NextConfig = {
     ];
   },
   async headers() {
-    return [{ source: "/:path*", headers: securityHeaders }];
+    return [
+      // Long-cache static assets (mascot, rank badges, splash, etc.).
+      // Next/Image-served URLs already get good caching automatically,
+      // but direct hits to /mascot.png, /aprendiz.png, etc. from
+      // markup or external embeds (Farcaster manifest, MiniPay
+      // discovery) were defaulting to 0-cache per PageSpeed. We never
+      // rev the filename — when we regenerate via scripts/gen-icons.mjs
+      // we overwrite in place — so 1-year immutable is safe; a real
+      // change would only ship via deploy and the asset path doesn't
+      // get cached longer than the deploy's lifetime in the browser.
+      {
+        source: "/:path*\\.(png|jpg|jpeg|webp|svg|ico|otf|ttf|woff|woff2)",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
+      },
+      { source: "/:path*", headers: securityHeaders },
+    ];
   },
 };
 
