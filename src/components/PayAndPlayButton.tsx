@@ -108,20 +108,29 @@ export function PayAndPlayButton({
     // reserved even though the chain only charges ~0.008 once
     // settled. Real-world: a user at 0.0384 CELO got a paid play
     // rejected pre-flight by 0.0005 CELO. Thresholds match wallet
-    // demand, not actual chain cost:
-    const MIN_CELO_FREE = parseEther("0.02"); // free play pre-flight + buffer
-    const MIN_CELO_PAID = parseEther("0.05"); // paid play (with approve) pre-flight + buffer
-    const minCelo = playerHasFreePlay ? MIN_CELO_FREE : MIN_CELO_PAID;
-    const celoBal = await publicClient.getBalance({ address: currentAddress });
-    if (celoBal < minCelo) {
-      setNeedFunds({
-        token: "CELO",
-        balance: formatEther(celoBal),
-        need: "0.05",
-        address: currentAddress,
-      });
-      setStage("idle");
-      throw new Error("insufficient-celo");
+    // demand, not actual chain cost.
+    //
+    // Skip inside MiniPay: fee abstraction pays gas out of the
+    // user's USDT via the CIP-64 adapter, so the validator never
+    // touches their CELO balance (which is always 0 there by
+    // design). Running this check anyway would trigger an
+    // insufficient-CELO modal for every MiniPay user even though
+    // their tx would have settled fine.
+    if (!inMiniPay) {
+      const MIN_CELO_FREE = parseEther("0.02"); // free play pre-flight + buffer
+      const MIN_CELO_PAID = parseEther("0.05"); // paid play (with approve) pre-flight + buffer
+      const minCelo = playerHasFreePlay ? MIN_CELO_FREE : MIN_CELO_PAID;
+      const celoBal = await publicClient.getBalance({ address: currentAddress });
+      if (celoBal < minCelo) {
+        setNeedFunds({
+          token: "CELO",
+          balance: formatEther(celoBal),
+          need: "0.05",
+          address: currentAddress,
+        });
+        setStage("idle");
+        throw new Error("insufficient-celo");
+      }
     }
 
     // Approve + USDT balance check only needed for paid plays — free plays
