@@ -258,7 +258,19 @@ export default function YouPage() {
       {isConnected && <WalletSection />}
 
       {isConnected && (
-        <section className="mt-auto pt-4 pb-6">
+        <section className="mt-auto pt-4 pb-6 flex flex-col gap-3">
+          {/* Support link — required as an in-app contact path by
+              MiniPay listing rules (§6 Integration & Support). Telegram
+              group chosen as the channel; same link is shared with
+              MiniPay reviewers on the Stage-2 readiness form. */}
+          <a
+            href="https://t.me/+54nPB4Whv0NlOWVh"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-center text-[11px] font-display tracking-widest uppercase text-muted hover:text-ink"
+          >
+            {t.supportLabel}
+          </a>
           <button
             onClick={async () => {
               // Goal of this handler: leave the browser in the same state

@@ -264,6 +264,10 @@ export const dict = {
     // listings ban Connect-Wallet buttons, so the email + RainbowKit
     // sign-in pair gets replaced by this single status line.
     miniPayConnecting: "Connecting to MiniPay…",
+    // Support — rendered in the /you footer. Required as an in-app
+    // contact path by MiniPay's listing rules. Channel-agnostic label
+    // so we can swap the link without touching copy.
+    supportLabel: "Help & support",
     // Legal links — rendered in the /you footer. Short labels so the row
     // doesn't crowd the disconnect button.
     termsLink: "Terms",
@@ -570,6 +574,7 @@ export const dict = {
     youSignInBlurb:
       "Tus victorias, premios pendientes y saldos aparecen acá cuando te conectes.",
     miniPayConnecting: "Conectando con MiniPay…",
+    supportLabel: "Ayuda y soporte",
     termsLink: "Términos",
     privacyLink: "Privacidad",
     // Disconnect — see EN note above
