@@ -63,12 +63,16 @@ function formatBalance(
 // MetaMask, Rabby, MiniPay, Farcaster). Shows the address + balances for the
 // tokens the app deals with and lets the user move them out.
 //
-// MiniPay branch: hides the CELO row entirely. MiniPay handles fees out of
-// band via CIP-64 fee abstraction, so the user never needs to look at,
-// manage, or top up CELO. The listing rules forbid showing it. USDT and
-// COPm stay visible — USDT because the app charges in it, COPm because
-// it's the user's own bonus token from sponsor campaigns (informational,
-// not "required" by the app).
+// MiniPay branch: hides both the CELO row and the COPm row.
+//   - CELO: MiniPay handles fees out of band via CIP-64 fee abstraction,
+//     so the user never needs to look at it. Listing rules forbid showing
+//     it.
+//   - COPm: the sponsor token from the Celo Colombia campaign. MiniPay
+//     listing rules accept USDT / USDC / USDm only, and the campaign is
+//     `active=false` so no new COPm flows in — leaving a stale balance
+//     row in the MiniPay UI just creates a "what is this?" question with
+//     no follow-up action.
+// USDT stays visible because that's what the app charges in.
 export function WalletSection() {
   const { t } = useLang();
   const { address, chainId } = useAccount();
@@ -190,9 +194,9 @@ export function WalletSection() {
 
       {/* Per-token cards — each with big balance, human label, purpose copy,
           and context-specific actions (Add money / Send). Inside MiniPay
-          the CELO card is filtered out (fee abstraction = user never
-          needs to think about CELO; MiniPay listing rules forbid showing
-          it). */}
+          we filter out CELO (fee abstraction = user never needs it) and
+          COPm (sponsor campaign is wound down + not in MiniPay's
+          supported-tokens list). Only USDT remains. */}
       <div className="flex flex-col gap-2">
         {balances.length === 0 && (
           <>
@@ -202,7 +206,10 @@ export function WalletSection() {
           </>
         )}
         {balances
-          .filter((b) => !(inMiniPay && b.symbol === "CELO"))
+          .filter(
+            (b) =>
+              !(inMiniPay && (b.symbol === "CELO" || b.symbol === "COPm")),
+          )
           .map((b) => (
           <div
             key={b.symbol}
