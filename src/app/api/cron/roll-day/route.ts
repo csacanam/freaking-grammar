@@ -295,7 +295,13 @@ async function rollPot(b: Bucket, today: string): Promise<LangResult> {
     }
   }
 
-  // Open today in the DB so plays can start funding it.
+  // Open today in the DB optimistically with lastPot.day_number + 1.
+  // The block immediately below reconciles this against the on-chain
+  // currentDay after rollDayOnChain — if the chain call failed for any
+  // reason (RPC 429, gas underestimate, partial outage), currentDay
+  // doesn't advance and the +1 here would be wrong forever, drifting
+  // every subsequent claim() target by one day. The reconciliation
+  // self-heals that.
   await supabase.from("pots").insert({
     game: b.game,
     lang: b.lang,
@@ -321,10 +327,51 @@ async function rollPot(b: Bucket, today: string): Promise<LangResult> {
     }
   }
 
-  // Mirror today's pot amount (seed from treasury) from the contract.
+  // Reconcile today's day_number against on-chain currentDay. After a
+  // successful rollDay, currentDay advanced; that's the number the
+  // contract uses in claim() / pot() / winnerOf() forever after. If
+  // rollDay failed, currentDay stayed put and our optimistic +1 is
+  // wrong — fixing it here means a failed roll never accumulates +1
+  // drift into every downstream claim. The 2026-05-31 Alchemy
+  // outage rotted ~5 days of BD before we caught it; that incident
+  // is what motivated this block.
+  let chainDayNumber = lastPot.day_number + 1;
   if (POT_ADDRESS !== zeroAddress) {
     try {
-      const seeded = await readPotAmount(b.gameId, lastPot.day_number + 1);
+      const onchain = (await celoClient.readContract({
+        address: POT_ADDRESS,
+        abi: FREAKING_POT_ABI,
+        functionName: "currentDay",
+        args: [BigInt(b.gameId)],
+      })) as bigint;
+      chainDayNumber = Number(onchain);
+      if (chainDayNumber !== lastPot.day_number + 1) {
+        await withLangFilter(
+          supabase
+            .from("pots")
+            .update({ day_number: chainDayNumber })
+            .eq("game", b.game),
+          b.lang,
+        ).eq("day_utc", today);
+        console.warn(
+          `day_number drift fixed for ${b.label}: optimistic ${lastPot.day_number + 1}, chain ${chainDayNumber}`,
+        );
+      }
+    } catch (e) {
+      console.warn(
+        `currentDay reconciliation failed for ${b.label}:`,
+        (e as Error).message,
+      );
+    }
+  }
+
+  // Mirror today's pot amount (seed from treasury) from the contract.
+  // Uses chain-reconciled day_number so the read hits the right pot —
+  // critical when rollDay failed (chain pot for `lastPot+1` would
+  // return 0 because that day was never opened on chain).
+  if (POT_ADDRESS !== zeroAddress) {
+    try {
+      const seeded = await readPotAmount(b.gameId, chainDayNumber);
       await withLangFilter(
         supabase
           .from("pots")
