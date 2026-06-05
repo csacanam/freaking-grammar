@@ -6,8 +6,21 @@ import { useAccount, useConnect } from "wagmi";
 // MiniPay is Opera Mini's stablecoin wallet on Celo. It injects window.ethereum
 // and expects dApps to auto-connect without showing a "Connect Wallet" button.
 // https://docs.celo.org/build-on-celo/build-on-minipay
+//
+// Dev simulation: in non-production builds, `?minipay=1` on the URL flips
+// the detection to true so you can test MiniPay-only branches (hidden
+// CELO row, Deposit deeplink modal, "Connecting…" placeholder, etc.)
+// without needing the real MiniPay app + an ngrok tunnel. The flag is
+// gated to `process.env.NODE_ENV !== "production"` so it never fires
+// on Vercel.
 export function isMiniPay(): boolean {
   if (typeof window === "undefined") return false;
+  if (
+    process.env.NODE_ENV !== "production" &&
+    new URLSearchParams(window.location.search).get("minipay") === "1"
+  ) {
+    return true;
+  }
   const eth = (window as { ethereum?: { isMiniPay?: boolean } }).ethereum;
   return Boolean(eth?.isMiniPay);
 }
