@@ -280,7 +280,7 @@ export const dict = {
     // Play stages (button label while a tx is in flight)
     stageSwitching: "Switching network…",
     stageApproving: "Approving USDT…",
-    stageSigning: "Signing play…",
+    stageSigning: "Starting play…",
     stagePaying: "Paying $0.10…",
     stageStarting: "Starting…",
     // Resume banner
@@ -583,7 +583,7 @@ export const dict = {
     // Play stages (button label while a tx is in flight)
     stageSwitching: "Cambiando red…",
     stageApproving: "Autorizando USDT…",
-    stageSigning: "Firmando jugada…",
+    stageSigning: "Iniciando jugada…",
     stagePaying: "Pagando $0.10…",
     stageStarting: "Iniciando…",
     // Resume banner
