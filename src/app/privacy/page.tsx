@@ -12,17 +12,43 @@ import { useLang } from "@/lib/lang-provider";
 export default function PrivacyPage() {
   const { uiLang } = useLang();
   return (
-    <article className="max-w-2xl mx-auto w-full px-5 pt-8 pb-24">
+    <article className="max-w-2xl mx-auto w-full px-5 pt-6 pb-24">
+      {/* Top back-link — mirrors /math and /grammar so a deep-linked
+          reader who doesn't scroll still has a way out. */}
+      <BackLink />
       {uiLang === "es" ? <PrivacyES /> : <PrivacyEN />}
       <p className="mt-10">
         <Link
-          href="/you"
+          href="/"
           className="text-sm font-display tracking-widest uppercase text-muted hover:text-ink"
         >
           ← nerdos.fun
         </Link>
       </p>
     </article>
+  );
+}
+
+function BackLink() {
+  return (
+    <Link
+      href="/"
+      className="inline-flex items-center gap-1.5 text-xs text-muted hover:text-ink mb-6"
+    >
+      <svg
+        viewBox="0 0 16 16"
+        className="w-3 h-3"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden
+      >
+        <path d="M10 4l-4 4 4 4" />
+      </svg>
+      nerdos.fun
+    </Link>
   );
 }
 
