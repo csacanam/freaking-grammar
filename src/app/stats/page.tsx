@@ -166,6 +166,13 @@ type Stats = {
     operatorAddress: string | null;
     contractGasCELO: number; // total CELO burned on txs to the pot contract
     contractGasTxs: number;  // sample size for the gas figure (Blockscout-paginated)
+    // MiniPay Stage-2 metrics: user-only slices of the above and the
+    // revert rate. The "user" cut excludes operator txs (roll-day,
+    // auto-fund, refills) so the number reflects what actual players
+    // have spent on gas.
+    userGasCELO: number;
+    userGasTxs: number;
+    userFailedTxRate: number; // 0..1 (e.g. 0.005 = 0.5% revert rate)
   };
   posthog: PostHogStats | null;
 };
@@ -257,12 +264,15 @@ async function loadStats(): Promise<Stats | null> {
   // -------------------------------------------------- ON-CHAIN POTS
   // Read pot/treasury for every game in the GAMES list so adding the
   // next launch is a one-line change up top, not surgery here.
+  // Operator address derived first so readContractGas() can filter the
+  // user-only slice (excludes roll-day / auto-fund / refill txs).
+  const operatorAddrForGas = await getOperatorAddressOrNull();
   const [perGamePotUSDT, perGameTreasury, operatorCELO, contractGas] =
     await Promise.all([
       Promise.all(GAMES.map((g) => readCurrentPotUSD(g.contractId))),
       Promise.all(GAMES.map((g) => safeTreasury(g.contractId))),
       readOperatorCELO(),
-      readContractGas(),
+      readContractGas(operatorAddrForGas),
     ]);
 
   const todayGameTiles: GameTodayTile[] = GAMES.map((g, i) => ({
@@ -431,7 +441,7 @@ async function loadStats(): Promise<Stats | null> {
   const daysOnChain = runs.length
     ? Math.max(1, daysBetween(earliestDay, today) + 1)
     : 0;
-  const operatorAddrPrint = await getOperatorAddressOrNull();
+  const operatorAddrPrint = operatorAddrForGas;
 
   // ---------------------------------------------------- SPONSORS
   const sponsors = await loadSponsors();
@@ -502,6 +512,12 @@ async function loadStats(): Promise<Stats | null> {
       operatorAddress: operatorAddrPrint?.toLowerCase() ?? null,
       contractGasCELO: contractGas.celo,
       contractGasTxs: contractGas.txs,
+      userGasCELO: contractGas.userCelo,
+      userGasTxs: contractGas.userTxs,
+      userFailedTxRate:
+        contractGas.userTxs > 0
+          ? contractGas.userFailedTxs / contractGas.userTxs
+          : 0,
     },
   };
 }
@@ -579,12 +595,39 @@ async function readOperatorCELO(): Promise<number> {
 // much network gas". Source: Blockscout's v2 REST API (no key needed
 // on Celo); paginated, capped at 50 pages × 50 items so a runaway
 // chatty contract can't blow up the request.
-async function readContractGas(): Promise<{ celo: number; txs: number }> {
-  if (isAddressEqual(POT_ADDRESS, zeroAddress)) return { celo: 0, txs: 0 };
+type ContractGasReport = {
+  // Aggregate across every tx ever sent TO the pot contract.
+  celo: number;
+  txs: number;
+  // User-only slice. "Network fees paid by users" is the MiniPay
+  // Stage-2 readiness metric — show ONLY plays/claims by humans,
+  // never roll-days or auto-funds by the operator.
+  userCelo: number;
+  userTxs: number;
+  // Reverted-tx ratio across user txs. MiniPay listing checklist
+  // surfaces this as a UX/contract-bug proxy.
+  userFailedTxs: number;
+};
+
+async function readContractGas(
+  operatorAddress: `0x${string}` | null,
+): Promise<ContractGasReport> {
+  const empty: ContractGasReport = {
+    celo: 0,
+    txs: 0,
+    userCelo: 0,
+    userTxs: 0,
+    userFailedTxs: 0,
+  };
+  if (isAddressEqual(POT_ADDRESS, zeroAddress)) return empty;
   const BS = "https://celo.blockscout.com/api/v2";
   const MAX_PAGES = 50;
+  const opLower = operatorAddress?.toLowerCase() ?? null;
   let totalWei = 0n;
   let txs = 0;
+  let userWei = 0n;
+  let userTxs = 0;
+  let userFailedTxs = 0;
   let cursor: string | null = `${BS}/addresses/${POT_ADDRESS}/transactions?filter=to`;
   for (let page = 0; page < MAX_PAGES && cursor; page++) {
     try {
@@ -598,14 +641,24 @@ async function readContractGas(): Promise<{ celo: number; txs: number }> {
           gas_used?: string | number | null;
           gas_price?: string | number | null;
           status?: string;
+          from?: { hash?: string } | null;
         }>;
         next_page_params?: Record<string, string | number> | null;
       };
       for (const t of j.items ?? []) {
         const used = BigInt(t.gas_used ?? "0");
         const price = BigInt(t.gas_price ?? "0");
-        totalWei += used * price;
+        const wei = used * price;
+        totalWei += wei;
         txs++;
+        const senderLower = t.from?.hash?.toLowerCase() ?? null;
+        const isOperator = opLower !== null && senderLower === opLower;
+        if (!isOperator) {
+          userWei += wei;
+          userTxs++;
+          // Blockscout reports "ok" for success and "error" for revert.
+          if (t.status && t.status !== "ok") userFailedTxs++;
+        }
       }
       const npp = j.next_page_params;
       cursor = npp
@@ -617,7 +670,13 @@ async function readContractGas(): Promise<{ celo: number; txs: number }> {
       break; // upstream flaky; return what we summed so far
     }
   }
-  return { celo: Number(totalWei) / 1e18, txs };
+  return {
+    celo: Number(totalWei) / 1e18,
+    txs,
+    userCelo: Number(userWei) / 1e18,
+    userTxs,
+    userFailedTxs,
+  };
 }
 
 async function loadSponsors(): Promise<Stats["sponsors"]> {
@@ -1034,6 +1093,22 @@ export default async function StatsPage() {
               value={`${stats.onchain.contractGasCELO.toFixed(4)} CELO`}
               accent="bg-red/10"
               hint={`${stats.onchain.contractGasTxs.toLocaleString("en-US")} ${t.statsContractGasHint}`}
+            />
+            {/* MiniPay Stage-2 metric: user-only network fees + revert
+                rate. The "user" slice excludes operator txs (roll-day,
+                auto-fund) so the number reflects what real players are
+                spending on gas. */}
+            <Tile
+              label={t.statsUserGas}
+              value={`${stats.onchain.userGasCELO.toFixed(4)} CELO`}
+              accent="bg-red/10"
+              hint={`${stats.onchain.userGasTxs.toLocaleString("en-US")} ${t.statsUserGasHint}`}
+            />
+            <Tile
+              label={t.statsFailedTxRate}
+              value={`${(stats.onchain.userFailedTxRate * 100).toFixed(2)}%`}
+              accent="bg-red/10"
+              hint={t.statsFailedTxRateHint}
             />
           </section>
 
