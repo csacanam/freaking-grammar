@@ -24,7 +24,7 @@ import FreakingPotArtifact from "@/lib/contracts/FreakingPot.json";
 import { SakaLabsCredit } from "@/components/SakaLabsCredit";
 import { PlayerName } from "@/components/PlayerName";
 import { WalletSection } from "@/components/WalletSection";
-import { useIsMiniPay } from "@/lib/minipay";
+import { useIsMiniPay, useTxOverrides } from "@/lib/minipay";
 
 const FREAKING_POT_ABI = FreakingPotArtifact.abi;
 
@@ -48,6 +48,7 @@ export default function YouPage() {
   const { authenticated: privyAuthenticated } = usePrivy();
   const { disconnectAsync } = useDisconnect();
   const inMiniPay = useIsMiniPay();
+  const txOverrides = useTxOverrides();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
   const publicClient = usePublicClient({ chainId: ACTIVE_CHAIN.id });
@@ -109,6 +110,7 @@ export default function YouPage() {
           abi: FREAKING_POT_ABI,
           functionName: "claimMultiple",
           args: [days, BigInt(gameId)],
+          ...txOverrides,
         });
         await publicClient.waitForTransactionReceipt({ hash });
       }

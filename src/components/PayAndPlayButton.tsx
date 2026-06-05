@@ -30,7 +30,7 @@ import {
 } from "@/lib/chain";
 import { useLang } from "@/lib/lang-provider";
 import { gameIdFor, type Lang, type Strings } from "@/lib/i18n";
-import { useIsMiniPay } from "@/lib/minipay";
+import { useIsMiniPay, useTxOverrides } from "@/lib/minipay";
 import FreakingPotArtifact from "@/lib/contracts/FreakingPot.json";
 
 const FREAKING_POT_ABI = FreakingPotArtifact.abi;
@@ -72,6 +72,7 @@ export function PayAndPlayButton({
   const { openConnectModal } = useConnectModal();
   const { login: privyLogin } = useLogin();
   const inMiniPay = useIsMiniPay();
+  const txOverrides = useTxOverrides();
 
   const [stage, setStage] = useState<Stage>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -161,6 +162,7 @@ export function PayAndPlayButton({
           abi: erc20Abi,
           functionName: "approve",
           args: [POT_ADDRESS, maxUint256],
+          ...txOverrides,
         });
         await publicClient.waitForTransactionReceipt({ hash: approveHash });
       }
@@ -173,6 +175,7 @@ export function PayAndPlayButton({
       abi: FREAKING_POT_ABI,
       functionName: "play",
       args: [BigInt(gameId)],
+      ...txOverrides,
     });
     // Once writeContractAsync returns a hash, the wallet broadcast the tx
     // — the contract has either already used the free play or charged

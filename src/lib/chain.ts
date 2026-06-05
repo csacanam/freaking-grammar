@@ -19,14 +19,23 @@ export const POT_ADDRESS = (process.env.NEXT_PUBLIC_FREAKING_POT_CELO ||
   "0x0000000000000000000000000000000000000000") as `0x${string}`;
 
 // Stablecoin + decimals per chain. Entry fee is 0.10 USDT = 100000 (6 decimals).
+//
+// `feeCurrency` (Celo only) is the CIP-64 adapter address — NOT the token
+// address. Passing the token address fails on chain. USDT/USDC are 6-decimal,
+// so they go through adapter contracts that normalize to 18 decimals before
+// the validator can compute gas. Pulled from celopedia builder-guide
+// "Allowed Fee Currencies (Mainnet)". MiniPay uses this to pay gas in USDT
+// instead of CELO so a user without CELO can still send transactions.
 export const STABLECOIN = {
   [celo.id]: {
     address: "0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e" as `0x${string}`, // USDT on Celo
+    feeCurrency: "0x0e2a3e05bc9a16f5292a6170456a710cb89c6f72" as `0x${string}`,
     symbol: "USDT",
     decimals: 6,
   },
   [base.id]: {
     address: "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2" as `0x${string}`, // USDT on Base
+    feeCurrency: undefined,
     symbol: "USDT",
     decimals: 6,
   },

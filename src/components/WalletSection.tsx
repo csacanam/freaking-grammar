@@ -20,7 +20,7 @@ import { ACTIVE_CHAIN, STABLECOIN } from "@/lib/chain";
 import { friendlyError } from "@/lib/format";
 import { useLang } from "@/lib/lang-provider";
 import { tpl } from "@/lib/i18n";
-import { useIsMiniPay } from "@/lib/minipay";
+import { useIsMiniPay, useTxOverrides } from "@/lib/minipay";
 
 const COPM_TOKEN = {
   address: "0x8A567e2aE79CA692Bd748aB832081C45de4041eA" as `0x${string}`,
@@ -329,6 +329,7 @@ function SendModal({
   const [amount, setAmount] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const txOverrides = useTxOverrides();
 
   // `human` is the full-precision amount used by the Max button so the
   // user can transfer every last atom if they want; `humanShort` is what
@@ -363,6 +364,7 @@ function SendModal({
         abi: erc20Abi,
         functionName: "transfer",
         args: [to as `0x${string}`, amountUnits],
+        ...txOverrides,
       });
       onSent();
     } catch (e) {
