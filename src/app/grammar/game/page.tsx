@@ -13,6 +13,7 @@ import {
 import { useCurrentPlayer } from "@/lib/wallet";
 import { useLang } from "@/lib/lang-provider";
 import { posthog } from "@/lib/posthog-provider";
+import { AutoFitText } from "@/components/AutoFitText";
 
 const QUESTION_SECONDS = 5;
 
@@ -260,12 +261,24 @@ function GameInner() {
       />
 
       <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex items-center justify-between px-5 pointer-events-none z-[5]">
-        <span className="font-display text-white text-[clamp(1.5rem,9vw,2.75rem)] leading-none text-right max-w-[38%] break-words drop-shadow-sm">
+        {/* AutoFitText keeps each option on a single line. Short words
+            render at the natural clamp size; long words ("extraordinariamente",
+            "responsibility", …) scale down just enough to fit the 38%
+            column instead of break-wrapping to two lines. */}
+        <AutoFitText
+          align="right"
+          containerClassName="max-w-[38%]"
+          className="font-display text-white text-[clamp(1.5rem,9vw,2.75rem)] leading-none drop-shadow-sm"
+        >
           {left}
-        </span>
-        <span className="font-display text-white text-[clamp(1.5rem,9vw,2.75rem)] leading-none text-left max-w-[38%] break-words drop-shadow-sm">
+        </AutoFitText>
+        <AutoFitText
+          align="left"
+          containerClassName="max-w-[38%]"
+          className="font-display text-white text-[clamp(1.5rem,9vw,2.75rem)] leading-none drop-shadow-sm"
+        >
           {right}
-        </span>
+        </AutoFitText>
       </div>
 
       <div
