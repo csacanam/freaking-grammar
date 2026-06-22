@@ -14,16 +14,17 @@ import { PostHogProvider } from "./posthog-provider";
 import { PostHogIdentifyBridge } from "@/components/PostHogIdentifyBridge";
 
 // Privy uses `chain.rpcUrls.default.http[0]` when the embedded wallet
-// sends transactions. If we hand it plain `celo` from viem/chains, it
-// talks to Forno (the public default) and we've seen "RPC unknown
-// error" under load there. Override with our Alchemy URL — same one
-// wagmi's transport uses — so embedded-wallet plays never hit a
-// flakey public endpoint.
+// sends transactions. Alchemy was primary for speed, but when its
+// monthly quota is exhausted every embedded-wallet play fails (the
+// wagmi-side fallback in CELO_TRANSPORT doesn't help because the
+// wallet broadcasts using THIS chain config, not ours). Forno is
+// slower but free and always-on — putting it first means plays keep
+// working even when Alchemy is out of credits.
 const CELO_WITH_RPC = {
   ...celo,
   rpcUrls: {
     ...celo.rpcUrls,
-    default: { http: [CELO_RPC_URL] },
+    default: { http: ["https://forno.celo.org", CELO_RPC_URL] },
   },
 };
 const MAINNET_WITH_RPC = {
