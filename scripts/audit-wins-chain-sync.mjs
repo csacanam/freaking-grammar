@@ -82,6 +82,7 @@ console.log("");
 const bogus = []; // BD wins row with wrong player
 const missing = []; // chain winner with no BD row
 const stale = []; // BD claimed=false, chain claimed=true
+let compensated = 0; // off-chain compensated rows (skipped, not bogus)
 
 console.log("Scanning pots vs chain… (one winnerOf+claimed+pot call per row)");
 let scanned = 0;
@@ -128,8 +129,16 @@ for (const p of pots) {
 
   if (noChainWinner) {
     // Chain hasn't picked a winner. If BD has wins rows here, they're
-    // bogus (pre-rollDay phantom data).
+    // either bogus (pre-rollDay phantom data) OR off-chain compensation
+    // rows we inserted after withdrawTreasury to compensate the player
+    // for a day chain failed to roll properly (claimed=true + claim_tx
+    // pointing at the compensation tx — see
+    // scripts/compensate-outage-2026-05-31.mjs).
     for (const w of matchingWins) {
+      if (w.claimed && w.claim_tx) {
+        compensated++;
+        continue;
+      }
       bogus.push({
         ...w,
         reason: "no chain winner — chain never rolled this day",
@@ -177,6 +186,11 @@ for (const p of pots) {
 }
 
 console.log(`Scanned ${scanned} pots rows.`);
+if (compensated > 0) {
+  console.log(
+    `(skipped ${compensated} off-chain compensation rows — claimed=true with claim_tx, chain winner=0x0)`,
+  );
+}
 console.log("");
 
 console.log(`=== BOGUS wins (${bogus.length}) — wins rows in BD with wrong player ===`);
