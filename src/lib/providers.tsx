@@ -24,7 +24,7 @@ const CELO_WITH_RPC = {
   ...celo,
   rpcUrls: {
     ...celo.rpcUrls,
-    default: { http: ["https://forno.celo.org", CELO_RPC_URL] },
+    default: { http: ["https://forno.celo.org", CELO_RPC_URL, "https://celo.drpc.org"] },
   },
 };
 const MAINNET_WITH_RPC = {

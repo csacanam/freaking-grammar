@@ -6,6 +6,10 @@ import { celo, base } from "viem/chains";
 import { fallback, http, type Transport } from "viem";
 
 const FORNO_RPC = "https://forno.celo.org";
+// dRPC public Celo endpoint — free, no auth, internally load-balanced
+// across multiple node providers. Used as a third fallback so that a
+// simultaneous Alchemy + Forno hiccup still keeps us serving.
+const DRPC_RPC = "https://celo.drpc.org";
 
 export const CELO_RPC_URL =
   process.env.NEXT_PUBLIC_CELO_RPC_URL || FORNO_RPC;
@@ -47,12 +51,12 @@ export const ENTRY_FEE_UNITS = 100_000n; // 0.10 USDT in 6-decimal units
 // AND WalletClient). When NEXT_PUBLIC_CELO_RPC_URL is set (typically
 // Alchemy), viem tries it first and falls back to Forno on ANY error —
 // including the HTTP 429 "Monthly capacity limit" page Alchemy returns
-// when its free tier runs out. Without this, a single bad day on the
-// primary RPC silently brick every on-chain read in the app (treasury
-// state, balances, log scans, the auto-fund cron, …). If the env var
-// isn't configured we go straight to Forno with no fallback layer.
+// when its free tier runs out. dRPC sits in third position as a final
+// safety net (free public endpoint, internally load-balanced) so a
+// rare Alchemy + Forno simultaneous hiccup doesn't brick on-chain reads.
+// If the primary env var isn't configured we still get Forno + dRPC.
 export const CELO_TRANSPORT: Transport =
   process.env.NEXT_PUBLIC_CELO_RPC_URL &&
   process.env.NEXT_PUBLIC_CELO_RPC_URL !== FORNO_RPC
-    ? fallback([http(CELO_RPC_URL), http(FORNO_RPC)])
-    : http(FORNO_RPC);
+    ? fallback([http(CELO_RPC_URL), http(FORNO_RPC), http(DRPC_RPC)])
+    : fallback([http(FORNO_RPC), http(DRPC_RPC)]);
