@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useAccount, useConnect } from "wagmi";
+import { parseEther } from "viem";
+import { useAccount, useBalance, useConnect } from "wagmi";
 import { ACTIVE_CHAIN, STABLECOIN } from "./chain";
 
 // MiniPay is Opera Mini's stablecoin wallet on Celo. It injects window.ethereum
@@ -40,28 +41,49 @@ export function useIsMiniPay(): boolean {
   return inMiniPay;
 }
 
+// Minimum CELO we want a non-MiniPay wallet to hold before we trust
+// it to pay gas in CELO. A claimMultiple costs ~0.001-0.005 CELO; the
+// 0.01 floor leaves comfortable headroom and matches the welcome-gas
+// airdrop size.
+const GAS_FLOOR_CELO = parseEther("0.01");
+
 // CIP-64 fee abstraction overrides for any user-facing writeContract /
-// sendTransaction call. Spread the return value into the tx params so
-// MiniPay users (who hide CELO) can pay gas in the app's stablecoin
-// instead. Outside MiniPay we omit feeCurrency — the user's wallet
-// (Privy embedded, MetaMask, Farcaster, …) is expected to have CELO,
-// either airdropped by welcome-gas or self-funded.
+// sendTransaction call. Spread the return value into the tx params.
+//
+// Policy:
+//   - MiniPay: always pay gas in USDT (users never hold CELO there).
+//   - Other wallets (Privy embedded, MetaMask, Farcaster, …): use USDT
+//     gas only when the wallet's CELO balance is below GAS_FLOOR_CELO.
+//     This matters most for Privy embedded — welcome-gas seeds ~0.01
+//     CELO which gets eaten by a few plays, leaving the user unable
+//     to claim their prize because the claim tx had no CELO to pay
+//     gas with. If the wallet does have CELO (external user who self-
+//     funded), we let them pay in CELO since CIP-64 carries an adapter
+//     fee that makes USDT gas slightly more expensive.
 //
 // Why USDT specifically: it's the only token nerdos.fun charges in, so
-// any user who has played at least once paid in USDT. Brand-new MiniPay
-// users without USDT will hit the NeedFundsModal which deeplinks them
-// to MiniPay's Add Cash screen. Picking the user's highest-balance
-// stablecoin dynamically (celopedia minipay-templates §6) is a future
-// optimization — fine for now.
+// any user with a win to claim has USDT in their wallet by construction.
 //
 // Returns a typed object literal that's safe to spread into viem's
 // writeContract / sendTransaction args even on chains without an
 // adapter — `feeCurrency: undefined` is a no-op.
 export function useTxOverrides(): { feeCurrency?: `0x${string}` } {
   const inMiniPay = useIsMiniPay();
-  if (!inMiniPay) return {};
+  const { address } = useAccount();
+  const { data: celoBalance } = useBalance({
+    address,
+    chainId: ACTIVE_CHAIN.id,
+  });
   const fc = STABLECOIN[ACTIVE_CHAIN.id]?.feeCurrency;
-  return fc ? { feeCurrency: fc } : {};
+  if (!fc) return {};
+  if (inMiniPay) return { feeCurrency: fc };
+  // Until the balance loads, default to CIP-64 — safer to slightly
+  // overpay gas in USDT than to broadcast a tx that may revert for
+  // lack of CELO.
+  if (!celoBalance || celoBalance.value < GAS_FLOOR_CELO) {
+    return { feeCurrency: fc };
+  }
+  return {};
 }
 
 export function useMiniPayAutoConnect(): void {
