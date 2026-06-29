@@ -327,14 +327,23 @@ async function rollPot(b: Bucket, today: string): Promise<LangResult> {
     }
   }
 
-  // Reconcile today's day_number against on-chain currentDay. After a
-  // successful rollDay, currentDay advanced; that's the number the
-  // contract uses in claim() / pot() / winnerOf() forever after. If
-  // rollDay failed, currentDay stayed put and our optimistic +1 is
-  // wrong — fixing it here means a failed roll never accumulates +1
-  // drift into every downstream claim. The 2026-05-31 Alchemy
-  // outage rotted ~5 days of BD before we caught it; that incident
-  // is what motivated this block.
+  // Reconcile today's day_number against on-chain currentDay.
+  //
+  // Two cases:
+  //   A) rolledTx truthy → rollDay confirmed by receipt.status. Chain
+  //      currentDay MUST be lastPot.day_number + 1. If readContract
+  //      returns anything else, it's a stale read from a fallback RPC
+  //      node (Forno/dRPC lag behind Alchemy when used as fallback —
+  //      they can be 1+ blocks behind the block that just confirmed
+  //      our write). Trust the optimistic value, do NOT overwrite.
+  //      Overwriting with the stale value was what caused the 2026-06
+  //      drift: every day's self-heal silently DECREMENTED today's
+  //      day_number, then the next day's INSERT optimistically did +1
+  //      from that bad base, so the drift persisted forever.
+  //
+  //   B) rolledTx null → rollDay was skipped or failed (rare race or
+  //      RPC outage like 2026-05-31). Chain currentDay is the truth;
+  //      the optimistic +1 we wrote is wrong. Fix BD to match chain.
   let chainDayNumber = lastPot.day_number + 1;
   if (POT_ADDRESS !== zeroAddress) {
     try {
@@ -345,17 +354,26 @@ async function rollPot(b: Bucket, today: string): Promise<LangResult> {
         args: [BigInt(b.gameId)],
       })) as bigint;
       chainDayNumber = Number(onchain);
-      if (chainDayNumber !== lastPot.day_number + 1) {
-        await withLangFilter(
-          supabase
-            .from("pots")
-            .update({ day_number: chainDayNumber })
-            .eq("game", b.game),
-          b.lang,
-        ).eq("day_utc", today);
-        console.warn(
-          `day_number drift fixed for ${b.label}: optimistic ${lastPot.day_number + 1}, chain ${chainDayNumber}`,
-        );
+      const expected = lastPot.day_number + 1;
+      if (chainDayNumber !== expected) {
+        if (rolledTx) {
+          // Case A: stale read after confirmed rollDay. Trust optimistic.
+          console.warn(
+            `stale currentDay read for ${b.label}: chain ${chainDayNumber}, expected ${expected} after confirmed rollDay ${rolledTx} — keeping optimistic ${expected}`,
+          );
+        } else {
+          // Case B: rollDay didn't happen; trust chain.
+          await withLangFilter(
+            supabase
+              .from("pots")
+              .update({ day_number: chainDayNumber })
+              .eq("game", b.game),
+            b.lang,
+          ).eq("day_utc", today);
+          console.warn(
+            `day_number drift fixed for ${b.label}: optimistic ${expected}, chain ${chainDayNumber}`,
+          );
+        }
       }
     } catch (e) {
       console.warn(
@@ -436,7 +454,20 @@ async function rollDayOnChain(
       functionName: "rollDay",
       args: [BigInt(gameId), (winner ?? zeroAddress) as Hex],
     });
-    await celoClient.waitForTransactionReceipt({ hash });
+    const receipt = await celoClient.waitForTransactionReceipt({ hash });
+    // viem's writeContract doesn't throw on on-chain revert (only on
+    // simulation/broadcast failures), so the receipt status is the
+    // only reliable signal that rollDay actually advanced chain state.
+    // Without this check, a reverted rollDay (e.g. AlreadyRolled from
+    // a duplicate cron invocation) would return a hash, the caller
+    // would treat rollDay as successful, and downstream BD writes would
+    // get attributed to the wrong day_number.
+    if (receipt.status !== "success") {
+      console.error(
+        `rollDay reverted on-chain for gameId=${gameId}, tx=${hash}`,
+      );
+      return null;
+    }
     return hash;
   } catch (e) {
     console.error(`rollDay on-chain failed for gameId=${gameId}:`, e);
