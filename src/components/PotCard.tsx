@@ -6,6 +6,7 @@ import { fmtUSD } from "@/lib/format";
 import { PayAndPlayButton } from "@/components/PayAndPlayButton";
 import { PlayerName } from "@/components/PlayerName";
 import { useLang } from "@/lib/lang-provider";
+import { useIsMiniPay } from "@/lib/minipay";
 import type { Lang } from "@/lib/i18n";
 import type { LobbyData } from "@/lib/api";
 
@@ -54,6 +55,7 @@ export function PotCard({
   lobby: LobbyData | null;
 }) {
   const { t } = useLang();
+  const inMiniPay = useIsMiniPay();
   const meta = META[game];
 
   const rows = lobby?.leaderboard ?? [];
@@ -105,12 +107,16 @@ export function PotCard({
                 </span>
               </div>
             </div>
-            <div className="text-right leading-tight">
-              <span className="text-xs text-ink/60">{t.sponsoredBy} </span>
-              <span className="font-display text-base tracking-wider text-ink">
-                {b.sponsor}
-              </span>
-            </div>
+            {/* MiniPay listing feedback: no sponsor branding inside the
+                mini app. The bonus prize itself stays visible. */}
+            {!inMiniPay && (
+              <div className="text-right leading-tight">
+                <span className="text-xs text-ink/60">{t.sponsoredBy} </span>
+                <span className="font-display text-base tracking-wider text-ink">
+                  {b.sponsor}
+                </span>
+              </div>
+            )}
           </div>
         ))}
 
@@ -143,12 +149,14 @@ export function PotCard({
         playerHasFreePlay={!!lobby?.playerHasFreePlay}
       />
 
-        <Link
-          href={`/sponsor?game=${game}`}
-          className={`text-center text-xs font-display tracking-widest uppercase ${meta.sponsorText} hover:underline -mt-1`}
-        >
-          {t.sponsorThisPot}
-        </Link>
+        {!inMiniPay && (
+          <Link
+            href={`/sponsor?game=${game}`}
+            className={`text-center text-xs font-display tracking-widest uppercase ${meta.sponsorText} hover:underline -mt-1`}
+          >
+            {t.sponsorThisPot}
+          </Link>
+        )}
       </div>
     </div>
   );

@@ -271,6 +271,10 @@ export default function YouPage() {
           >
             {t.supportLabel}
           </a>
+          {/* Log out hidden inside MiniPay per listing feedback — the
+              wallet is MiniPay's own; there's no session to leave. */}
+          {!inMiniPay && (
+          <>
           <button
             onClick={async () => {
               // Goal of this handler: leave the browser in the same state
@@ -324,6 +328,8 @@ export default function YouPage() {
           <p className="text-[11px] text-muted text-center mt-2">
             {t.disconnectHint}
           </p>
+          </>
+          )}
           {/* Legal footer — Terms + Privacy as small discrete links so
               MiniPay reviewers (and users) can find them, without
               competing visually with the Cerrar-sesión button. */}

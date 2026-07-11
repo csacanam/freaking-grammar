@@ -318,7 +318,7 @@ export function PayAndPlayButton({
         {showCaption ? (
           <span className="flex flex-col items-center leading-tight gap-1">
             <span>{playLabel}</span>
-            <span className="text-sm tracking-[0.15em] uppercase text-yellow font-display">
+            <span className="text-sm tracking-[0.15em] uppercase text-white font-display">
               {playerHasFreePlay ? (
                 <>⏱  {t.rulesHint}</>
               ) : (

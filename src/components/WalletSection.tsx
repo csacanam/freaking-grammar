@@ -170,7 +170,12 @@ export function WalletSection() {
       {/* Address block. Order: context (what this is + network
           constraint), then the value, then the copy CTA. Constraint
           stays with the explanation so the user reads it BEFORE they
-          copy+paste, not after. */}
+          copy+paste, not after.
+
+          Hidden inside MiniPay per listing feedback: the wallet address
+          must not be surfaced there — MiniPay owns receive/send flows
+          natively. */}
+      {!inMiniPay && (
       <div className="flex flex-col gap-2.5">
         <p className="text-sm text-muted leading-snug px-1">
           {t.addressHint}{" "}
@@ -191,6 +196,7 @@ export function WalletSection() {
           {copied ? t.copied : t.copyAddress}
         </button>
       </div>
+      )}
 
       {/* Per-token cards — each with big balance, human label, purpose copy,
           and context-specific actions (Add money / Send). Inside MiniPay
@@ -242,7 +248,9 @@ export function WalletSection() {
                   Add {b.symbol}
                 </button>
               )}
-              {b.address && b.balance > 0n && (
+              {/* Send hidden inside MiniPay per listing feedback —
+                  MiniPay's native wallet already covers sending. */}
+              {!inMiniPay && b.address && b.balance > 0n && (
                 <button
                   onClick={() => setSendFor(b)}
                   title={t.sendToAnotherWallet}

@@ -1,7 +1,7 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   useAccount,
   usePublicClient,
@@ -23,6 +23,7 @@ import { BackLink } from "@/components/BackLink";
 import { friendlyError, fmtUSD } from "@/lib/format";
 import { ACTIVE_CHAIN, POT_ADDRESS, STABLECOIN } from "@/lib/chain";
 import { useLang } from "@/lib/lang-provider";
+import { useIsMiniPay } from "@/lib/minipay";
 import FreakingPotArtifact from "@/lib/contracts/FreakingPot.json";
 
 const FREAKING_POT_ABI = FreakingPotArtifact.abi;
@@ -43,6 +44,8 @@ export default function SponsorPage() {
 function SponsorInner() {
   const { t } = useLang();
   const sp = useSearchParams();
+  const router = useRouter();
+  const inMiniPay = useIsMiniPay();
   const initialGame = (sp.get("game") || "").toLowerCase() === "es" ? 2 : 1;
 
   const [gameId, setGameId] = useState<number>(initialGame);
@@ -156,6 +159,13 @@ function SponsorInner() {
   }
 
   const busy = stage !== "idle";
+
+  // MiniPay listing feedback: no sponsor flow inside the mini app. The
+  // entry links are hidden there, but guard direct navigation too.
+  useEffect(() => {
+    if (inMiniPay) router.replace("/");
+  }, [inMiniPay, router]);
+  if (inMiniPay) return null;
 
   return (
     <div className="flex-1 flex flex-col px-5 pt-6 pb-10 max-w-md mx-auto w-full gap-5">

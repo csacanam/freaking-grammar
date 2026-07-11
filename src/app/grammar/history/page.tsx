@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { fmtUSD } from "@/lib/format";
 import { getHistory, type HistoryDay } from "@/lib/api";
 import { useLang } from "@/lib/lang-provider";
+import { useIsMiniPay } from "@/lib/minipay";
 import { type Lang } from "@/lib/i18n";
 import { SakaLabsCredit } from "@/components/SakaLabsCredit";
 import { PlayerName } from "@/components/PlayerName";
@@ -14,6 +15,7 @@ type TaggedDay = HistoryDay & { lang: Lang };
 
 export default function HistoryPage() {
   const { t } = useLang();
+  const inMiniPay = useIsMiniPay();
   const [days, setDays] = useState<TaggedDay[] | null>(null);
 
   useEffect(() => {
@@ -96,7 +98,8 @@ export default function HistoryPage() {
                   >
                     <span className="text-muted font-display tracking-widest uppercase">
                       {b.emoji ? `${b.emoji} ` : ""}
-                      {b.sponsor}
+                      {/* MiniPay: bonus stays, sponsor branding doesn't */}
+                      {inMiniPay ? t.extraPrize : b.sponsor}
                     </span>
                     <span className="text-ink font-sans">
                       <span className="font-bold tabular-nums">
