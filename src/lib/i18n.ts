@@ -24,6 +24,23 @@ export const dict = {
     cardLive: "Live",
     cardSoon: "Soon",
     backToPicker: "nerdos.fun",
+    // Onboarding slides (picker home, first visit + "How it works" replay).
+    obTitle1: "Daily games for nerdos",
+    obBody1:
+      "Two games, a new round every day: Grammar and Math. A run takes under a minute and plays straight from your wallet.",
+    obTitle2: "One wrong answer ends the run",
+    obBody2:
+      "Answer fast — the timer gets shorter with every question. A single mistake ends it, and your best streak is your score.",
+    obTitle3: "Winner takes the whole prize",
+    obBody3:
+      "Every $0.10 entry feeds today's prize. The highest score when the day closes takes all of it, paid in USDT.",
+    obTitle4: "Ready to play?",
+    obBody4:
+      "Pick Grammar or Math, keep a little USDT in your wallet, and go. A fresh prize starts every day.",
+    obSkip: "Skip",
+    obNext: "Next",
+    obStart: "Let's go",
+    obHowItWorks: "How it works",
     // Math chrome
     mathTitle: "Math",
     mathRule1: "You see an equation. Decide if the result shown is right or wrong.",
@@ -268,6 +285,11 @@ export const dict = {
     // contact path by MiniPay's listing rules. Channel-agnostic label
     // so we can swap the link without touching copy.
     supportLabel: "Help & support",
+    supportTitle: "Help & support",
+    supportBody:
+      "We answer questions in our Telegram group — usually within a few hours.",
+    supportOpenTelegram: "Open Telegram",
+    supportCopyLink: "Copy link instead",
     // Legal links — rendered in the /you footer. Short labels so the row
     // doesn't crowd the disconnect button.
     termsLink: "Terms",
@@ -348,6 +370,22 @@ export const dict = {
     cardLive: "En vivo",
     cardSoon: "Pronto",
     backToPicker: "nerdos.fun",
+    obTitle1: "Juegos diarios para nerdos",
+    obBody1:
+      "Dos juegos, una ronda nueva cada día: Gramática y Matemáticas. Una partida toma menos de un minuto y se juega directo desde tu wallet.",
+    obTitle2: "Un error y se acaba",
+    obBody2:
+      "Responde rápido — el tiempo se acorta con cada pregunta. Un solo error termina la partida, y tu mejor racha es tu puntaje.",
+    obTitle3: "El ganador se lleva todo",
+    obBody3:
+      "Cada entrada de $0.10 alimenta el premio del día. El puntaje más alto al cierre se lo lleva completo, pagado en USDT.",
+    obTitle4: "¿Listo para jugar?",
+    obBody4:
+      "Elige Gramática o Matemáticas, ten un poco de USDT en tu wallet y arranca. Cada día empieza un premio nuevo.",
+    obSkip: "Saltar",
+    obNext: "Siguiente",
+    obStart: "Vamos",
+    obHowItWorks: "Cómo funciona",
     mathTitle: "Matemáticas",
     mathRule1: "Ves una ecuación. Decide si el resultado mostrado es correcto o incorrecto.",
     mathRule2: "2.5 segundos al inicio — el reloj baja cada pregunta.",
@@ -575,6 +613,11 @@ export const dict = {
       "Tus victorias, premios pendientes y saldos aparecen acá cuando te conectes.",
     miniPayConnecting: "Conectando con MiniPay…",
     supportLabel: "Ayuda y soporte",
+    supportTitle: "Ayuda y soporte",
+    supportBody:
+      "Respondemos tus preguntas en nuestro grupo de Telegram — normalmente en pocas horas.",
+    supportOpenTelegram: "Abrir Telegram",
+    supportCopyLink: "Mejor copiar el link",
     termsLink: "Términos",
     privacyLink: "Privacidad",
     // Disconnect — see EN note above

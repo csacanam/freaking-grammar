@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useLang } from "@/lib/lang-provider";
+import { Onboarding, useOnboarding } from "@/components/Onboarding";
 
 // nerdos.fun platform picker. The bare domain lands here so visitors see
 // the platform-level identity first; clicking into a game drops them
@@ -11,9 +12,12 @@ import { useLang } from "@/lib/lang-provider";
 // is scoped to in-game pages.
 export default function PickerHome() {
   const { t } = useLang();
+  const onboarding = useOnboarding();
 
   return (
     <div className="flex-1 flex flex-col max-w-md mx-auto w-full px-5 pt-8 pb-16">
+      {onboarding.open && <Onboarding onClose={onboarding.close} />}
+
       <header className="flex flex-col items-center gap-4 mb-8">
         <Image
           src="/mascot.png"
@@ -63,9 +67,20 @@ export default function PickerHome() {
         />
       </div>
 
+      {/* Replay entry point for the intro. Without it the slides are a
+          one-shot: dismissed on first visit and unreachable forever after,
+          which strands anyone who skipped past them too fast. */}
+      <button
+        onClick={onboarding.replay}
+        className="self-center mt-8 inline-flex items-center gap-2 text-base font-display tracking-[0.2em] uppercase text-muted hover:text-ink"
+      >
+        <span aria-hidden>💡</span>
+        {t.obHowItWorks}
+      </button>
+
       <Link
         href="/stats"
-        className="self-center mt-8 inline-flex items-center gap-2 text-base font-display tracking-[0.2em] uppercase text-muted hover:text-ink"
+        className="self-center mt-4 inline-flex items-center gap-2 text-base font-display tracking-[0.2em] uppercase text-muted hover:text-ink"
       >
         <span aria-hidden>📊</span>
         {t.statsLinkLabel}

@@ -24,6 +24,7 @@ import FreakingPotArtifact from "@/lib/contracts/FreakingPot.json";
 import { SakaLabsCredit } from "@/components/SakaLabsCredit";
 import { PlayerName } from "@/components/PlayerName";
 import { WalletSection } from "@/components/WalletSection";
+import { SupportModal } from "@/components/SupportModal";
 import { useIsMiniPay, useTxOverrides } from "@/lib/minipay";
 
 const FREAKING_POT_ABI = FreakingPotArtifact.abi;
@@ -40,6 +41,7 @@ export default function YouPage() {
   const [unclaimed, setUnclaimed] = useState<UnclaimedWin[] | null>(null);
   const [claiming, setClaiming] = useState(false);
   const [claimError, setClaimError] = useState<string | null>(null);
+  const [supportOpen, setSupportOpen] = useState(false);
   const { address: player } = useCurrentPlayer();
   const { isConnected, chainId } = useAccount();
   const { openConnectModal } = useConnectModal();
@@ -257,20 +259,22 @@ export default function YouPage() {
 
       {isConnected && <WalletSection />}
 
+      <SupportModal open={supportOpen} onClose={() => setSupportOpen(false)} />
+
       {isConnected && (
         <section className="mt-auto pt-4 pb-6 flex flex-col gap-3">
-          {/* Support link — required as an in-app contact path by
-              MiniPay listing rules (§6 Integration & Support). Telegram
-              group chosen as the channel; same link is shared with
-              MiniPay reviewers on the Stage-2 readiness form. */}
-          <a
-            href="https://t.me/+54nPB4Whv0NlOWVh"
-            target="_blank"
-            rel="noopener noreferrer"
+          {/* Support — required as an in-app contact path by MiniPay listing
+              rules (§6 Integration & Support). This used to be a bare
+              target="_blank" anchor to the Telegram group; a reviewer hit an
+              error page on it, so the hand-off now goes through SupportModal,
+              which keeps the user on a working in-app screen regardless of
+              what the WebView does with the link. */}
+          <button
+            onClick={() => setSupportOpen(true)}
             className="text-center text-[11px] font-display tracking-widest uppercase text-muted hover:text-ink"
           >
             {t.supportLabel}
-          </a>
+          </button>
           {/* Log out hidden inside MiniPay per listing feedback — the
               wallet is MiniPay's own; there's no session to leave. */}
           {!inMiniPay && (
