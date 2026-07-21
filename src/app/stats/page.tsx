@@ -162,8 +162,6 @@ type Stats = {
     daysOnChain: number;
     usdtIn: number;
     usdtOut: number;
-    potAddress: string;
-    operatorAddress: string | null;
     contractGasCELO: number; // total CELO burned on txs to the pot contract
     contractGasTxs: number;  // sample size for the gas figure (Blockscout-paginated)
     // MiniPay Stage-2 metrics: user-only slices of the above and the
@@ -441,7 +439,6 @@ async function loadStats(): Promise<Stats | null> {
   const daysOnChain = runs.length
     ? Math.max(1, daysBetween(earliestDay, today) + 1)
     : 0;
-  const operatorAddrPrint = operatorAddrForGas;
 
   // ---------------------------------------------------- SPONSORS
   const sponsors = await loadSponsors();
@@ -508,8 +505,6 @@ async function loadStats(): Promise<Stats | null> {
       daysOnChain,
       usdtIn,
       usdtOut,
-      potAddress: POT_ADDRESS.toLowerCase(),
-      operatorAddress: operatorAddrPrint?.toLowerCase() ?? null,
       contractGasCELO: contractGas.celo,
       contractGasTxs: contractGas.txs,
       userGasCELO: contractGas.userCelo,
@@ -1150,25 +1145,6 @@ export default async function StatsPage() {
             </table>
           </Card>
 
-          <Card title={t.statsCardContracts}>
-            <ul className="text-sm space-y-2">
-              <ContractRow
-                label={t.statsContractPot}
-                address={stats.onchain.potAddress}
-              />
-              {stats.onchain.operatorAddress && (
-                <ContractRow
-                  label={t.statsContractOperator}
-                  address={stats.onchain.operatorAddress}
-                />
-              )}
-              <ContractRow
-                label={t.statsContractUsdt}
-                address="0x48065fbbe25f71c9282ddf5e1cd6d6a887483d5e"
-              />
-            </ul>
-          </Card>
-
           {stats.sponsors.length > 0 && (
             <>
               <SectionTitle>{t.statsSectionSponsors}</SectionTitle>
@@ -1394,32 +1370,6 @@ function DistributionRow({
         <span className="text-[11px]">({pct.toFixed(0)}%)</span>
       </span>
     </div>
-  );
-}
-
-function ContractRow({
-  label,
-  address,
-}: {
-  label: string;
-  address: string;
-}) {
-  const short = `${address.slice(0, 6)}…${address.slice(-4)}`;
-  const explorer = `https://celoscan.io/address/${address}`;
-  return (
-    <li className="flex items-center justify-between gap-3">
-      <span className="text-muted text-xs font-display tracking-widest uppercase">
-        {label}
-      </span>
-      <a
-        href={explorer}
-        target="_blank"
-        rel="noreferrer"
-        className="font-mono text-xs text-teal hover:underline"
-      >
-        {short}
-      </a>
-    </li>
   );
 }
 
