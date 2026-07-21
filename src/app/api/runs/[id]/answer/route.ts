@@ -5,6 +5,29 @@ export const dynamic = "force-dynamic";
 
 type QuestionRow = { id: string; phrase: string; correct: string; wrong: string };
 
+// Floor on how fast a real human can answer after a question is served.
+// Below this the caller is almost certainly a bot hitting the API directly —
+// no human reads a phrase + two words and taps in under 400ms. Matches the
+// Math route's floor. Rejected with the same shape as a wrong answer so a bot
+// can't reverse-engineer the threshold by pacing itself.
+const MIN_ANSWER_MS = 400;
+
+// The client gives 5s per question (QUESTION_SECONDS). This is the server-side
+// ceiling for the same window, kept deliberately lenient: served_at starts
+// when we INSERT the next question, but the client's 5s clock only starts once
+// it receives + renders it (network + transition), so server-elapsed runs
+// ahead of the player's clock. A generous overrun avoids falsely timing out
+// real players; the real anti-bot lever here is the floor + hidden answer.
+const GRAMMAR_QUESTION_MS = 5000;
+const ANSWER_OVERRUN_MS = 3000;
+
+// Serve the two words shuffled and WITHOUT saying which is correct — see the
+// note in ../../route.ts. Keeps the answer server-side so a direct-API bot
+// can't just echo back the correct word.
+function shuffledOptions(correct: string, wrong: string): [string, string] {
+  return Math.random() < 0.5 ? [correct, wrong] : [wrong, correct];
+}
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -44,7 +67,7 @@ export async function POST(
   // Latest served question for this run.
   const { data: rqRow } = await supabase
     .from("run_questions")
-    .select("id,question_id,q_index,answered_at")
+    .select("id,question_id,q_index,served_at,answered_at")
     .eq("run_id", runId)
     .order("q_index", { ascending: false })
     .limit(1)
@@ -57,10 +80,49 @@ export async function POST(
     id: string;
     question_id: string;
     q_index: number;
+    served_at: string;
     answered_at: string | null;
   };
   if (rq.answered_at) {
     return Response.json({ error: "already-answered" }, { status: 409 });
+  }
+
+  // Server-side timer enforcement. The 5s per-question clock the UI shows is
+  // pure decoration — anyone POSTing here directly bypasses it. Read our own
+  // served_at vs now and shut down two failure modes, mirroring the Math route:
+  //   1. too fast (< MIN_ANSWER_MS) → direct-API bot; close silently as "wrong"
+  //      so it can't binary-search the threshold by pacing itself.
+  //   2. too slow (> budget + overrun) → ran out of time; close as "timeout".
+  // q_index 0 is the untimed warm-up (the briefing says "take your time"), so
+  // no upper bound there — but the floor still applies so a bot can't drop in
+  // instant answers on the first question either.
+  const elapsedMs = Date.now() - new Date(rq.served_at).getTime();
+  const tooFast = elapsedMs < MIN_ANSWER_MS;
+  const tooSlow =
+    rq.q_index > 0 && elapsedMs > GRAMMAR_QUESTION_MS + ANSWER_OVERRUN_MS;
+  if (tooFast || tooSlow) {
+    const reason: "wrong" | "timeout" = tooSlow ? "timeout" : "wrong";
+    await supabase
+      .from("run_questions")
+      .update({ answered_at: new Date().toISOString(), answer_correct: false })
+      .eq("id", rq.id);
+    await supabase
+      .from("runs")
+      .update({ status: "finished", ended_at: new Date().toISOString() })
+      .eq("id", runId);
+    const rank = await computeRank(
+      { game: "grammar", lang: run.lang as "en" | "es" },
+      run.day_utc,
+      run.player,
+      run.score,
+    );
+    return Response.json({
+      correct: false,
+      ended: true,
+      reason,
+      score: run.score,
+      rank,
+    });
   }
 
   const { data: qRow } = await supabase
@@ -158,8 +220,7 @@ export async function POST(
     score: newScore,
     nextQuestion: {
       phrase: next.phrase,
-      correct: next.correct,
-      wrong: next.wrong,
+      options: shuffledOptions(next.correct, next.wrong),
     },
   });
 }

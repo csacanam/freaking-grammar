@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { pickPalette } from "@/lib/palette";
 import {
@@ -17,7 +17,16 @@ import { AutoFitText } from "@/components/AutoFitText";
 
 const QUESTION_SECONDS = 5;
 
-type Outcome = "playing" | "correct" | "wrong" | "timeout" | "loading";
+// "submitting" is the brief window after a tap while we await the server's
+// verdict — the client no longer knows correctness locally (the answer isn't
+// leaked anymore), so it highlights the tapped side and waits.
+type Outcome =
+  | "playing"
+  | "submitting"
+  | "correct"
+  | "wrong"
+  | "timeout"
+  | "loading";
 
 export default function GamePage() {
   return (
@@ -38,7 +47,11 @@ function GameInner() {
   const [qIndex, setQIndex] = useState(0);
   const [question, setQuestion] = useState<RunQuestion | null>(null);
   const [palette, setPalette] = useState(() => pickPalette(0));
-  const [leftIsCorrect, setLeftIsCorrect] = useState(true);
+  // Which side the player tapped for the current question. Drives the tapped-
+  // side highlight while we wait for the server verdict (correctness is no
+  // longer known client-side). Server already shuffles the two options, so
+  // there's no client-side "which side is correct" flag anymore.
+  const [pickedSide, setPickedSide] = useState<"left" | "right" | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(QUESTION_SECONDS);
   const [outcome, setOutcome] = useState<Outcome>("loading");
   // Two-phase pre-game: (1) briefing overlay with rules + explicit "I'm ready"
@@ -76,7 +89,7 @@ function GameInner() {
           const res = await startRun(game, address, txHash);
           setRunId(res.runId);
           setQuestion(res.question);
-          setLeftIsCorrect(Math.random() < 0.5);
+          setPickedSide(null);
           setPalette(pickPalette(0));
           setSecondsLeft(QUESTION_SECONDS);
           setOutcome("playing");
@@ -150,15 +163,20 @@ function GameInner() {
   const onPick = useCallback(
     async (side: "left" | "right") => {
       if (outcome !== "playing" || !question || !runId) return;
-      const pickedCorrect = (side === "left") === leftIsCorrect;
-      const pickedWord = pickedCorrect ? question.correct : question.wrong;
-      setOutcome(pickedCorrect ? "correct" : "wrong");
-
-      const minShow = pickedCorrect ? 350 : 700;
-      const minDelay = new Promise<void>((r) => setTimeout(r, minShow));
+      // We only know the WORD we tapped, not whether it's correct — the server
+      // owns that now. Highlight the tapped side immediately, then wait for the
+      // verdict. minDelay runs in parallel so a fast network still shows the
+      // tap for a beat before we advance.
+      const pickedWord = side === "left" ? question.options[0] : question.options[1];
+      setPickedSide(side);
+      setOutcome("submitting");
+      const minDelay = new Promise<void>((r) => setTimeout(r, 450));
 
       try {
         const [res] = await Promise.all([submitAnswer(runId, pickedWord), minDelay]);
+        setOutcome(res.correct ? "correct" : "wrong");
+        // Hold the wrong-answer feedback a touch longer before leaving.
+        if (!res.correct) await new Promise<void>((r) => setTimeout(r, 250));
         if ("ended" in res && res.ended) {
           posthog.capture("play_finished", {
             game,
@@ -173,7 +191,7 @@ function GameInner() {
         } else if (res.correct && "nextQuestion" in res) {
           setQuestion(res.nextQuestion);
           setScore(res.score);
-          setLeftIsCorrect(Math.random() < 0.5);
+          setPickedSide(null);
           setPalette(pickPalette(qIndex + 1));
           setQIndex((i) => i + 1);
           setSecondsLeft(QUESTION_SECONDS);
@@ -182,30 +200,20 @@ function GameInner() {
       } catch {
         await minDelay;
         router.replace(
-          `/grammar/game/over?score=${score}&reason=${pickedCorrect ? "cleared" : "wrong"}&game=${game}`,
+          `/grammar/game/over?score=${score}&reason=wrong&game=${game}`,
         );
       }
     },
-    [outcome, question, runId, leftIsCorrect, score, qIndex, router],
+    [outcome, question, runId, score, qIndex, router, game],
   );
 
-  const left = useMemo(
-    () => (question ? (leftIsCorrect ? question.correct : question.wrong) : ""),
-    [question, leftIsCorrect],
-  );
-  const right = useMemo(
-    () => (question ? (leftIsCorrect ? question.wrong : question.correct) : ""),
-    [question, leftIsCorrect],
-  );
+  const left = question?.options[0] ?? "";
+  const right = question?.options[1] ?? "";
 
   const phraseParts = (question?.phrase ?? "").split("____");
 
-  const pickedLeft =
-    (outcome === "correct" && leftIsCorrect) ||
-    (outcome === "wrong" && !leftIsCorrect);
-  const pickedRight =
-    (outcome === "correct" && !leftIsCorrect) ||
-    (outcome === "wrong" && leftIsCorrect);
+  const pickedLeft = pickedSide === "left";
+  const pickedRight = pickedSide === "right";
 
   const sideStyle = (isPicked: boolean, isIdle: boolean) => {
     if (isPicked) return "ring-[10px] ring-inset ring-white scale-[1.03] z-[1]";

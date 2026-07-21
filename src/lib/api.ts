@@ -104,14 +104,24 @@ export async function getOpenRuns(player?: string): Promise<OpenRun[]> {
 
 // ---------------------------------------------------- runs / gameplay
 
-export type RunQuestion = { phrase: string; correct: string; wrong: string };
+// The two word options for a question, already SHUFFLED server-side. The
+// client no longer receives which one is correct — that used to leak the
+// answer (a bot could read `correct` and echo it back). Correctness is now
+// only known after submitting, from the server's `correct` boolean.
+export type RunQuestion = { phrase: string; options: [string, string] };
 
 export type StartRunResult = { runId: string; question: RunQuestion };
 
 export type AnswerResult =
   | { correct: true; score: number; nextQuestion: RunQuestion }
   | { correct: true; ended: true; score: number; rank: number; reason: "cleared" }
-  | { correct: false; ended: true; score: number; rank: number; reason: "wrong" };
+  | {
+      correct: false;
+      ended: true;
+      score: number;
+      rank: number;
+      reason: "wrong" | "timeout";
+    };
 
 export type FinishResult = { score: number; rank: number };
 

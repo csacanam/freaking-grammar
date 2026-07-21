@@ -11,6 +11,14 @@ export const dynamic = "force-dynamic";
 
 type QuestionRow = { id: string; phrase: string; correct: string; wrong: string };
 
+// Serve the two words in a random order and WITHOUT labelling which is
+// correct. Previously the payload named the `correct` word, so a bot hitting
+// the API could just echo it back — the core anti-cheat hole. Now the client
+// only gets an opaque, shuffled pair and learns correctness after answering.
+function shuffledOptions(correct: string, wrong: string): [string, string] {
+  return Math.random() < 0.5 ? [correct, wrong] : [wrong, correct];
+}
+
 export async function POST(req: NextRequest) {
   if (!supabase) {
     return Response.json({ error: "db-unconfigured" }, { status: 503 });
@@ -93,7 +101,7 @@ export async function POST(req: NextRequest) {
     const q = qRow as { phrase: string; correct: string; wrong: string };
     return Response.json({
       runId: dupId,
-      question: { phrase: q.phrase, correct: q.correct, wrong: q.wrong },
+      question: { phrase: q.phrase, options: shuffledOptions(q.correct, q.wrong) },
     });
   }
 
@@ -163,8 +171,7 @@ export async function POST(req: NextRequest) {
     runId,
     question: {
       phrase: pick.phrase,
-      correct: pick.correct,
-      wrong: pick.wrong,
+      options: shuffledOptions(pick.correct, pick.wrong),
     },
   });
 }
