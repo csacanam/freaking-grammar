@@ -30,10 +30,20 @@ import {
 import { useLang } from "@/lib/lang-provider";
 import { gameIdFor, type Lang, type Strings } from "@/lib/i18n";
 import { useIsMiniPay, useTxOverrides } from "@/lib/minipay";
-import { posthog } from "@/lib/posthog-provider";
 import FreakingPotArtifact from "@/lib/contracts/FreakingPot.json";
 
 const FREAKING_POT_ABI = FreakingPotArtifact.abi;
+
+// Bounded allowance requested in the approve step — 50 plays' worth of entry
+// fees (50 × $0.10 = $5 USDT). Deliberately NOT maxUint256: MiniPay caps how
+// much allowance a Mini App may request and denies anything over it (unlimited
+// → -32604 "Permission denied"). $5 sits safely under MiniPay's ~$10 cap
+// (unconfirmed at time of writing) so the approve always clears; once MiniPay
+// confirms the exact ceiling this can be raised toward it to make re-approval
+// even rarer. "Approve once, then play many times" is MiniPay's recommended
+// pattern — the paid-play flow only re-approves after this is spent below one
+// entry fee.
+const APPROVE_UNITS = ENTRY_FEE_UNITS * 50n;
 
 type Stage =
   | "idle"
@@ -76,11 +86,6 @@ export function PayAndPlayButton({
 
   const [stage, setStage] = useState<Stage>("idle");
   const [error, setError] = useState<string | null>(null);
-  // Raw wallet/SDK error message, surfaced on-screen for remote debugging of
-  // the MiniPay "Transaction rejected" report. Lets a remote tester screenshot
-  // the exact underlying error (which friendlyError() collapses away) without
-  // needing USB / chrome://inspect. Temporary diagnostic.
-  const [rawError, setRawError] = useState<string | null>(null);
   const [needFunds, setNeedFunds] = useState<{
     token: "USDT" | "CELO";
     balance: string;
@@ -170,19 +175,19 @@ export function PayAndPlayButton({
 
       if (allowance < ENTRY_FEE_UNITS) {
         setStage("approving");
-        // Approve EXACTLY the entry fee — never maxUint256. MiniPay auto-denies
-        // unlimited approvals (JSON-RPC -32604 "Permission denied", no signing
-        // sheet — that was the "Transaction rejected" testers hit). Approving
-        // the exact per-play amount also means no standing allowance sits on
-        // the pot contract between plays: `play` spends it back to ~0, so this
-        // branch re-approves each paid play. One extra tx per paid play is the
-        // deliberate trade-off for minimal allowance exposure.
+        // Approve a BOUNDED chunk (APPROVE_UNITS), never maxUint256. MiniPay
+        // caps the allowance a Mini App may request and auto-denies anything
+        // over it — an unlimited approve returned JSON-RPC -32604 "Permission
+        // denied" with no signing sheet (the "Transaction rejected" testers
+        // hit). Per MiniPay's own guidance the pattern is "approve once, then
+        // play" — NOT a fresh approve per play — so we approve several plays'
+        // worth up front and only top up once it's spent below one entry fee.
         const approveHash = await writeContractAsync({
           chainId: ACTIVE_CHAIN.id,
           address: token.address,
           abi: erc20Abi,
           functionName: "approve",
-          args: [POT_ADDRESS, ENTRY_FEE_UNITS],
+          args: [POT_ADDRESS, APPROVE_UNITS],
           ...txOverrides,
         });
         await publicClient.waitForTransactionReceipt({ hash: approveHash });
@@ -222,7 +227,6 @@ export function PayAndPlayButton({
 
   async function handleClick() {
     setError(null);
-    setRawError(null);
 
     if (!contractLive) return;
     if (!isConnected || !address) return; // handled by login buttons
@@ -242,28 +246,6 @@ export function PayAndPlayButton({
       const msg = err?.message;
       if (msg !== "insufficient-usdt" && msg !== "insufficient-celo") {
         setError(friendlyError(e, 120));
-        // Surface the raw error remotely: on-screen (screenshot-able) + to
-        // PostHog, so we can pin the exact cause of the MiniPay approve
-        // failure from a remote tester without USB debugging. viem wraps the
-        // provider error as "unknown RPC error", so dig into the nested
-        // cause/details for MiniPay's actual message + code.
-        const detail = extractErrorDetail(e);
-        setRawError(detail.slice(0, 400));
-        try {
-          posthog.capture("pay_and_play_error", {
-            stage,
-            raw_message: (err?.message ?? String(e)).slice(0, 500),
-            error_detail: detail.slice(0, 800),
-            error_name: err?.name ?? null,
-            in_minipay: inMiniPay,
-            has_free_play: playerHasFreePlay,
-            fee_currency: txOverrides.feeCurrency ?? null,
-            address: address?.toLowerCase() ?? null,
-            game_id: gameId,
-          });
-        } catch {
-          // never let analytics throw over the real error path
-        }
       }
       setStage("idle");
     }
@@ -375,11 +357,6 @@ export function PayAndPlayButton({
       {error && (
         <p className="text-xs text-red text-center font-mono">{error}</p>
       )}
-      {rawError && (
-        <p className="text-[10px] text-muted text-center font-mono break-all select-all opacity-70">
-          debug: {rawError}
-        </p>
-      )}
       <NeedFundsModal
         open={!!needFunds}
         token={needFunds?.token ?? "USDT"}
@@ -428,38 +405,6 @@ export function WalletIcon() {
       <path d="M21 12v4h-4a2 2 0 0 1 0-4h4z" />
     </svg>
   );
-}
-
-// Dig into a viem error chain to surface the *underlying* provider message.
-// viem throws e.g. UnknownRpcError("An unknown RPC error occurred") at the
-// top, but MiniPay's real message + JSON-RPC code live in nested cause/details.
-// Walk the cause chain and collect shortMessage/details/code so a remote
-// tester's screenshot tells us exactly why MiniPay refused the tx. Temporary.
-function extractErrorDetail(e: unknown): string {
-  const parts: string[] = [];
-  const seen = new Set<unknown>();
-  let node: unknown = e;
-  let depth = 0;
-  while (node && !seen.has(node) && depth < 6) {
-    seen.add(node);
-    const n = node as {
-      shortMessage?: string;
-      details?: string;
-      code?: number | string;
-      name?: string;
-      message?: string;
-      cause?: unknown;
-    };
-    if (n.details) parts.push(`details: ${n.details}`);
-    if (n.code !== undefined) parts.push(`code: ${n.code}`);
-    if (!n.details && !n.shortMessage && n.message) {
-      parts.push(n.message.split("\n")[0]);
-    }
-    node = n.cause;
-    depth++;
-  }
-  const joined = parts.join(" | ");
-  return joined || (e as Error)?.message || String(e);
 }
 
 function stageLabel(s: Stage, t: Strings): string {
