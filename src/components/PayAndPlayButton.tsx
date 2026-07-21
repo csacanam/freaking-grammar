@@ -11,12 +11,9 @@ import {
 import { useConnectModal } from "@rainbow-me/rainbowkit";
 import { useLogin } from "@privy-io/react-auth";
 import {
-  type Abi,
-  encodeFunctionData,
   erc20Abi,
   formatEther,
   isAddressEqual,
-  maxUint256,
   parseEther,
   zeroAddress,
 } from "viem";
@@ -104,38 +101,6 @@ export function PayAndPlayButton({
   async function runPlayFlow(currentAddress: `0x${string}`) {
     if (!publicClient) throw new Error("no-rpc");
 
-    // Pre-estimate gas against our own RPC (Forno via publicClient) and pass
-    // it explicitly to writeContract, so viem does NOT fire `eth_estimateGas`
-    // against MiniPay's injected provider. That estimation is the step that
-    // dies pre-flight for the `approve` inside MiniPay — the wallet throws
-    // before showing its signing sheet, surfacing as an immediate red
-    // "Transaction rejected" with no modal. The fee-per-gas calls
-    // (eth_gasPrice / eth_maxPriorityFeePerGas with the CIP-64 adapter) are
-    // network-level and work fine, so we leave those to viem. If our own
-    // estimate fails for any reason we return undefined and fall back to the
-    // wallet's estimation (the pre-fix behaviour) — never worse than today.
-    async function estimateGasSafe(
-      to: `0x${string}`,
-      data: `0x${string}`,
-    ): Promise<bigint | undefined> {
-      try {
-        const gas = await publicClient!.estimateGas({
-          account: currentAddress,
-          to,
-          data,
-          // feeCurrency mirrors the writeContract override (CIP-64) so the
-          // estimate is computed under the same gas-payment path.
-          ...(txOverrides.feeCurrency
-            ? { feeCurrency: txOverrides.feeCurrency }
-            : {}),
-        });
-        return (gas * 12n) / 10n; // +20% buffer over the estimate
-      } catch (e) {
-        console.warn("gas pre-estimate failed, deferring to wallet:", e);
-        return undefined;
-      }
-    }
-
     if (chainId !== ACTIVE_CHAIN.id) {
       setStage("switching");
       await switchChainAsync({ chainId: ACTIVE_CHAIN.id });
@@ -205,21 +170,19 @@ export function PayAndPlayButton({
 
       if (allowance < ENTRY_FEE_UNITS) {
         setStage("approving");
-        const approveGas = await estimateGasSafe(
-          token.address,
-          encodeFunctionData({
-            abi: erc20Abi,
-            functionName: "approve",
-            args: [POT_ADDRESS, maxUint256],
-          }),
-        );
+        // Approve EXACTLY the entry fee — never maxUint256. MiniPay auto-denies
+        // unlimited approvals (JSON-RPC -32604 "Permission denied", no signing
+        // sheet — that was the "Transaction rejected" testers hit). Approving
+        // the exact per-play amount also means no standing allowance sits on
+        // the pot contract between plays: `play` spends it back to ~0, so this
+        // branch re-approves each paid play. One extra tx per paid play is the
+        // deliberate trade-off for minimal allowance exposure.
         const approveHash = await writeContractAsync({
           chainId: ACTIVE_CHAIN.id,
           address: token.address,
           abi: erc20Abi,
           functionName: "approve",
-          args: [POT_ADDRESS, maxUint256],
-          ...(approveGas ? { gas: approveGas } : {}),
+          args: [POT_ADDRESS, ENTRY_FEE_UNITS],
           ...txOverrides,
         });
         await publicClient.waitForTransactionReceipt({ hash: approveHash });
@@ -227,21 +190,12 @@ export function PayAndPlayButton({
     }
 
     setStage(playerHasFreePlay ? "signing" : "paying");
-    const playGas = await estimateGasSafe(
-      POT_ADDRESS,
-      encodeFunctionData({
-        abi: FREAKING_POT_ABI as Abi,
-        functionName: "play",
-        args: [BigInt(gameId)],
-      }),
-    );
     const playHash = await writeContractAsync({
       chainId: ACTIVE_CHAIN.id,
       address: POT_ADDRESS,
       abi: FREAKING_POT_ABI,
       functionName: "play",
       args: [BigInt(gameId)],
-      ...(playGas ? { gas: playGas } : {}),
       ...txOverrides,
     });
     // Once writeContractAsync returns a hash, the wallet broadcast the tx
