@@ -290,12 +290,16 @@ export function PayAndPlayButton({
         setError(friendlyError(e, 120));
         // Surface the raw error remotely: on-screen (screenshot-able) + to
         // PostHog, so we can pin the exact cause of the MiniPay approve
-        // failure from a remote tester without USB debugging.
-        setRawError((err?.message ?? String(e)).slice(0, 300));
+        // failure from a remote tester without USB debugging. viem wraps the
+        // provider error as "unknown RPC error", so dig into the nested
+        // cause/details for MiniPay's actual message + code.
+        const detail = extractErrorDetail(e);
+        setRawError(detail.slice(0, 400));
         try {
           posthog.capture("pay_and_play_error", {
             stage,
             raw_message: (err?.message ?? String(e)).slice(0, 500),
+            error_detail: detail.slice(0, 800),
             error_name: err?.name ?? null,
             in_minipay: inMiniPay,
             has_free_play: playerHasFreePlay,
@@ -470,6 +474,38 @@ export function WalletIcon() {
       <path d="M21 12v4h-4a2 2 0 0 1 0-4h4z" />
     </svg>
   );
+}
+
+// Dig into a viem error chain to surface the *underlying* provider message.
+// viem throws e.g. UnknownRpcError("An unknown RPC error occurred") at the
+// top, but MiniPay's real message + JSON-RPC code live in nested cause/details.
+// Walk the cause chain and collect shortMessage/details/code so a remote
+// tester's screenshot tells us exactly why MiniPay refused the tx. Temporary.
+function extractErrorDetail(e: unknown): string {
+  const parts: string[] = [];
+  const seen = new Set<unknown>();
+  let node: unknown = e;
+  let depth = 0;
+  while (node && !seen.has(node) && depth < 6) {
+    seen.add(node);
+    const n = node as {
+      shortMessage?: string;
+      details?: string;
+      code?: number | string;
+      name?: string;
+      message?: string;
+      cause?: unknown;
+    };
+    if (n.details) parts.push(`details: ${n.details}`);
+    if (n.code !== undefined) parts.push(`code: ${n.code}`);
+    if (!n.details && !n.shortMessage && n.message) {
+      parts.push(n.message.split("\n")[0]);
+    }
+    node = n.cause;
+    depth++;
+  }
+  const joined = parts.join(" | ");
+  return joined || (e as Error)?.message || String(e);
 }
 
 function stageLabel(s: Stage, t: Strings): string {
