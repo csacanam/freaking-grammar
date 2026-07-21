@@ -193,6 +193,27 @@ export async function POST(
       .update({ status: "finished", ended_at: new Date().toISOString() })
       .eq("id", runId);
 
+    // Clearing the ENTIRE active question bank — every question answered
+    // correctly, each within the server timer — is deterministically beyond
+    // human ability (the bank is 200+ questions; the top real player clears
+    // ~70). It only happens with a harvested answer key. Auto-flag the wallet
+    // into the blocklist so it drops off the live podium (lobby filters
+    // bot_wallets) and is skipped at settlement. reason='heuristic' (automated);
+    // ignoreDuplicates so an already-flagged wallet keeps its original context;
+    // non-fatal so the player's result still returns.
+    const { error: flagErr } = await supabase.from("bot_wallets").upsert(
+      {
+        player: run.player,
+        reason: "heuristic",
+        sample_size: newScore,
+        notes: `auto: cleared full ${run.lang.toUpperCase()} bank (${newScore})`,
+      },
+      { onConflict: "player", ignoreDuplicates: true },
+    );
+    if (flagErr) {
+      console.error("bank-clear auto-flag failed (non-fatal):", flagErr);
+    }
+
     const rank = await computeRank(
       { game: "grammar", lang: run.lang as "en" | "es" },
       run.day_utc,

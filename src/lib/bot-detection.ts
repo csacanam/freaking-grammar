@@ -6,42 +6,38 @@
 // any new wallet matching the same signature — and *persists* the hit
 // back into `bot_wallets` so future settlements short-circuit on layer 1.
 //
-// Heuristic threshold: correctRate ≥ 99% AND p50 < 2400ms.
-// Calibrated against ~12 confirmed humans (correctRate 67–86%, p50
-// 2637–3833ms) and 6 confirmed bots (correctRate 99.7–100%, p50
-// 1510–2095ms). Gap between bot p50 max (2095) and human p50 min
-// (2637) is 542ms — wide enough that minimum-sample noise won't push
-// a real human across.
+// The heuristic combines a correctness gate and a per-game p50-timing gate
+// over a minimum sample of timed answers. The OPERATIVE THRESHOLDS ARE READ
+// FROM ENV — deliberately NOT hardcoded in this public repo. Attackers were
+// reading the constants and tuning bots to sit just outside them; keeping the
+// real values in the deployment env (private) removes that intel and lets ops
+// re-tune without a public commit. The fallbacks below are conservative
+// defaults for local/dev if the env vars are unset — set the real (and ideally
+// tighter, and different) values in the production environment.
 //
-// Min sample of 30 timed answers (q_index > 0, answered_at not null,
-// from non-open runs) keeps the heuristic from misfiring on a single
-// lucky session.
+// This two-gate heuristic is only a backstop. The primary, public-safe
+// defenses don't depend on secret thresholds: a hidden question bank (answers
+// never leave the server), deterministic full-bank-clear auto-flagging, and
+// server-side answer validation + timing — all of which hold even when the
+// mechanism is fully known.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-const MIN_SAMPLE = 30;
-const HEURISTIC_LOOKBACK_DAYS = 30;
-const HEURISTIC_CORRECT_RATE_MIN = 0.99;
+const MIN_SAMPLE = Number(process.env.BOT_MIN_SAMPLE ?? 30);
+const HEURISTIC_LOOKBACK_DAYS = Number(process.env.BOT_LOOKBACK_DAYS ?? 30);
+const HEURISTIC_CORRECT_RATE_MIN = Number(process.env.BOT_CORRECT_RATE_MIN ?? 0.99);
 
-// Per-game p50 ceilings. Each is calibrated against confirmed humans
-// and confirmed bots in that game's own timing distribution — the
-// clocks are different (Grammar 5s, Math 2.5s → 1.5s) so a single
-// threshold misclassifies.
-//
-//   Grammar 2400ms: humans cluster at 2637–3833ms p50, bots at
-//     1510–2095ms p50. 2400ms is the midpoint of the gap.
-//   Math    800ms: the 2026-05-09 audit bot pooled 175ms p50 across
-//     96 questions; humans pooled ~1990ms p50. 800ms is well above
-//     the bot floor and well below the human floor — comfortable
-//     margin in both directions.
+// Per-game p50 ceilings (ms). Grammar and Math have different natural timing
+// distributions, so a single ceiling misclassifies. Values come from env.
 const HEURISTIC_P50_MAX_MS: Record<"grammar" | "math", number> = {
-  grammar: 2400,
-  math: 800,
+  grammar: Number(process.env.BOT_P50_MAX_GRAMMAR_MS ?? 2400),
+  math: Number(process.env.BOT_P50_MAX_MATH_MS ?? 800),
 };
-// Fallback for ad-hoc checks without a game scope: stick with the
-// looser Grammar value so the heuristic doesn't fire on a Math-fast
-// human whose timing was pooled together with their Grammar runs.
-const HEURISTIC_P50_MAX_MS_DEFAULT = 2400;
+// Fallback for ad-hoc checks without a game scope: use the Grammar ceiling so
+// the heuristic doesn't fire on a Math-fast human whose timing was pooled in.
+const HEURISTIC_P50_MAX_MS_DEFAULT = Number(
+  process.env.BOT_P50_MAX_GRAMMAR_MS ?? 2400,
+);
 
 export type BotFlag =
   | { flagged: false }
