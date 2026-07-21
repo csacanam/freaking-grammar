@@ -33,6 +33,7 @@ import {
 import { useLang } from "@/lib/lang-provider";
 import { gameIdFor, type Lang, type Strings } from "@/lib/i18n";
 import { useIsMiniPay, useTxOverrides } from "@/lib/minipay";
+import { posthog } from "@/lib/posthog-provider";
 import FreakingPotArtifact from "@/lib/contracts/FreakingPot.json";
 
 const FREAKING_POT_ABI = FreakingPotArtifact.abi;
@@ -78,6 +79,11 @@ export function PayAndPlayButton({
 
   const [stage, setStage] = useState<Stage>("idle");
   const [error, setError] = useState<string | null>(null);
+  // Raw wallet/SDK error message, surfaced on-screen for remote debugging of
+  // the MiniPay "Transaction rejected" report. Lets a remote tester screenshot
+  // the exact underlying error (which friendlyError() collapses away) without
+  // needing USB / chrome://inspect. Temporary diagnostic.
+  const [rawError, setRawError] = useState<string | null>(null);
   const [needFunds, setNeedFunds] = useState<{
     token: "USDT" | "CELO";
     balance: string;
@@ -262,6 +268,7 @@ export function PayAndPlayButton({
 
   async function handleClick() {
     setError(null);
+    setRawError(null);
 
     if (!contractLive) return;
     if (!isConnected || !address) return; // handled by login buttons
@@ -281,6 +288,24 @@ export function PayAndPlayButton({
       const msg = err?.message;
       if (msg !== "insufficient-usdt" && msg !== "insufficient-celo") {
         setError(friendlyError(e, 120));
+        // Surface the raw error remotely: on-screen (screenshot-able) + to
+        // PostHog, so we can pin the exact cause of the MiniPay approve
+        // failure from a remote tester without USB debugging.
+        setRawError((err?.message ?? String(e)).slice(0, 300));
+        try {
+          posthog.capture("pay_and_play_error", {
+            stage,
+            raw_message: (err?.message ?? String(e)).slice(0, 500),
+            error_name: err?.name ?? null,
+            in_minipay: inMiniPay,
+            has_free_play: playerHasFreePlay,
+            fee_currency: txOverrides.feeCurrency ?? null,
+            address: address?.toLowerCase() ?? null,
+            game_id: gameId,
+          });
+        } catch {
+          // never let analytics throw over the real error path
+        }
       }
       setStage("idle");
     }
@@ -391,6 +416,11 @@ export function PayAndPlayButton({
       </Button>
       {error && (
         <p className="text-xs text-red text-center font-mono">{error}</p>
+      )}
+      {rawError && (
+        <p className="text-[10px] text-muted text-center font-mono break-all select-all opacity-70">
+          debug: {rawError}
+        </p>
       )}
       <NeedFundsModal
         open={!!needFunds}
