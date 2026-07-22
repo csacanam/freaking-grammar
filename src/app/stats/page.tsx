@@ -22,6 +22,7 @@ import {
   readTreasuryState,
 } from "@/lib/onchain";
 import { POT_ADDRESS } from "@/lib/chain";
+import { loadBotBlacklist } from "@/lib/bot-detection";
 import {
   fetchPostHogStats,
   countryFlag,
@@ -251,8 +252,14 @@ async function loadStats(): Promise<Stats | null> {
 
   // Per-game top score for today, keyed by GameKey so the tile loop
   // below can look it up in O(1) regardless of how many games we add.
+  // Exclude blacklisted wallets: the public podium was showing bot scores
+  // (e.g. a metronomic 101 in Math) as the day's record. The lobby already
+  // filters bot_wallets; the stats top-score didn't. `runs.player` is stored
+  // lower-case, matching the Set from loadBotBlacklist.
+  const botBlacklist = await loadBotBlacklist(db);
   const todayTopByGame = new Map<GameKey, number>();
   for (const r of todayRuns) {
+    if (botBlacklist.has(r.player)) continue;
     const k = gameKeyOf(r);
     if (!k) continue;
     const cur = todayTopByGame.get(k);

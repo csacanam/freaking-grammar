@@ -7,6 +7,7 @@ import { erc20Abi } from "viem";
 import { celoClient, FREAKING_POT_ABI } from "./onchain";
 import { POT_ADDRESS } from "./chain";
 import { supabase, TOKEN_DECIMALS, todayUtc } from "./supabase";
+import { loadBotBlacklist } from "./bot-detection";
 import type { EmailData, SponsorBonus } from "./email-templates";
 
 const GAMES: Array<{ id: number; key: "en" | "es" }> = [
@@ -66,9 +67,16 @@ async function fetchTopScores(): Promise<{
   };
   if (!supabase) return out;
   const day = todayUtc();
+  // Exclude blacklisted wallets so the daily email doesn't headline a bot's
+  // score as the day's top. Mirrors the lobby + stats-page filter.
+  const blacklist = await loadBotBlacklist(supabase);
+  const blacklistFilter =
+    blacklist.size > 0
+      ? `(${[...blacklist].map((p) => `"${p}"`).join(",")})`
+      : null;
   await Promise.all(
     GAMES.map(async (g) => {
-      const { data } = await supabase!
+      let q = supabase!
         .from("runs")
         .select("score")
         .eq("lang", g.key)
@@ -76,8 +84,9 @@ async function fetchTopScores(): Promise<{
         .eq("status", "finished")
         .order("score", { ascending: false })
         .order("ended_at", { ascending: true })
-        .limit(1)
-        .maybeSingle();
+        .limit(1);
+      if (blacklistFilter) q = q.not("player", "in", blacklistFilter);
+      const { data } = await q.maybeSingle();
       const row = data as { score: number } | null;
       if (row) out[g.key] = row.score;
     }),
