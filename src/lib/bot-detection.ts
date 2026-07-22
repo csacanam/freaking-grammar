@@ -57,6 +57,17 @@ const HEURISTIC_P50_MAX_MS_DEFAULT = Number(
 // ~0.20; the false-positive human was ~0.54.
 const HEURISTIC_MAX_SPREAD = Number(process.env.BOT_MAX_TIMING_SPREAD ?? 0.35);
 
+// Per-game best-score ceiling above which a near-perfect, large-sample run is
+// treated as botlike regardless of timing spread — a backstop for games where
+// timing alone doesn't separate bots from humans. Like every other threshold
+// here, the operative values live in env; the fallbacks are deliberately high
+// (effectively off) so local/dev never false-flags. Grammar's bank is finite
+// and has its own full-clear flag, so its default is out of reach.
+const HEURISTIC_SCORE_MAX: Record<"grammar" | "math", number> = {
+  grammar: Number(process.env.BOT_SCORE_MAX_GRAMMAR ?? 999),
+  math: Number(process.env.BOT_SCORE_MAX_MATH ?? 200),
+};
+
 export type BotFlag =
   | { flagged: false }
   | { flagged: true; reason: "blacklist" }
@@ -158,11 +169,32 @@ export async function checkBotPlayer(
     ? HEURISTIC_P50_MAX_MS[scope.game]
     : HEURISTIC_P50_MAX_MS_DEFAULT;
 
-  if (
+  // Timing-fingerprint path: metronomic + fast + near-perfect.
+  const timingBot =
     correctRate >= HEURISTIC_CORRECT_RATE_MIN &&
     p50 < p50Ceiling &&
-    relSpread <= HEURISTIC_MAX_SPREAD
-  ) {
+    relSpread <= HEURISTIC_MAX_SPREAD;
+
+  // Score-backstop path: a near-perfect run whose score sits far past what
+  // the game's players reach. Independent of timing spread, so it catches a
+  // wallet that keeps its answers accurate and fast but adds just enough
+  // jitter to stay under the spread gate. Only meaningful with a game scope.
+  let scoreBot = false;
+  if (scope?.game && correctRate >= HEURISTIC_CORRECT_RATE_MIN) {
+    const { data: best } = await supabase
+      .from("runs")
+      .select("score")
+      .eq("player", addr)
+      .eq("game", scope.game)
+      .gte("day_utc", since.slice(0, 10))
+      .order("score", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const bestScore = (best as { score: number } | null)?.score ?? 0;
+    scoreBot = bestScore >= HEURISTIC_SCORE_MAX[scope.game];
+  }
+
+  if (timingBot || scoreBot) {
     // Persist so future runs hit the blacklist short-circuit. Upsert on
     // primary key keeps it idempotent if multiple langs flag the same
     // wallet on the same settlement, and intentionally does NOT overwrite
