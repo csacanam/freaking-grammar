@@ -216,11 +216,17 @@ export async function startMathRun(
 export async function submitMathAnswer(
   runId: string,
   choice: "correct" | "incorrect",
+  // Milliseconds the player actually saw the question on their timer bar
+  // (measured client-side from the moment the question rendered to the
+  // tap). The server uses this — not its own served_at→now clock — to
+  // decide the timeout, so network latency + feedback pauses no longer
+  // eat into the player's visible time. Optional for backward-compat.
+  clientElapsedMs?: number,
 ): Promise<MathAnswerResult> {
   const r = await fetch(`/api/math/runs/${encodeURIComponent(runId)}/answer`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ choice }),
+    body: JSON.stringify({ choice, clientElapsedMs }),
   });
   if (!r.ok) throw new Error(`submitMathAnswer failed: ${r.status}`);
   return r.json();

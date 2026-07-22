@@ -104,6 +104,11 @@ function MathGameInner() {
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const transitionRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startingRef = useRef(false);
+  // performance.now() at the moment the current question became visible
+  // and its timer bar started. We send (now − this) to the server as the
+  // authoritative "time the player actually had", so latency/pauses don't
+  // steal from their clock. Stamped wherever secondsLeft is (re)armed.
+  const questionShownAtRef = useRef(0);
   const [startError, setStartError] = useState<string | null>(null);
 
   // Pick a backdrop once per mount. SSR renders the first entry to
@@ -166,6 +171,7 @@ function MathGameInner() {
         setQIndex(0);
         setScore(0);
         setSecondsLeft(timeBudgetSec(0));
+        questionShownAtRef.current = performance.now();
         setOutcome("playing");
         posthog.capture("math_play_started", { run_id: res.runId });
       } catch (e) {
@@ -226,8 +232,17 @@ function MathGameInner() {
       setPicked(choice);
       setOutcome("loading");
 
+      // How long the player actually saw this question on the bar. This
+      // is what the server enforces the timeout against — measured from
+      // when the question rendered, so it can't be inflated by network
+      // latency or the feedback pause the way served_at→now was.
+      const clientElapsedMs = Math.max(
+        0,
+        Math.round(performance.now() - questionShownAtRef.current),
+      );
+
       try {
-        const res = await submitMathAnswer(runId, choice);
+        const res = await submitMathAnswer(runId, choice, clientElapsedMs);
         if ("ended" in res && res.ended) {
           posthog.capture("math_play_finished", {
             run_id: runId,
@@ -250,6 +265,7 @@ function MathGameInner() {
           setScore(res.score);
           setQIndex((i) => i + 1);
           setSecondsLeft(timeBudgetSec(qIndex + 1));
+          questionShownAtRef.current = performance.now();
           setPicked(null);
           setOutcome("playing");
         }

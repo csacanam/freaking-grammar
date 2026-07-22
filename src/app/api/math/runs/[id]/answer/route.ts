@@ -24,10 +24,35 @@ export const dynamic = "force-dynamic";
 // pacing itself.
 const MIN_ANSWER_MS = 400;
 
-// Tolerance added on top of the per-question time budget to absorb
-// network round-trip latency between when the server's clock starts
-// and when the request actually arrives.
-const ANSWER_OVERRUN_MS = 500;
+// Timeout enforcement.
+//
+// The player's visible bar and the server's served_at→now clock start at
+// DIFFERENT instants: served_at is stamped when the server GENERATES the
+// next equation (inside the previous answer's POST), but the client can't
+// start its bar until that response crosses the network AND a short
+// feedback pause elapses. So served_at→now runs ahead of the player's bar
+// by (returnLatency + pause + submitLatency). Enforcing against served_at
+// therefore times out correct answers while the bar still shows time — a
+// diagnostic on 3 weeks of runs found ~959 correct answers wrongly killed.
+//
+// Fix: enforce against the CLIENT-reported elapsed (time the question was
+// actually on screen), which is exactly what the player saw. served_at is
+// kept only as an anti-abuse ceiling. Guards against a lying client:
+//   - clientElapsed is clamped to [0, serverElapsed] — the bar can never
+//     have run longer than the server's own clock, so a client can't
+//     claim MORE time than physically elapsed.
+//   - regardless of what the client claims, sitting > budget + IDLE_CEILING
+//     past served_at ends the run (catches a client that under-reports to
+//     camp on a question).
+// Small jitter tolerance covers the 100ms client tick granularity.
+const CLIENT_TIMER_TOL_MS = 250;
+// Fallback tolerance when the client didn't report its elapsed (old cached
+// build): generous enough to absorb pause + two mobile network legs so
+// those clients don't hit the original bug either.
+const NO_CLIENT_FALLBACK_TOL_MS = 1500;
+// Absolute ceiling past the budget, enforced on served_at→now no matter
+// what the client claims. Ends genuinely idle/paused sessions.
+const IDLE_CEILING_MS = 5000;
 
 export async function POST(
   req: NextRequest,
@@ -38,11 +63,20 @@ export async function POST(
   }
 
   const { id: runId } = await params;
-  const body = (await req.json().catch(() => ({}))) as { choice?: string };
+  const body = (await req.json().catch(() => ({}))) as {
+    choice?: string;
+    clientElapsedMs?: number;
+  };
   const choice = body.choice;
   if (choice !== "correct" && choice !== "incorrect") {
     return Response.json({ error: "invalid-body" }, { status: 400 });
   }
+  const clientElapsedMs =
+    typeof body.clientElapsedMs === "number" &&
+    Number.isFinite(body.clientElapsedMs) &&
+    body.clientElapsedMs >= 0
+      ? body.clientElapsedMs
+      : null;
 
   const { data: runRow } = await supabase
     .from("runs")
@@ -111,10 +145,25 @@ export async function POST(
   // q_index 0 is the warm-up — no upper bound (the briefing tells
   // players "take your time on the first one"), but the lower bound
   // still applies so a bot can't drop in instant answers.
-  const elapsedMs = Date.now() - new Date(rq.served_at).getTime();
-  const tooFast = elapsedMs < MIN_ANSWER_MS;
+  // Server's own clock — authoritative for the LOWER bound (a direct-API
+  // bot that never renders a bar can't prove it was slower than this) and
+  // for the anti-abuse ceiling.
+  const serverElapsedMs = Date.now() - new Date(rq.served_at).getTime();
+  const tooFast = serverElapsedMs < MIN_ANSWER_MS;
+
+  // UPPER bound (timeout) is judged against what the player actually saw.
+  // Clamp the client's claim to the server clock so it can't be inflated.
+  const budgetMs = timeBudgetMs(rq.q_index);
+  const effectiveElapsedMs =
+    clientElapsedMs !== null
+      ? Math.min(clientElapsedMs, serverElapsedMs)
+      : serverElapsedMs;
+  const upperTolMs =
+    clientElapsedMs !== null ? CLIENT_TIMER_TOL_MS : NO_CLIENT_FALLBACK_TOL_MS;
   const tooSlow =
-    rq.q_index > 0 && elapsedMs > timeBudgetMs(rq.q_index) + ANSWER_OVERRUN_MS;
+    rq.q_index > 0 &&
+    (effectiveElapsedMs > budgetMs + upperTolMs ||
+      serverElapsedMs > budgetMs + IDLE_CEILING_MS);
 
   if (tooFast || tooSlow) {
     const reason: "wrong" | "timeout" = tooSlow ? "timeout" : "wrong";
