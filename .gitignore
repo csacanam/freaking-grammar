@@ -56,3 +56,6 @@ skills-lock.json
 
 # Private ops notes — never commit (public repo)
 docs/private/
+
+# Private ops/forensic scripts — methodology + suspect lists, never commit (public repo)
+scripts/private/
