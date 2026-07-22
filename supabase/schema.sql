@@ -166,9 +166,12 @@ create index if not exists gas_refills_address_idx
 --   - reason='manual'    : seeded or added by ops (e.g., the original
 --                          sybil cluster we identified by hand)
 --   - reason='heuristic' : auto-inserted the first time checkBotPlayer
---                          sees a wallet match (correctRate≥99% AND
---                          p50<2400ms over ≥30 timed answers). Once a
---                          wallet lands here, future settlements skip
+--                          sees a wallet match (near-perfect correctRate
+--                          AND p50 below the per-game ceiling AND a TIGHT
+--                          timing spread (p90-p10)/p50 — the spread gate
+--                          keeps fast, accurate humans out) over a min
+--                          sample of timed answers. Thresholds live in env,
+--                          not here. Once a wallet lands here, settlements skip
 --                          straight on the blacklist short-circuit
 --                          without recomputing stats.
 -- Removing a row un-flags the wallet. False positives are recoverable.

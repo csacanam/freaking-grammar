@@ -105,7 +105,7 @@ async function sendSettlementSummary(
           s.correctRate !== undefined &&
           s.p50ms !== undefined &&
           s.sampleSize !== undefined
-            ? `correct=${(s.correctRate * 100).toFixed(1)}%, p50=${s.p50ms}ms, n=${s.sampleSize}`
+            ? `correct=${(s.correctRate * 100).toFixed(1)}%, p50=${s.p50ms}ms${s.relSpread !== undefined ? `, spread=${s.relSpread.toFixed(2)}` : ""}, n=${s.sampleSize}`
             : "blacklisted";
         lines.push(
           `   \`${s.player.slice(0, 6)}…${s.player.slice(-4)}\` score=${s.score} — ${stats}`,
@@ -133,6 +133,7 @@ type LangResult =
         correctRate?: number;
         p50ms?: number;
         sampleSize?: number;
+        relSpread?: number;
       }>;
       opened: string;
       day_number: number;
@@ -418,6 +419,7 @@ async function rollPot(b: Bucket, today: string): Promise<LangResult> {
             correctRate: s.flag.correctRate,
             p50ms: s.flag.p50ms,
             sampleSize: s.flag.sampleSize,
+            relSpread: s.flag.relSpread,
           }
         : {
             player: s.player,
