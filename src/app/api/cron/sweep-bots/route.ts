@@ -84,6 +84,7 @@ export async function GET(req: NextRequest) {
     correctRate: number;
     p50ms: number;
     sampleSize: number;
+    relSpread: number;
   };
   const newlyFlagged: Hit[] = [];
 
@@ -98,6 +99,7 @@ export async function GET(req: NextRequest) {
           correctRate: flag.correctRate,
           p50ms: flag.p50ms,
           sampleSize: flag.sampleSize,
+          relSpread: flag.relSpread,
         });
       }
     }
@@ -112,7 +114,7 @@ export async function GET(req: NextRequest) {
     for (const f of newlyFlagged) {
       const short = `${f.player.slice(0, 6)}…${f.player.slice(-4)}`;
       lines.push(
-        `• \`${f.player}\` (${short})\n  via ${f.game} · ${(f.correctRate * 100).toFixed(1)}% correct · p50 ${f.p50ms}ms · n=${f.sampleSize}`,
+        `• \`${f.player}\` (${short})\n  via ${f.game} · ${(f.correctRate * 100).toFixed(1)}% correct · p50 ${f.p50ms}ms · spread ${f.relSpread.toFixed(2)} · n=${f.sampleSize}`,
       );
     }
     lines.push("");

@@ -6,14 +6,25 @@
 // any new wallet matching the same signature — and *persists* the hit
 // back into `bot_wallets` so future settlements short-circuit on layer 1.
 //
-// The heuristic combines a correctness gate and a per-game p50-timing gate
-// over a minimum sample of timed answers. The OPERATIVE THRESHOLDS ARE READ
-// FROM ENV — deliberately NOT hardcoded in this public repo. Attackers were
-// reading the constants and tuning bots to sit just outside them; keeping the
-// real values in the deployment env (private) removes that intel and lets ops
-// re-tune without a public commit. The fallbacks below are conservative
-// defaults for local/dev if the env vars are unset — set the real (and ideally
-// tighter, and different) values in the production environment.
+// The heuristic combines THREE gates over a minimum sample of timed answers:
+//   1. correctness  — near-perfect accuracy
+//   2. per-game p50 — median response time below a game-specific ceiling
+//   3. timing spread — relative dispersion (p90-p10)/p50 below a ceiling
+// Gate 3 is what separates a bot from a fast, accurate human. Bots answer
+// metronomically: every question takes almost the same time regardless of
+// difficulty, so their spread is tiny (~0.20). Humans vary — easy questions
+// fast, hard ones slow — so even a strong human sits wide (0.5+). Without
+// this gate a human whose p50 lands just under the ceiling at high accuracy
+// gets false-flagged (observed: a real player, p50 2365ms vs 2400ms ceiling,
+// 94% correct, but timings spread 1.7s→3.6s — unmistakably human).
+//
+// The OPERATIVE THRESHOLDS ARE READ FROM ENV — deliberately NOT hardcoded in
+// this public repo. Attackers were reading the constants and tuning bots to
+// sit just outside them; keeping the real values in the deployment env
+// (private) removes that intel and lets ops re-tune without a public commit.
+// The fallbacks below are conservative defaults for local/dev if the env vars
+// are unset — set the real (and ideally tighter, and different) values in the
+// production environment.
 //
 // This two-gate heuristic is only a backstop. The primary, public-safe
 // defenses don't depend on secret thresholds: a hidden question bank (answers
@@ -39,6 +50,13 @@ const HEURISTIC_P50_MAX_MS_DEFAULT = Number(
   process.env.BOT_P50_MAX_GRAMMAR_MS ?? 2400,
 );
 
+// Max relative timing spread (p90-p10)/p50 to still count as botlike. A bot's
+// spread is tiny (metronomic); a human's is wide. The flag fires only when the
+// distribution is BELOW this ceiling (i.e., tight). Default is deliberately
+// generous (excludes clear humans) — tighten in prod. Real bots observed
+// ~0.20; the false-positive human was ~0.54.
+const HEURISTIC_MAX_SPREAD = Number(process.env.BOT_MAX_TIMING_SPREAD ?? 0.35);
+
 export type BotFlag =
   | { flagged: false }
   | { flagged: true; reason: "blacklist" }
@@ -48,6 +66,7 @@ export type BotFlag =
       correctRate: number;
       p50ms: number;
       sampleSize: number;
+      relSpread: number;
     };
 
 // Pull the full `bot_wallets` blacklist once per settlement so the
@@ -126,13 +145,24 @@ export async function checkBotPlayer(
 
   const correctRate = correct / answered;
   timedMs.sort((a, b) => a - b);
+  const p10 = timedMs[Math.floor(timedMs.length * 0.1)];
   const p50 = timedMs[Math.floor(timedMs.length * 0.5)];
+  const p90 = timedMs[Math.floor(timedMs.length * 0.9)];
+
+  // Relative timing spread. Robust to the odd network-lag outlier because it
+  // uses p10/p90, not min/max. Bots are tight (~0.20); humans are wide (0.5+).
+  // Guard p50 > 0 so a degenerate all-zero sample can't divide-by-zero.
+  const relSpread = p50 > 0 ? (p90 - p10) / p50 : Infinity;
 
   const p50Ceiling = scope?.game
     ? HEURISTIC_P50_MAX_MS[scope.game]
     : HEURISTIC_P50_MAX_MS_DEFAULT;
 
-  if (correctRate >= HEURISTIC_CORRECT_RATE_MIN && p50 < p50Ceiling) {
+  if (
+    correctRate >= HEURISTIC_CORRECT_RATE_MIN &&
+    p50 < p50Ceiling &&
+    relSpread <= HEURISTIC_MAX_SPREAD
+  ) {
     // Persist so future runs hit the blacklist short-circuit. Upsert on
     // primary key keeps it idempotent if multiple langs flag the same
     // wallet on the same settlement, and intentionally does NOT overwrite
@@ -150,6 +180,8 @@ export async function checkBotPlayer(
         correct_rate: correctRate,
         p50_ms: p50,
         sample_size: timedMs.length,
+        // No dedicated column for spread; stash it in notes for audit trail.
+        notes: `spread=${relSpread.toFixed(2)} (p10=${p10}ms p90=${p90}ms)`,
       },
       { onConflict: "player", ignoreDuplicates: true },
     );
@@ -167,6 +199,7 @@ export async function checkBotPlayer(
       correctRate,
       p50ms: p50,
       sampleSize: timedMs.length,
+      relSpread,
     };
   }
 
