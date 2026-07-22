@@ -8,7 +8,7 @@ import {
   zeroAddress,
   type Hex,
 } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { nonceManager, privateKeyToAccount } from "viem/accounts";
 import { celo } from "viem/chains";
 import { CELO_TRANSPORT, POT_ADDRESS, STABLECOIN, ACTIVE_CHAIN } from "@/lib/chain";
 import {
@@ -79,7 +79,13 @@ export async function GET(req: NextRequest) {
         gasWarn = fundReport.operatorCELO < LOW_CELO_WARN_WEI;
       }
     } catch (e) {
-      fundReport = { ran: true, error: (e as Error).message };
+      fundReport = {
+        ran: true,
+        error: (e as Error).message,
+        operatorAddress: privateKeyToAccount(
+          (operatorPk.startsWith("0x") ? operatorPk : `0x${operatorPk}`) as Hex,
+        ).address,
+      };
     }
   }
 
@@ -136,7 +142,8 @@ export async function GET(req: NextRequest) {
 
 function serializeFund(f: AutoFundReport): unknown {
   if (!f.ran) return { ran: false };
-  if ("error" in f) return { ran: true, error: f.error };
+  if ("error" in f)
+    return { ran: true, error: f.error, operatorAddress: f.operatorAddress };
   return {
     ran: true,
     operatorAddress: f.operatorAddress,
@@ -149,6 +156,7 @@ function serializeFund(f: AutoFundReport): unknown {
       amount: a.amount.toString(),
     })),
     txHashes: f.txHashes,
+    txErrors: f.txErrors,
   };
 }
 
@@ -156,7 +164,7 @@ function serializeFund(f: AutoFundReport): unknown {
 
 type AutoFundReport =
   | { ran: false }
-  | { ran: true; error: string }
+  | { ran: true; error: string; operatorAddress?: `0x${string}` }
   | {
       ran: true;
       operatorAddress: `0x${string}`;
@@ -166,11 +174,16 @@ type AutoFundReport =
       approveTx?: string;
       allocations?: Alloc[];
       txHashes?: Record<number, string>;
+      txErrors?: Record<number, string>;
     };
 
 async function autoFund(pkHex: Hex): Promise<AutoFundReport> {
+  // nonceManager tracks the nonce locally across txs — Forno is
+  // load-balanced, so asking a fresh node for the nonce after each mined
+  // tx can return a stale count and get the next tx rejected.
   const account = privateKeyToAccount(
     (pkHex.startsWith("0x") ? pkHex : `0x${pkHex}`) as Hex,
+    { nonceManager },
   );
   const walletClient = createWalletClient({
     account,
@@ -233,17 +246,24 @@ async function autoFund(pkHex: Hex): Promise<AutoFundReport> {
   );
   const allocations = allocate(usdtBalance, allocStates);
 
+  // One failed tx shouldn't strand the other games' funding (or lose the
+  // hashes of txs that already landed) — record the error and keep going.
   const txHashes: Record<number, string> = {};
+  const txErrors: Record<number, string> = {};
   for (const a of allocations) {
     if (a.amount === 0n) continue;
-    const hash = await walletClient.writeContract({
-      address: POT_ADDRESS,
-      abi: FREAKING_POT_ABI,
-      functionName: "fundTreasury",
-      args: [BigInt(a.gameId), a.amount],
-    });
-    await celoClient.waitForTransactionReceipt({ hash });
-    txHashes[a.gameId] = hash;
+    try {
+      const hash = await walletClient.writeContract({
+        address: POT_ADDRESS,
+        abi: FREAKING_POT_ABI,
+        functionName: "fundTreasury",
+        args: [BigInt(a.gameId), a.amount],
+      });
+      await celoClient.waitForTransactionReceipt({ hash });
+      txHashes[a.gameId] = hash;
+    } catch (e) {
+      txErrors[a.gameId] = (e as Error).message;
+    }
   }
 
   return {
@@ -254,6 +274,7 @@ async function autoFund(pkHex: Hex): Promise<AutoFundReport> {
     approveTx,
     allocations,
     txHashes,
+    txErrors,
   };
 }
 
@@ -431,15 +452,29 @@ function formatMessage(args: {
     fund.allocations &&
     fund.allocations.length > 0
   ) {
-    const total = Number(fund.operatorUSDT ?? 0n) / TOKEN_DECIMALS;
-    lines.push(`💰 *Auto-funded $${total.toFixed(2)}*`);
-    for (const a of fund.allocations) {
-      if (a.amount === 0n) continue;
-      const label = GAMES.find((g) => g.id === a.gameId)?.label ?? a.gameId;
-      const usd = Number(a.amount) / TOKEN_DECIMALS;
-      lines.push(`  → ${label}: $${usd.toFixed(2)}`);
+    const funded = fund.allocations.filter(
+      (a) => a.amount !== 0n && fund.txHashes?.[a.gameId],
+    );
+    const failed = fund.allocations.filter(
+      (a) => a.amount !== 0n && fund.txErrors?.[a.gameId],
+    );
+    if (funded.length > 0) {
+      const total =
+        Number(funded.reduce((s, a) => s + a.amount, 0n)) / TOKEN_DECIMALS;
+      lines.push(`💰 *Auto-funded $${total.toFixed(2)}*`);
+      for (const a of funded) {
+        const label = GAMES.find((g) => g.id === a.gameId)?.label ?? a.gameId;
+        const usd = Number(a.amount) / TOKEN_DECIMALS;
+        lines.push(`  → ${label}: $${usd.toFixed(2)}`);
+      }
     }
-    lines.push("");
+    for (const a of failed) {
+      const label = GAMES.find((g) => g.id === a.gameId)?.label ?? a.gameId;
+      lines.push(
+        `⚠️ ${label} fund failed: \`${fund.txErrors?.[a.gameId]}\``,
+      );
+    }
+    if (funded.length > 0 || failed.length > 0) lines.push("");
   }
 
   for (const s of states) {
@@ -481,7 +516,7 @@ function formatMessage(args: {
   }
 
   lines.push("");
-  if ("operatorAddress" in fund) {
+  if ("operatorAddress" in fund && fund.operatorAddress) {
     lines.push(`Send USDT to auto-fund:`);
     lines.push(`\`${fund.operatorAddress}\``);
   } else {

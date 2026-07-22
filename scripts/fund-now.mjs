@@ -22,7 +22,7 @@ import {
   maxUint256,
 } from "viem";
 import { celo } from "viem/chains";
-import { privateKeyToAccount } from "viem/accounts";
+import { nonceManager, privateKeyToAccount } from "viem/accounts";
 
 const env = Object.fromEntries(
   readFileSync(".env.local", "utf8")
@@ -57,7 +57,11 @@ const POT_ABI = [
   parseAbiItem("function fundTreasury(uint256 gameId, uint256 amount)"),
 ];
 
-const account = privateKeyToAccount(PK.startsWith("0x") ? PK : `0x${PK}`);
+// nonceManager tracks the nonce locally across txs — Forno is load-balanced
+// and a stale node can hand back an already-used nonce between txs.
+const account = privateKeyToAccount(PK.startsWith("0x") ? PK : `0x${PK}`, {
+  nonceManager,
+});
 const pub = createPublicClient({ chain: celo, transport: http(RPC) });
 const wallet = createWalletClient({ account, chain: celo, transport: http(RPC) });
 
