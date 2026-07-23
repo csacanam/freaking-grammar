@@ -27,6 +27,8 @@ type Pot = {
   amount_units: string | number;
   closed: boolean;
   rolled_tx: string | null;
+  winner: string | null;
+  winner_score: number | null;
 };
 
 // Daily rollover. Vercel Cron hits this at 00:00 UTC. For each language:
@@ -59,6 +61,20 @@ export async function GET(req: NextRequest) {
     { label: "MATH", game: "math", gameId: 3, lang: null },
   ];
 
+  // Self-heal any roll a prior run stranded before doing today's settlement,
+  // so a stuck day (winner unable to claim, duplicated day_number) recovers
+  // on its own instead of waiting for someone to notice.
+  const recovered = await recoverStrandedRolls(buckets);
+  if (recovered.length > 0) {
+    await sendTelegramMessage(
+      [
+        `*🔧 Stranded-roll recovery — ${recovered.length}*`,
+        "",
+        ...recovered.map((r) => `• ${r}`),
+      ].join("\n"),
+    );
+  }
+
   const results: Array<{ label: string; result: LangResult }> = [];
   for (const b of buckets) {
     results.push({ label: b.label, result: await rollPot(b, today) });
@@ -71,7 +87,7 @@ export async function GET(req: NextRequest) {
   // — only "real" settlements produce a line.
   await sendSettlementSummary(results).catch(() => {});
 
-  return Response.json({ today, results });
+  return Response.json({ today, recovered, results });
 }
 
 async function sendSettlementSummary(
@@ -168,7 +184,9 @@ async function rollPot(b: Bucket, today: string): Promise<LangResult> {
   const { data: last } = await withLangFilter(
     supabase
       .from("pots")
-      .select("lang,day_utc,day_number,amount_units,closed,rolled_tx")
+      .select(
+        "lang,day_utc,day_number,amount_units,closed,rolled_tx,winner,winner_score",
+      )
       .eq("game", b.game),
     b.lang,
   )
@@ -195,8 +213,12 @@ async function rollPot(b: Bucket, today: string): Promise<LangResult> {
   }
 
   const prevDay = lastPot.day_utc;
-  let winner: string | null = null;
-  let winnerScore: number | null = null;
+  // Seed from the already-recorded winner so a RETRY of a closed-but-
+  // unrolled day (the on-chain rollDay failed on a prior run) re-passes
+  // the real winner instead of zeroAddress. For a not-yet-closed day this
+  // is null and the pick loop below sets it.
+  let winner: string | null = lastPot.winner ?? null;
+  let winnerScore: number | null = lastPot.winner_score ?? null;
 
   const skipped: Array<{ player: string; score: number; flag: BotFlag }> = [];
   const botBlacklist = await loadBotBlacklist(supabase);
@@ -485,4 +507,103 @@ async function rollDayOnChain(
     console.error(`rollDay on-chain failed for gameId=${gameId}:`, e);
     return null;
   }
+}
+
+// Guard: recover any roll that a PRIOR run stranded — closed in the BD with
+// a winner but never landed on chain (nonce collision, RPC 429/outage, gas,
+// revert). rollPot can't self-heal these: once "today" is opened it
+// short-circuits on "already open" and never revisits the stranded day, so
+// without this the winner can't claim and the day_number stays duplicated
+// until a human notices (as on 2026-07-22). Runs first, every invocation,
+// game-agnostic over the same buckets — so a strand in ANY game (current or
+// future) self-heals within one settlement cycle. Returns human-readable
+// lines for the alert.
+async function recoverStrandedRolls(buckets: Bucket[]): Promise<string[]> {
+  if (!supabase) return [];
+  const db = supabase;
+  const recovered: string[] = [];
+
+  for (const b of buckets) {
+    // Candidate strands: closed, has a winner, but no rolled_tx. (Off-chain
+    // compensation rows have claimed=true + a claim_tx but no rolled_tx —
+    // the on-chain checks below exclude them, since their chain day has a
+    // real winner or the chain has moved past it.)
+    const { data: stuckRows } = await withLangFilter(
+      db
+        .from("pots")
+        .select("day_utc,day_number,winner")
+        .eq("game", b.game)
+        .eq("closed", true)
+        .is("rolled_tx", null)
+        .not("winner", "is", null),
+      b.lang,
+    ).order("day_utc", { ascending: true });
+
+    for (const row of (stuckRows ?? []) as Array<{
+      day_utc: string;
+      day_number: number;
+      winner: string;
+    }>) {
+      // Only act when the chain confirms this exact day is un-rolled AND
+      // still the current day. Guards against rolling a day the chain has
+      // already settled some other way, or an off-chain compensation row.
+      let cur: bigint;
+      let onChainWinner: string;
+      try {
+        [cur, onChainWinner] = await Promise.all([
+          celoClient.readContract({
+            address: POT_ADDRESS,
+            abi: FREAKING_POT_ABI,
+            functionName: "currentDay",
+            args: [BigInt(b.gameId)],
+          }) as Promise<bigint>,
+          celoClient.readContract({
+            address: POT_ADDRESS,
+            abi: FREAKING_POT_ABI,
+            functionName: "winnerOf",
+            args: [BigInt(b.gameId), BigInt(row.day_number)],
+          }) as Promise<string>,
+        ]);
+      } catch (e) {
+        console.error(
+          `stranded-roll chain read failed for ${b.label} ${row.day_utc}:`,
+          e,
+        );
+        continue;
+      }
+      if (Number(cur) !== row.day_number) continue; // chain not on this day
+      if (onChainWinner.toLowerCase() !== zeroAddress) continue; // already rolled
+
+      const hash = await rollDayOnChain(b.gameId, row.winner);
+      if (!hash) {
+        // Recovery attempt didn't land — leave it for the next run and make
+        // sure ops sees it now rather than a user noticing later.
+        recovered.push(
+          `⚠️ ${b.label} ${row.day_utc}: stranded roll (day ${row.day_number}) — recovery FAILED to land, will retry next run`,
+        );
+        continue;
+      }
+
+      // Confirmed roll → chain currentDay is now row.day_number + 1. Trust
+      // the +1 (an immediate Forno read can be stale — see reconciliation
+      // below); write rolled_tx and fix the open row that inherited the
+      // stale/duplicate day_number.
+      await withLangFilter(
+        db.from("pots").update({ rolled_tx: hash }).eq("game", b.game),
+        b.lang,
+      ).eq("day_utc", row.day_utc);
+      await withLangFilter(
+        db
+          .from("pots")
+          .update({ day_number: row.day_number + 1 })
+          .eq("game", b.game)
+          .eq("closed", false),
+        b.lang,
+      );
+      recovered.push(
+        `✅ ${b.label} ${row.day_utc}: rolled day ${row.day_number}→${row.day_number + 1}, winner \`${row.winner.slice(0, 6)}…${row.winner.slice(-4)}\` (tx ${hash.slice(0, 10)}…)`,
+      );
+    }
+  }
+  return recovered;
 }
