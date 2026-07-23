@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { createWalletClient, zeroAddress, type Hex } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { nonceManager, privateKeyToAccount } from "viem/accounts";
 import { celo } from "viem/chains";
 import { supabase, todayUtc } from "@/lib/supabase";
 import { CELO_TRANSPORT, POT_ADDRESS } from "@/lib/chain";
@@ -441,8 +441,18 @@ async function rollDayOnChain(
   if (POT_ADDRESS === zeroAddress) return null;
 
   try {
+    // The three buckets (EN, ES, MATH) roll sequentially from this one
+    // operator account. nonceManager tracks the nonce locally across those
+    // txs — without it, Forno being load-balanced means a fresh node
+    // queried for the nonce right after the previous roll was mined can
+    // return a stale count, so the next roll (math, last in line) is
+    // rejected with "nonce too low" and never lands. That is exactly the
+    // failure that stranded the 2026-07-22 math roll while EN/ES rolled.
+    // The nonceManager singleton is keyed by address+chain, so reusing it
+    // across these per-bucket account instances shares one nonce sequence.
     const account = privateKeyToAccount(
       (pk.startsWith("0x") ? pk : `0x${pk}`) as Hex,
+      { nonceManager },
     );
     const walletClient = createWalletClient({
       account,
