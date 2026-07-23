@@ -12,6 +12,12 @@ import {
 import { useLang } from "@/lib/lang-provider";
 import type { Strings } from "@/lib/i18n";
 import { posthog } from "@/lib/posthog-provider";
+import { TurnstileGate } from "@/components/TurnstileGate";
+
+// Turnstile is "on" for this client only when the site key is configured
+// (inlined at build). When off, we never wait for a token and the server
+// no-ops its verification — the gate is fully inert. Pilot: Math only.
+const TURNSTILE_ACTIVE = !!process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
 // Mirrors the difficulty curve in src/lib/math-questions.ts. Five-Q
 // phases at 2.5s → 2.3s → 2.0s → 1.7s → 1.5s. Q0 has no client-side
@@ -99,6 +105,9 @@ function MathGameInner() {
   // adding ceremony for nothing. The pre-briefing "showBriefing"
   // gate stays so first-time players still see the rules.
   const [showBriefing, setShowBriefing] = useState(true);
+  // Turnstile token (human check) — required before startMathRun when
+  // TURNSTILE_ACTIVE. Null until the player passes the challenge.
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [picked, setPicked] = useState<"correct" | "incorrect" | null>(null);
 
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -162,10 +171,17 @@ function MathGameInner() {
     if (startingRef.current) return;
     if (!address || !txHash) return;
     if (isConnecting || isReconnecting) return;
+    // Wait for the human check when Turnstile is on. The gate below renders
+    // until the player passes; startMathRun then carries the token.
+    if (TURNSTILE_ACTIVE && !turnstileToken) return;
     startingRef.current = true;
     (async () => {
       try {
-        const res = await startMathRun(address, txHash);
+        const res = await startMathRun(
+          address,
+          txHash,
+          turnstileToken ?? undefined,
+        );
         setRunId(res.runId);
         setQuestion(res.question);
         setQIndex(0);
@@ -180,7 +196,14 @@ function MathGameInner() {
         setStartError((e as Error)?.message ?? "Could not start the run.");
       }
     })();
-  }, [showBriefing, address, txHash, isConnecting, isReconnecting]);
+  }, [
+    showBriefing,
+    address,
+    txHash,
+    isConnecting,
+    isReconnecting,
+    turnstileToken,
+  ]);
 
   // Q1 is timer-less (warm-up). Subsequent questions tick with the
   // smooth time-decay budget.
@@ -298,6 +321,13 @@ function MathGameInner() {
         onReady={() => setShowBriefing(false)}
       />
     );
+  }
+
+  // Human check between the briefing and the first equation. Renders the
+  // modal until the player passes (or immediately no-ops if Turnstile isn't
+  // configured — TurnstileGate itself returns null without a site key).
+  if (TURNSTILE_ACTIVE && !turnstileToken) {
+    return <TurnstileGate onToken={setTurnstileToken} />;
   }
 
   if (!question) {

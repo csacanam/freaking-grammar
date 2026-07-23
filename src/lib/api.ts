@@ -194,11 +194,15 @@ export type MathAnswerResult =
 export async function startMathRun(
   player: string,
   txHash: string,
+  // Cloudflare Turnstile token proving a human passed the challenge before
+  // the run. Optional: undefined when Turnstile isn't configured (the
+  // server no-ops), required once it's on (the server rejects without it).
+  turnstileToken?: string,
 ): Promise<MathStartResult> {
   const r = await fetch("/api/math/runs", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ player, txHash }),
+    body: JSON.stringify({ player, txHash, turnstileToken }),
   });
   if (!r.ok) {
     let reason = String(r.status);

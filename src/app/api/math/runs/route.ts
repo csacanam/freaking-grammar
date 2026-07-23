@@ -20,6 +20,7 @@ import { verifyPaymentTx } from "@/lib/onchain";
 import { generateMathQuestion } from "@/lib/math-questions";
 import { maybeAlertBotPlay } from "@/lib/bot-detection";
 import { sendTelegramMessage } from "@/lib/telegram";
+import { verifyTurnstile } from "@/lib/turnstile";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,7 @@ export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as {
     player?: string;
     txHash?: string;
+    turnstileToken?: string;
   };
   const player = body.player?.toLowerCase();
   const txHash =
@@ -47,6 +49,27 @@ export async function POST(req: NextRequest) {
   }
   if (!txHash) {
     return Response.json({ error: "tx-required" }, { status: 400 });
+  }
+
+  // Anti-bot: a real player passes a Cloudflare Turnstile challenge before
+  // the run starts; a script hitting this endpoint directly can't produce a
+  // valid token. No-ops when TURNSTILE_SECRET_KEY is unset (verifyTurnstile
+  // returns ok+skipped), so this stays inert until the keys are configured
+  // in prod — safe to ship dark and flip on. Pilot: Math only for now.
+  const remoteIp =
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    req.headers.get("x-real-ip") ||
+    undefined;
+  const turnstile = await verifyTurnstile(body.turnstileToken, remoteIp);
+  if (!turnstile.ok) {
+    const ua = req.headers.get("user-agent") ?? "";
+    console.warn(
+      `math start captcha-failed reason=${turnstile.reason} addr=${player} ip=${remoteIp ?? "?"} ua="${ua}"`,
+    );
+    return Response.json(
+      { error: "captcha-failed", reason: turnstile.reason },
+      { status: 403 },
+    );
   }
 
   const day = todayUtc();
