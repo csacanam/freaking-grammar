@@ -21,6 +21,22 @@ const MIN_ANSWER_MS = 400;
 const GRAMMAR_QUESTION_MS = 5000;
 const ANSWER_OVERRUN_MS = 3000;
 
+// Silent live bot-flag ceiling for a single unbroken run. A grammar run is a
+// pure streak — it ends on the first wrong answer — so any in-progress run is
+// 100% correct by construction; the running score alone is the signal here.
+// When a streak climbs past what any human reaches (the top real player clears
+// ~70) without ever clearing the whole bank, it's a harvested answer key that
+// stops just short of the deterministic full-bank auto-flag below. We do NOT
+// end the run: cutting it at a fixed score would leak the line and let the
+// operator pace to just under it. Instead we flag the wallet silently (it drops
+// off the live podium via the lobby's bot_wallets filter and is skipped at
+// settlement) and let the run continue as if nothing happened. The OPERATIVE
+// value lives in the deployment env (private) — the public default is
+// effectively off so this repo reveals no threshold to calibrate against.
+const LIVE_FLAG_SCORE_GRAMMAR = Number(
+  process.env.BOT_LIVE_SCORE_MAX_GRAMMAR ?? 100_000,
+);
+
 // Serve the two words shuffled and WITHOUT saying which is correct — see the
 // note in ../../route.ts. Keeps the answer server-side so a direct-API bot
 // can't just echo back the correct word.
@@ -169,6 +185,26 @@ export async function POST(
 
   const newScore = run.score + 1;
   await supabase.from("runs").update({ score: newScore }).eq("id", runId);
+
+  // Silent live bot-flag — see LIVE_FLAG_SCORE_GRAMMAR. The response is
+  // unchanged (the caller can't tell it was flagged); ignoreDuplicates keeps an
+  // already-flagged wallet's original context; errors are non-fatal so a failed
+  // flag never blocks the player's answer. Runs on `>=` so a transient write
+  // failure at the crossing retries on the next answer.
+  if (newScore >= LIVE_FLAG_SCORE_GRAMMAR) {
+    const { error: liveFlagErr } = await supabase.from("bot_wallets").upsert(
+      {
+        player: run.player,
+        reason: "heuristic",
+        sample_size: newScore,
+        notes: `auto: live ${run.lang.toUpperCase()} streak past ceiling (${newScore})`,
+      },
+      { onConflict: "player", ignoreDuplicates: true },
+    );
+    if (liveFlagErr) {
+      console.error("live bot-flag failed (non-fatal):", liveFlagErr);
+    }
+  }
 
   // Pick next question not already served in this run.
   const [{ data: allQ }, { data: seenQ }] = await Promise.all([
