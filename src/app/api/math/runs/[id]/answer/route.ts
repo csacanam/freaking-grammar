@@ -54,6 +54,22 @@ const NO_CLIENT_FALLBACK_TOL_MS = 1500;
 // what the client claims. Ends genuinely idle/paused sessions.
 const IDLE_CEILING_MS = 5000;
 
+// Silent live bot-flag ceiling for a single unbroken math run. Like Grammar,
+// a math run is a pure streak (it ends on the first wrong answer), so a live
+// run is 100% correct so far and the running score alone is the signal. Unlike
+// Grammar, math has NO finite bank — equations are generated unboundedly — so
+// there is no deterministic full-bank auto-flag to lean on; this ceiling is the
+// only live defense beyond the timing floor. The gray zone between the top real
+// human (~40-50) and blatant bots (180+) is genuinely ambiguous and left to the
+// settlement heuristic + manual watch; this ceiling is set to pull egregious
+// live scores off the podium, not to adjudicate the gray zone. We do NOT end
+// the run and the response is unchanged, so the operator can't detect or pace
+// under the line. Operative value lives in the private deploy env; the public
+// default is effectively off.
+const LIVE_FLAG_SCORE_MATH = Number(
+  process.env.BOT_LIVE_SCORE_MAX_MATH ?? 100_000,
+);
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -231,6 +247,26 @@ export async function POST(
 
   const newScore = run.score + 1;
   await supabase.from("runs").update({ score: newScore }).eq("id", runId);
+
+  // Silent live bot-flag — see LIVE_FLAG_SCORE_MATH. Response unchanged (the
+  // caller can't tell it was flagged); ignoreDuplicates keeps an already-flagged
+  // wallet's original context; errors are non-fatal so a failed flag never
+  // blocks the answer; `>=` so a transient write failure at the crossing
+  // retries on the next answer.
+  if (newScore >= LIVE_FLAG_SCORE_MATH) {
+    const { error: liveFlagErr } = await supabase.from("bot_wallets").upsert(
+      {
+        player: run.player,
+        reason: "heuristic",
+        sample_size: newScore,
+        notes: `auto: live MATH streak past ceiling (${newScore})`,
+      },
+      { onConflict: "player", ignoreDuplicates: true },
+    );
+    if (liveFlagErr) {
+      console.error("live bot-flag failed (non-fatal):", liveFlagErr);
+    }
+  }
 
   // Generate the next equation. Math has unbounded difficulty (the
   // generator floors at 1.5s + off-by-1 wrongs around q=30), so unlike
