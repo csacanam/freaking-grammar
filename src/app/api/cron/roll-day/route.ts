@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { createWalletClient, zeroAddress, type Hex } from "viem";
 import { nonceManager, privateKeyToAccount } from "viem/accounts";
 import { celo } from "viem/chains";
+import { ATTRIBUTION_SUFFIX } from "@/lib/attribution";
 import { supabase, todayUtc } from "@/lib/supabase";
 import { CELO_TRANSPORT, POT_ADDRESS } from "@/lib/chain";
 import { FREAKING_POT_ABI, celoClient, readPotAmount } from "@/lib/onchain";
@@ -480,6 +481,9 @@ async function rollDayOnChain(
       account,
       chain: celo,
       transport: CELO_TRANSPORT,
+      // Celo ERC-8021 attribution — client-level suffix, so it rides along
+      // on every writeContract / sendTransaction made with this client.
+      dataSuffix: ATTRIBUTION_SUFFIX,
     });
 
     const hash = await walletClient.writeContract({

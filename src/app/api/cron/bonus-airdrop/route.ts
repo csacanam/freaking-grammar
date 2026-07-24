@@ -15,6 +15,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { celo } from "viem/chains";
+import { ATTRIBUTION_SUFFIX } from "@/lib/attribution";
 import { supabase } from "@/lib/supabase";
 import { CELO_TRANSPORT } from "@/lib/chain";
 import { celoClient } from "@/lib/onchain";
@@ -64,6 +65,9 @@ export async function GET(req: NextRequest) {
     account,
     chain: celo,
     transport: CELO_TRANSPORT,
+    // Celo ERC-8021 attribution — client-level suffix, so it rides along
+    // on every writeContract / sendTransaction made with this client.
+    dataSuffix: ATTRIBUTION_SUFFIX,
   });
 
   // Scan the last N days so we recover from missed invocations. If the

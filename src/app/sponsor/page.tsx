@@ -21,6 +21,7 @@ import { Button } from "@/components/Button";
 import { SponsorLeaderboard } from "@/components/SponsorLeaderboard";
 import { BackLink } from "@/components/BackLink";
 import { friendlyError, fmtUSD } from "@/lib/format";
+import { ATTRIBUTION_TX } from "@/lib/attribution";
 import { ACTIVE_CHAIN, POT_ADDRESS, STABLECOIN } from "@/lib/chain";
 import { useLang } from "@/lib/lang-provider";
 import { useIsMiniPay } from "@/lib/minipay";
@@ -111,6 +112,7 @@ function SponsorInner() {
         abi: erc20Abi,
         functionName: "approve",
         args: [POT_ADDRESS, maxUint256],
+        ...ATTRIBUTION_TX,
       });
       await publicClient.waitForTransactionReceipt({ hash: aHash });
     }
@@ -122,6 +124,7 @@ function SponsorInner() {
       abi: FREAKING_POT_ABI,
       functionName: "sponsorPot",
       args: [BigInt(gameId), amtUnits],
+      ...ATTRIBUTION_TX,
     });
     await publicClient.waitForTransactionReceipt({ hash: sHash });
 

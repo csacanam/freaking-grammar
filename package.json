@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@celo/attribution-tags": "^0.3.0",
     "@farcaster/miniapp-sdk": "^0.3.0",
     "@farcaster/miniapp-wagmi-connector": "^2.0.0",
     "@privy-io/react-auth": "^3.21.3",

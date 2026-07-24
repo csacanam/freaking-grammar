@@ -20,6 +20,7 @@ import {
 import { Button } from "@/components/Button";
 import { BackLink } from "@/components/BackLink";
 import { friendlyError, fmtUSD } from "@/lib/format";
+import { ATTRIBUTION_TX } from "@/lib/attribution";
 import { ACTIVE_CHAIN, POT_ADDRESS, STABLECOIN } from "@/lib/chain";
 import FreakingPotArtifact from "@/lib/contracts/FreakingPot.json";
 
@@ -114,6 +115,7 @@ function RefillInner() {
         abi: erc20Abi,
         functionName: "approve",
         args: [POT_ADDRESS, maxUint256],
+        ...ATTRIBUTION_TX,
       });
       await publicClient.waitForTransactionReceipt({ hash: aHash });
     }
@@ -125,6 +127,7 @@ function RefillInner() {
       abi: FREAKING_POT_ABI,
       functionName: "fundTreasury",
       args: [BigInt(gameId), amtUnits],
+      ...ATTRIBUTION_TX,
     });
     await publicClient.waitForTransactionReceipt({ hash: fHash });
 

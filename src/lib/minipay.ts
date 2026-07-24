@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { parseEther } from "viem";
 import { useAccount, useBalance, useConnect } from "wagmi";
+import { ATTRIBUTION_TX } from "./attribution";
 import { ACTIVE_CHAIN, STABLECOIN } from "./chain";
 
 // MiniPay is Opera Mini's stablecoin wallet on Celo. It injects window.ethereum
@@ -47,10 +48,16 @@ export function useIsMiniPay(): boolean {
 // airdrop size.
 const GAS_FLOOR_CELO = parseEther("0.01");
 
-// CIP-64 fee abstraction overrides for any user-facing writeContract /
+// Shared per-transaction params for any user-facing writeContract /
 // sendTransaction call. Spread the return value into the tx params.
 //
-// Policy:
+// Two things ride along here:
+//   1. `dataSuffix` — the Celo ERC-8021 attribution tag (see lib/attribution).
+//      Constant, but folded in here so every current and future user tx picks
+//      it up from the one seam that's already spread at every call site.
+//   2. `feeCurrency` — CIP-64 fee abstraction.
+//
+// feeCurrency policy:
 //   - MiniPay: always pay gas in USDT (users never hold CELO there).
 //   - Other wallets (Privy embedded, MetaMask, Farcaster, …): use USDT
 //     gas only when the wallet's CELO balance is below GAS_FLOOR_CELO.
@@ -66,8 +73,12 @@ const GAS_FLOOR_CELO = parseEther("0.01");
 //
 // Returns a typed object literal that's safe to spread into viem's
 // writeContract / sendTransaction args even on chains without an
-// adapter — `feeCurrency: undefined` is a no-op.
-export function useTxOverrides(): { feeCurrency?: `0x${string}` } {
+// adapter — `feeCurrency: undefined` is a no-op, and so is
+// `dataSuffix: undefined`.
+export function useTxOverrides(): {
+  feeCurrency?: `0x${string}`;
+  dataSuffix?: `0x${string}`;
+} {
   const inMiniPay = useIsMiniPay();
   const { address } = useAccount();
   const { data: celoBalance } = useBalance({
@@ -75,15 +86,15 @@ export function useTxOverrides(): { feeCurrency?: `0x${string}` } {
     chainId: ACTIVE_CHAIN.id,
   });
   const fc = STABLECOIN[ACTIVE_CHAIN.id]?.feeCurrency;
-  if (!fc) return {};
-  if (inMiniPay) return { feeCurrency: fc };
+  if (!fc) return { ...ATTRIBUTION_TX };
+  if (inMiniPay) return { ...ATTRIBUTION_TX, feeCurrency: fc };
   // Until the balance loads, default to CIP-64 — safer to slightly
   // overpay gas in USDT than to broadcast a tx that may revert for
   // lack of CELO.
   if (!celoBalance || celoBalance.value < GAS_FLOOR_CELO) {
-    return { feeCurrency: fc };
+    return { ...ATTRIBUTION_TX, feeCurrency: fc };
   }
-  return {};
+  return { ...ATTRIBUTION_TX };
 }
 
 export function useMiniPayAutoConnect(): void {
