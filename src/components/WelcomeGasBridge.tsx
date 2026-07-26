@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { usePrivy } from "@privy-io/react-auth";
+import { getAccessToken, useIdentityToken, usePrivy } from "@privy-io/react-auth";
 import { useLang } from "@/lib/lang-provider";
 import { TurnstileGate } from "@/components/TurnstileGate";
 
@@ -11,9 +11,12 @@ import { TurnstileGate } from "@/components/TurnstileGate";
 // No-ops for self-custody wallets (MetaMask, MiniPay, Farcaster, etc.) —
 // those users fund their own gas.
 //
-// Anti-Sybil: the airdrop step is gated on a Cloudflare Turnstile token
-// when NEXT_PUBLIC_TURNSTILE_SITE_KEY is configured. We use a two-phase
-// flow so returning users never see the captcha:
+// Anti-Sybil: every request carries the Privy access + identity tokens so
+// the server derives the funded address and email from Privy rather than
+// from this component's props — see src/lib/privy-server.ts for why. On top
+// of that the airdrop step is gated on a Cloudflare Turnstile token when
+// NEXT_PUBLIC_TURNSTILE_SITE_KEY is configured. We use a two-phase flow so
+// returning users never see the captcha:
 //
 //   1. Preflight call (no token). The server checks welcome_airdrops
 //      idempotency BEFORE the captcha — returning users hit 200 and we
@@ -36,6 +39,7 @@ type Phase = "idle" | "preflight" | "needs-captcha" | "submitting" | "done";
 
 export function WelcomeGasBridge() {
   const { ready, authenticated, user } = usePrivy();
+  const { identityToken } = useIdentityToken();
   const { uiLang } = useLang();
   const phaseRef = useRef<{ addr: string; phase: Phase } | null>(null);
   const [needsCaptcha, setNeedsCaptcha] = useState(false);
@@ -50,6 +54,19 @@ export function WelcomeGasBridge() {
   const fireAirdrop = useCallback(
     async (turnstileToken: string | null) => {
       if (!addr) return;
+      // Both tokens go up so the server can derive the address and email
+      // itself instead of trusting the two fields below. The access token
+      // is fetched per call rather than held in state because it's
+      // short-lived — a stale one from an hour-old tab gets rejected.
+      // getAccessToken() refreshes it transparently.
+      const privyAccessToken = await getAccessToken().catch(() => null);
+      // No token means Privy's session isn't hydrated yet. Throwing here
+      // (rather than posting without it) routes into the callers' catch
+      // blocks, which clear phaseRef so a later render retries. Posting
+      // instead would earn a 403 the caller treats as terminal, and the
+      // user would silently never get their gas.
+      if (!privyAccessToken) throw new Error("privy-token-not-ready");
+
       const res = await fetch("/api/welcome-gas", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -58,6 +75,8 @@ export function WelcomeGasBridge() {
           email,
           lang: uiLang,
           turnstileToken,
+          privyAccessToken,
+          privyIdentityToken: identityToken,
         }),
       });
 
@@ -73,12 +92,14 @@ export function WelcomeGasBridge() {
       }
 
       // Any other terminal response (200, 403, 500, …) ends this round.
-      // 403 = real Turnstile rejection; the server has already telegrammed
-      // us about it, so there's nothing useful for the bridge to do.
+      // 403 is a real rejection — failed Turnstile, unverified Privy
+      // identity, or a disposable-email domain. The server has already
+      // telegrammed us, so there's nothing useful for the bridge to do and
+      // retrying would just repeat the rejection.
       phaseRef.current = { addr, phase: "done" };
       setNeedsCaptcha(false);
     },
-    [addr, email, uiLang],
+    [addr, email, uiLang, identityToken],
   );
 
   // Step 1: preflight on mount. Runs once per address per page load. If

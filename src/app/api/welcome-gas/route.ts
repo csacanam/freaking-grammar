@@ -2,12 +2,15 @@
 // actually sign their first play() tx. Idempotent via the primary key on
 // `welcome_airdrops.address` — a replay hits the existing row and no-ops.
 //
-// Security model: we trust client-submitted `{ address, email }` because
-// (a) the airdrop amount is intentionally small ($0.03 worth of CELO) so
-// the worst-case abuse is low-value, and (b) the idempotency key prevents
-// the same address from draining us more than once. If abuse ever shows
-// up in `welcome_airdrops` logs we can add Privy token verification as a
-// second line of defense.
+// Security model, three layers, each guarding the *spend* and nothing else:
+//   1. Privy token verification — the funded address and the recorded email
+//      come from Privy server-side, never from the request body. Closes the
+//      old hole where a captcha solve was enough to pull CELO to any wallet.
+//   2. Disposable-email block — temp-mail inboxes are the cheap way to mint
+//      the fresh Privy users this airdrop is keyed on.
+//   3. Turnstile — proves a human is present.
+// Plus the `welcome_airdrops` primary key, which caps any single address at
+// one airdrop no matter how the request arrives.
 
 import type { NextRequest } from "next/server";
 import {
@@ -20,7 +23,9 @@ import { celo } from "viem/chains";
 import { ATTRIBUTION_SUFFIX } from "@/lib/attribution";
 import { supabase } from "@/lib/supabase";
 import { CELO_TRANSPORT } from "@/lib/chain";
+import { isDisposableEmail } from "@/lib/disposable-email";
 import { celoClient } from "@/lib/onchain";
+import { verifyPrivyUser } from "@/lib/privy-server";
 import { sendTelegramMessage } from "@/lib/telegram";
 import { verifyTurnstile } from "@/lib/turnstile";
 
@@ -46,24 +51,27 @@ export async function POST(req: NextRequest) {
     email?: string;
     lang?: string;
     turnstileToken?: string;
+    privyAccessToken?: string;
+    privyIdentityToken?: string;
   };
-  const address = body.address?.toLowerCase();
-  if (!address || !/^0x[0-9a-f]{40}$/.test(address)) {
+  const claimedAddress = body.address?.toLowerCase();
+  if (!claimedAddress || !/^0x[0-9a-f]{40}$/.test(claimedAddress)) {
     return Response.json({ error: "invalid-address" }, { status: 400 });
   }
-  const email = body.email ?? null;
   const lang = body.lang === "en" || body.lang === "es" ? body.lang : null;
 
-  // Idempotency FIRST, before the captcha. Reason: the bridge re-mounts on
-  // every page navigation and refires this endpoint to check its own state;
-  // if captcha were enforced up-front, every returning user would see the
-  // Turnstile modal on every page load even though their airdrop landed
-  // weeks ago. By checking the DB first we let returning users sail through
-  // with no captcha while keeping the actual "send CELO" step still gated.
+  // Idempotency FIRST, before the captcha *and* before Privy verification.
+  // Reason: the bridge re-mounts on every page navigation and refires this
+  // endpoint to check its own state; if captcha were enforced up-front,
+  // every returning user would see the Turnstile modal on every page load
+  // even though their airdrop landed weeks ago. Skipping verification here
+  // is safe because this branch only reads — an attacker who lies about the
+  // address learns whether it was already funded, and nothing else. It also
+  // keeps the Privy `getUserById` fallback off the hot path.
   const { data: existing } = await supabase
     .from("welcome_airdrops")
     .select("address,tx_hash")
-    .eq("address", address)
+    .eq("address", claimedAddress)
     .maybeSingle();
   if (existing) {
     return Response.json({
@@ -72,11 +80,68 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  // Past this point every branch can spend CELO or write a row, so stop
+  // believing the client. `address` and `email` are Privy's answer from
+  // here on; the request body's versions are discarded.
+  const privy = await verifyPrivyUser({
+    accessToken: body.privyAccessToken,
+    identityToken: body.privyIdentityToken,
+  });
+  if (!privy.ok) {
+    console.warn(
+      `welcome-gas privy-rejected reason=${privy.reason} claimed=${claimedAddress}`,
+    );
+    return Response.json(
+      { error: "privy-unverified", reason: privy.reason },
+      { status: 403 },
+    );
+  }
+
+  // `skipped` means no server credentials configured (dev). Fall back to the
+  // client's claim so local testing still works without a Privy app secret.
+  const address = privy.skipped ? claimedAddress : privy.address;
+  const email = privy.skipped ? body.email ?? null : privy.email;
+
+  // The verified address can differ from the claimed one — a stale bridge
+  // after a wallet switch, or someone probing. Re-check idempotency against
+  // the address we're actually about to fund so a mismatch can't produce a
+  // second airdrop.
+  if (address !== claimedAddress) {
+    const { data: dupe } = await supabase
+      .from("welcome_airdrops")
+      .select("address,tx_hash")
+      .eq("address", address)
+      .maybeSingle();
+    if (dupe) {
+      return Response.json({
+        status: "already-airdropped",
+        txHash: (dupe as { tx_hash: string | null }).tx_hash,
+      });
+    }
+  }
+
+  // Throwaway inboxes are how the airdrop gets farmed: the payout is keyed
+  // on a fresh Privy user, and temp-mail makes those free to mint. Rejected
+  // before the balance check so we don't even log a sentinel row for them.
+  if (isDisposableEmail(email)) {
+    console.warn(
+      `welcome-gas disposable-email addr=${address} email=${email}`,
+    );
+    notifyDisposableRejection({ address, email }).catch((e) =>
+      console.error("welcome-gas notify-disposable failed:", e),
+    );
+    return Response.json(
+      { error: "disposable-email" },
+      { status: 403 },
+    );
+  }
+
   // Skip if the wallet already has enough CELO — happens if the user funded
   // it themselves or re-logged after an earlier fund from outside. Log a
   // sentinel row (amount=0, tx_hash=null) so future hits short-circuit on
-  // the existing-row branch above. No captcha required: the worst-case
-  // abuse is a 0-CELO row insert with no economic value to the attacker.
+  // the existing-row branch above. No captcha required: `address` is
+  // Privy-verified by now, so the row can only ever describe the caller's
+  // own wallet, and it costs us nothing.
   try {
     const bal = await celoClient.getBalance({
       address: address as `0x${string}`,
@@ -217,6 +282,37 @@ async function notifyAirdrop(args: {
     `💸 0.1 CELO · tx \`${args.txHash.slice(0, 10)}…\``,
     `🧾 ${totalAirdrops} onboardings total`,
     `⛽ Operator: ${operatorCELO.toFixed(3)} CELO (~${remainingAirdrops} airdrops left)`,
+  ].filter((s): s is string => s !== null);
+  await sendTelegramMessage(lines.join("\n"));
+}
+
+// Farming attempts are worth seeing in real time — a burst of these is the
+// signal that a temp-mail provider rotated to a domain we don't block yet,
+// which is fixed by appending it to DISPOSABLE_EMAIL_DOMAINS.
+//
+// Rejected addresses never get a `welcome_airdrops` row, so nothing in the
+// DB stops the bridge's per-page-load preflight from re-pinging us forever.
+// This in-memory set is the dedupe: instances are reused under Fluid
+// Compute, so a farmer reloading in a loop costs one message, and a cold
+// start at worst repeats it once. Capped so a flood can't grow it without
+// bound.
+const notifiedDisposable = new Set<string>();
+const NOTIFIED_DISPOSABLE_MAX = 500;
+
+async function notifyDisposableRejection(args: {
+  address: string;
+  email: string | null;
+}) {
+  if (notifiedDisposable.has(args.address)) return;
+  if (notifiedDisposable.size >= NOTIFIED_DISPOSABLE_MAX) {
+    notifiedDisposable.clear();
+  }
+  notifiedDisposable.add(args.address);
+
+  const lines = [
+    "*🗑 Welcome gas blocked — disposable email*",
+    `→ \`${args.address}\``,
+    args.email ? `📧 ${args.email}` : null,
   ].filter((s): s is string => s !== null);
   await sendTelegramMessage(lines.join("\n"));
 }
