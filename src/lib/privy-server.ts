@@ -2,10 +2,7 @@
 //
 // The problem this closes: welcome-gas used to trust the `{address, email}`
 // the browser posted. Turnstile proved a human was present, but nothing tied
-// that human to the address being funded — so anyone who could solve a
-// captcha could pull 0.1 CELO to an arbitrary wallet, no Privy account
-// required. Four wallets in the 2026-07-25 cluster still hold their airdrop
-// untouched, which is what that looks like from the outside.
+// that human to the address being funded.
 //
 // The fix: derive the address and email from Privy server-side and ignore
 // what the client claims. Two tokens are involved and they do different jobs:
