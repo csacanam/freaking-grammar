@@ -15,7 +15,7 @@ import {
 } from "@/lib/supabase";
 import { fmtUSD } from "@/lib/format";
 import { BackLink } from "@/components/BackLink";
-import { PlaysChart } from "@/components/PlaysChart";
+import { PlaysChart, type PlaysChartPoint } from "@/components/PlaysChart";
 import {
   celoClient,
   FREAKING_POT_ABI,
@@ -132,7 +132,15 @@ type Stats = {
     paid: number;
     free: number;
     avgScore: number;
-    perDay: Array<{ date: string; count: number }>;
+    perDay: PlaysChartPoint[];
+    // Paid plays/day that cover the daily prize seeding across all
+    // games — the profitability threshold drawn on the chart. Null when
+    // the seeds can't be read on-chain.
+    breakEvenPaidPerDay: number | null;
+    // Rolling 7-day P&L against the same seeding cost. The chart's Y
+    // scale gets dominated by spike days, so the verdict also gets
+    // stated as a number. seedCostUSD is null when seeds are unreadable.
+    last7: { paid: number; revenueUSD: number; seedCostUSD: number | null };
     byGame: ByGame;
   };
   economy: {
@@ -363,18 +371,52 @@ async function loadStats(): Promise<Stats | null> {
       ? runs.reduce((s, r) => s + r.score, 0) / runs.length
       : 0;
 
-  // Last 30 days bar chart, oldest → newest
+  // Last 30 days bar chart, oldest → newest. Split paid vs free so the
+  // chart answers "is this day paying for itself?" — only paid plays
+  // produce the 20% protocol cut; free plays are pure cost.
   const days30: string[] = [];
   for (let i = 29; i >= 0; i--) days30.push(daysAgo(today, i));
   const playsByDay = new Map<string, number>();
+  const paidByDay = new Map<string, number>();
   for (const r of runs) {
     if (r.day_utc < days30[0]) continue;
     playsByDay.set(r.day_utc, (playsByDay.get(r.day_utc) ?? 0) + 1);
+    if (!r.was_free) {
+      paidByDay.set(r.day_utc, (paidByDay.get(r.day_utc) ?? 0) + 1);
+    }
   }
-  const perDay = days30.map((d) => ({
-    date: d,
-    count: playsByDay.get(d) ?? 0,
-  }));
+  const perDay: PlaysChartPoint[] = days30.map((d) => {
+    const paid = paidByDay.get(d) ?? 0;
+    return {
+      date: d,
+      count: playsByDay.get(d) ?? 0,
+      paid,
+      revenueUSD: paid * PROTOCOL_CUT_USD,
+    };
+  });
+
+  // Break-even: the treasury pays `dailySeed` into each game's pot on
+  // every roll (see FreakingPot.rollDay), so total daily burn is the sum
+  // of the per-game seeds. Each paid play returns PROTOCOL_CUT_USD.
+  // Ghost days carry the pot forward instead of drawing from treasury,
+  // so on those days the real burn is lower — this line is the
+  // conservative (worst-case) threshold. Gas is not included.
+  const dailySeedTotalUSD = perGameTreasury.reduce(
+    (s, g) => s + (g.seed ?? 0),
+    0,
+  );
+  const seedsReadable =
+    perGameTreasury.some((g) => g.seed !== null) && dailySeedTotalUSD > 0;
+  const breakEvenPaidPerDay = seedsReadable
+    ? Math.ceil(dailySeedTotalUSD / PROTOCOL_CUT_USD)
+    : null;
+
+  // Rolling 7 days (excluding today, which is still filling up). Cost
+  // applies today's seed to each of those days — the seeds rarely
+  // change, and re-deriving historical seeds would mean replaying
+  // DayRolled logs.
+  const last7 = perDay.slice(-8, -1);
+  const last7Paid = last7.reduce((s, d) => s + d.paid, 0);
 
   // ----------------------------------------------- BY-GAME TABLE
   const byGame: ByGame = emptyByGame();
@@ -489,6 +531,12 @@ async function loadStats(): Promise<Stats | null> {
       free: totalFree,
       avgScore,
       perDay,
+      breakEvenPaidPerDay,
+      last7: {
+        paid: last7Paid,
+        revenueUSD: last7Paid * PROTOCOL_CUT_USD,
+        seedCostUSD: seedsReadable ? dailySeedTotalUSD * last7.length : null,
+      },
       byGame,
     },
     economy: {
@@ -559,20 +607,23 @@ async function readCurrentPotUSD(gameId: number): Promise<number> {
   }
 }
 
+// `seed` is null (not 0) when the read failed, so the break-even line
+// can tell "no seed configured" apart from "RPC unavailable" and hide
+// itself rather than claiming a $0/day cost.
 async function safeTreasury(
   gameId: number,
-): Promise<{ usdt: number; days: number }> {
+): Promise<{ usdt: number; days: number; seed: number | null }> {
   if (isAddressEqual(POT_ADDRESS, zeroAddress)) {
-    return { usdt: 0, days: 0 };
+    return { usdt: 0, days: 0, seed: null };
   }
   try {
     const { treasury, dailySeed } = await readTreasuryState(gameId);
     const usdt = Number(treasury) / TOKEN_DECIMALS;
     const seed = Number(dailySeed) / TOKEN_DECIMALS;
     const days = seed > 0 ? usdt / seed : 0;
-    return { usdt, days };
+    return { usdt, days, seed };
   } catch {
-    return { usdt: 0, days: 0 };
+    return { usdt: 0, days: 0, seed: null };
   }
 }
 
@@ -812,6 +863,14 @@ export default async function StatsPage() {
   const lang = await pickLang();
   const t = dict[lang];
   const stats = await loadStats();
+  // PlaysChart is a client component, so it can't read the dict itself.
+  const chartLabels = {
+    plays: t.statsLangColPlays,
+    paid: t.statsPlaysPaid,
+    breakEven: t.statsChartBreakEven,
+    breakEvenHint: t.statsChartBreakEvenHint,
+    perDay: t.statsChartPerDay,
+  };
 
   return (
     <div className="flex-1 flex flex-col px-5 pt-6 pb-10 max-w-3xl mx-auto w-full gap-5">
@@ -977,7 +1036,47 @@ export default async function StatsPage() {
           </section>
 
           <Card title={t.statsCardPlaysLast30}>
-            <PlaysChart data={stats.plays.perDay} />
+            <PlaysChart data={stats.plays.perDay} labels={chartLabels} />
+          </Card>
+
+          {/* Paid plays get their own card rather than a stacked slice of
+              the chart above: free plays outnumber paid ~20:1, so on a
+              shared Y scale the paid bars are invisible — and they're the
+              only ones that earn the protocol fee. */}
+          <Card title={t.statsCardPaidPlaysLast30}>
+            <PlaysChart
+              data={stats.plays.perDay}
+              variant="paid"
+              breakEven={stats.plays.breakEvenPaidPerDay}
+              labels={chartLabels}
+            />
+            {/* Spike days stretch the Y scale, so the profitability
+                verdict is also spelled out as a number. */}
+            {stats.plays.last7.seedCostUSD !== null ? (
+              <p className="mt-2 text-[10px] font-mono text-muted">
+                {t.statsLast7Days}: {stats.plays.last7.paid}{" "}
+                {t.statsPlaysPaid.toLowerCase()} ·{" "}
+                {fmtUSD(stats.plays.last7.revenueUSD)} {t.statsRevenue.toLowerCase()}{" "}
+                vs {fmtUSD(stats.plays.last7.seedCostUSD)} {t.statsChartSeeded} →{" "}
+                <span
+                  className={
+                    stats.plays.last7.revenueUSD >= stats.plays.last7.seedCostUSD
+                      ? "text-[#1ea869] font-semibold"
+                      : "text-[#e0492e] font-semibold"
+                  }
+                >
+                  {stats.plays.last7.revenueUSD >= stats.plays.last7.seedCostUSD
+                    ? "+"
+                    : "−"}
+                  {fmtUSD(
+                    Math.abs(
+                      stats.plays.last7.revenueUSD - stats.plays.last7.seedCostUSD,
+                    ),
+                  )}{" "}
+                  {t.statsChartNet}
+                </span>
+              </p>
+            ) : null}
           </Card>
 
           <Card title={t.statsCardByGame}>

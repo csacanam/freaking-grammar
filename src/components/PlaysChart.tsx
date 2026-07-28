@@ -8,16 +8,60 @@ import { useState } from "react";
 //   - native SVG <title> for desktop hover (browser-native tooltip)
 //   - touch/click selection for mobile (sticky highlight + label
 //     above the chart) since <title> doesn't fire on tap
-// X/Y axes are unchanged from the prior layout.
+//
+// Two variants off the same 30-day series:
+//   "total" — every finished run, the original chart
+//   "paid"  — paid runs only, plus a break-even line. Paid and free
+//             plays differ by ~2 orders of magnitude (thousands of free
+//             vs tens of paid), so a stacked bar buries the paid slice
+//             in a pixel; the revenue series needs its own Y scale.
+export type PlaysChartPoint = {
+  date: string;
+  count: number;
+  paid: number;
+  revenueUSD: number;
+};
+
+const TOTAL = "#68c3a0";
+const TOTAL_SEL = "#1ea869";
+const PAID = "#1ea869";
+const PAID_SEL = "#0f7a4a";
+const EMPTY = "#eaeaea";
+const BREAK_EVEN = "#e0492e";
+
 export function PlaysChart({
   data,
+  variant = "total",
+  breakEven = null,
+  labels,
 }: {
-  data: Array<{ date: string; count: number }>;
+  data: PlaysChartPoint[];
+  variant?: "total" | "paid";
+  // Paid plays/day needed to cover the daily prize seeding. Null when
+  // the seed can't be read on-chain (RPC down, contract unset).
+  breakEven?: number | null;
+  labels: {
+    plays: string;
+    paid: string;
+    breakEven: string;
+    breakEvenHint: string;
+    perDay: string;
+  };
 }) {
   const [selected, setSelected] = useState<number | null>(null);
 
-  const rawMax = Math.max(...data.map((d) => d.count), 1);
-  const niceMax = niceCeil(rawMax);
+  const isPaid = variant === "paid";
+  const valueOf = (d: PlaysChartPoint) => (isPaid ? d.paid : d.count);
+  const be = isPaid ? breakEven : null;
+
+  const rawMax = Math.max(...data.map(valueOf), 1);
+  // Fold the break-even line into the Y scale only when it's within
+  // reach of the bars. Otherwise a far-away target squashes every bar
+  // to a sliver; we pin the line to the top with a ↑ marker instead.
+  const beAbove = be !== null && be > rawMax * 2;
+  const niceMax = niceCeil(be !== null && !beAbove ? Math.max(rawMax, be) : rawMax);
+  const beTopPct =
+    be === null ? null : (1 - Math.min(be, niceMax) / niceMax) * 100;
   const barW = 100 / data.length;
 
   // X ticks: 5 evenly-spaced dates including first and last.
@@ -29,6 +73,13 @@ export function PlaysChart({
 
   const sel = selected !== null ? data[selected] : null;
 
+  // One string per bar, reused by the click callout and the native
+  // hover tooltip. React only accepts a single text node in <title>.
+  const describe = (d: PlaysChartPoint) =>
+    isPaid
+      ? `${d.date} · ${d.paid} ${labels.paid.toLowerCase()} · $${d.revenueUSD.toFixed(2)}`
+      : `${d.date} · ${d.count} ${labels.plays.toLowerCase()}`;
+
   return (
     <div className="flex flex-col gap-2">
       {/* Selected-bar callout — shows on tap (mobile) or click. The
@@ -36,15 +87,7 @@ export function PlaysChart({
           stays empty until the user clicks. Reserved height keeps the
           chart from jumping when the callout appears. */}
       <div className="h-4 text-xs font-mono text-muted">
-        {sel ? (
-          <span>
-            <span className="text-ink">{sel.date}</span>{" "}
-            ·{" "}
-            <span className="text-ink font-semibold">
-              {sel.count} {sel.count === 1 ? "play" : "plays"}
-            </span>
-          </span>
-        ) : null}
+        {sel ? <span className="text-ink">{describe(sel)}</span> : null}
       </div>
 
       <div className="flex gap-2">
@@ -77,7 +120,8 @@ export function PlaysChart({
               onMouseLeave={() => setSelected(null)}
             >
               {data.map((d, i) => {
-                const h = (d.count / niceMax) * 100;
+                const v = valueOf(d);
+                const h = (v / niceMax) * 100;
                 const isSel = selected === i;
                 return (
                   <rect
@@ -87,7 +131,15 @@ export function PlaysChart({
                     width={barW * 0.8}
                     height={Math.max(h, 0.5)}
                     fill={
-                      isSel ? "#1ea869" : d.count > 0 ? "#68c3a0" : "#eaeaea"
+                      v === 0
+                        ? EMPTY
+                        : isSel
+                          ? isPaid
+                            ? PAID_SEL
+                            : TOTAL_SEL
+                          : isPaid
+                            ? PAID
+                            : TOTAL
                     }
                     onMouseEnter={() => setSelected(i)}
                     onClick={() =>
@@ -98,14 +150,21 @@ export function PlaysChart({
                     {/* Native browser tooltip — works on desktop hover
                         without needing the React state. Mobile gets the
                         callout above via the click handler. */}
-                    <title>
-                      {d.date} · {d.count}{" "}
-                      {d.count === 1 ? "play" : "plays"}
-                    </title>
+                    <title>{describe(d)}</title>
                   </rect>
                 );
               })}
             </svg>
+            {/* Break-even line, drawn as a DOM element rather than an SVG
+                <line>: the chart's viewBox is non-uniform
+                (preserveAspectRatio="none"), which would stretch the dash
+                pattern and stroke width horizontally. */}
+            {beTopPct !== null ? (
+              <div
+                className="absolute left-0 right-0 border-t border-dashed pointer-events-none"
+                style={{ top: `${beTopPct}%`, borderColor: BREAK_EVEN }}
+              />
+            ) : null}
           </div>
           {/* X-axis labels */}
           <div className="relative h-4 mt-1">
@@ -126,6 +185,22 @@ export function PlaysChart({
           </div>
         </div>
       </div>
+
+      {/* Legend for the break-even line — the whole point of the paid
+          chart: bars above the line paid for that day's prize seeding. */}
+      {beTopPct !== null ? (
+        <div className="flex items-center gap-1.5 text-[10px] text-muted font-mono">
+          <span
+            className="inline-block w-3 border-t border-dashed shrink-0"
+            style={{ borderColor: BREAK_EVEN }}
+          />
+          <span>
+            {labels.breakEven}: {be}
+            {labels.perDay}
+            {beAbove ? " ↑" : ""} — {labels.breakEvenHint}
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }
