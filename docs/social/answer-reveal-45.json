@@ -1,0 +1,23 @@
+{
+  "format": "4:5",
+  "headline": ["Now you always", "see the answer"],
+  "sub": "Lose a run and Nerdos shows you the right answer &mdash; and the one you actually tapped.",
+  "cards": [
+    {
+      "type": "grammar",
+      "phrase": "____ jacket is this?",
+      "correct": "Whose",
+      "picked": "Who&rsquo;s"
+    },
+    {
+      "type": "math",
+      "left": 7,
+      "op": "x",
+      "right": 8,
+      "shown": 54,
+      "trueResult": 56,
+      "picked": "&#10003;"
+    }
+  ],
+  "out": "out/nerdos-answer-1080x1350.png"
+}

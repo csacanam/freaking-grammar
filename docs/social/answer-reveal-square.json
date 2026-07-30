@@ -1,0 +1,14 @@
+{
+  "format": "1:1",
+  "headline": ["Now you always", "see the answer"],
+  "sub": "Lose a run and Nerdos shows you the right answer &mdash; and the one you actually tapped.",
+  "cards": [
+    {
+      "type": "grammar",
+      "phrase": "____ jacket is this?",
+      "correct": "Whose",
+      "picked": "Who&rsquo;s"
+    }
+  ],
+  "out": "out/nerdos-answer-1080x1080.png"
+}
