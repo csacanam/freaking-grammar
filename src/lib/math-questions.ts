@@ -74,6 +74,32 @@ export function timeBudgetMs(q: number): number {
   return 1500;
 }
 
+// Rebuilds the equation a run ended on, plus its real result, for the
+// game-over reveal. trueResult is recomputed from the operands rather than
+// read back — the generator's result is a pure function of them, so there's
+// nothing to store. Returns null (→ no reveal shown) if any column is
+// missing; a run shouldn't end on a half-written question, but a blank card
+// beats a broken response.
+export function mathRevealFrom(rq: {
+  math_left: number | null;
+  math_right: number | null;
+  math_op: string | null;
+  math_shown: number | null;
+}): {
+  left: number;
+  right: number;
+  op: MathOp;
+  shown: number;
+  trueResult: number;
+} | null {
+  const { math_left: l, math_right: r, math_op: op, math_shown: shown } = rq;
+  if (l === null || r === null || op === null || shown === null) return null;
+  if (op !== "+" && op !== "-" && op !== "x" && op !== "/") return null;
+  const trueResult =
+    op === "+" ? l + r : op === "-" ? l - r : op === "x" ? l * r : l / r;
+  return { left: l, right: r, op, shown, trueResult };
+}
+
 export function generateMathQuestion(qIndex: number): MathQuestion {
   const band = bandForStreak(qIndex);
   const op = band.ops[randomInt(0, band.ops.length)];

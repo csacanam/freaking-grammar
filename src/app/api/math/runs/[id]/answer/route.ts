@@ -12,7 +12,11 @@
 
 import type { NextRequest } from "next/server";
 import { supabase, computeRank } from "@/lib/supabase";
-import { generateMathQuestion, timeBudgetMs } from "@/lib/math-questions";
+import {
+  generateMathQuestion,
+  timeBudgetMs,
+  mathRevealFrom,
+} from "@/lib/math-questions";
 
 export const dynamic = "force-dynamic";
 
@@ -121,7 +125,9 @@ export async function POST(
   // Latest served equation for this run.
   const { data: rqRow } = await supabase
     .from("run_questions")
-    .select("id,q_index,served_at,answered_at,math_truth")
+    .select(
+      "id,q_index,served_at,answered_at,math_truth,math_left,math_right,math_op,math_shown",
+    )
     .eq("run_id", runId)
     .order("q_index", { ascending: false })
     .limit(1)
@@ -136,6 +142,10 @@ export async function POST(
     served_at: string;
     answered_at: string | null;
     math_truth: boolean | null;
+    math_left: number | null;
+    math_right: number | null;
+    math_op: string | null;
+    math_shown: number | null;
   };
   if (rq.answered_at) {
     return Response.json({ error: "already-answered" }, { status: 409 });
@@ -143,6 +153,14 @@ export async function POST(
   if (rq.math_truth === null) {
     return Response.json({ error: "missing-truth" }, { status: 500 });
   }
+
+  // What the run ended on, for the game-over reveal — same rationale as
+  // Grammar: with a binary ✓/✗ choice, "you were wrong" already implies the
+  // other verdict, so this leaks nothing. trueResult is recomputed from the
+  // operands rather than stored (the generator's result is deterministic), so
+  // no schema change. Built BEFORE the timing gate below so the too-fast
+  // (bot) response stays identical in shape to a normal wrong answer.
+  const reveal = mathRevealFrom(rq);
 
   // Server-side timer enforcement. The UI shows a per-question clock
   // (2.5s → 1.5s as q_index climbs) but UI timers are decoration —
@@ -207,6 +225,10 @@ export async function POST(
       reason,
       score: run.score,
       rank,
+      ...reveal,
+      // A too-slow answer WAS tapped, just late. A too-fast one is a bot, but
+      // we still echo it so this response shape matches a normal wrong answer.
+      pickedChoice: choice,
     });
   }
 
@@ -242,6 +264,8 @@ export async function POST(
       reason: "wrong",
       score: run.score,
       rank,
+      ...reveal,
+      pickedChoice: choice,
     });
   }
 

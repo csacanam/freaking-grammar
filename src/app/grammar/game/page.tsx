@@ -9,6 +9,7 @@ import {
   submitAnswer,
   finishRun,
   type RunQuestion,
+  type AnswerReveal,
 } from "@/lib/api";
 import { useCurrentPlayer } from "@/lib/wallet";
 import { useLang } from "@/lib/lang-provider";
@@ -16,6 +17,17 @@ import { posthog } from "@/lib/posthog-provider";
 import { AutoFitText } from "@/components/AutoFitText";
 
 const QUESTION_SECONDS = 5;
+
+// The question a run died on, forwarded to /over as query params so the
+// game-over screen can show what the answer was. Params (not sessionStorage)
+// to match how score/rank/reason already travel; a hand-edited URL only
+// changes what that one screen prints, so there's nothing to protect here.
+function revealParams(res: Partial<AnswerReveal>): string {
+  if (!res.phrase || !res.correctWord) return "";
+  const p = new URLSearchParams({ q: res.phrase, a: res.correctWord });
+  if (res.pickedWord) p.set("p", res.pickedWord);
+  return `&${p.toString()}`;
+}
 
 // "submitting" is the brief window after a tap while we await the server's
 // verdict — the client no longer knows correctness locally (the answer isn't
@@ -148,7 +160,7 @@ function GameInner() {
         });
         transitionRef.current = setTimeout(() => {
           router.replace(
-            `/grammar/game/over?score=${res.score}&rank=${res.rank}&reason=timeout&game=${game}`,
+            `/grammar/game/over?score=${res.score}&rank=${res.rank}&reason=timeout&game=${game}${revealParams(res)}`,
           );
         }, 700);
       } catch {
@@ -186,7 +198,8 @@ function GameInner() {
             reason: res.reason,
           });
           router.replace(
-            `/grammar/game/over?score=${res.score}&rank=${res.rank}&reason=${res.reason}&game=${game}`,
+            // A cleared deck ends on a CORRECT answer — nothing to reveal.
+            `/grammar/game/over?score=${res.score}&rank=${res.rank}&reason=${res.reason}&game=${game}${res.correct ? "" : revealParams(res)}`,
           );
         } else if (res.correct && "nextQuestion" in res) {
           setQuestion(res.nextQuestion);

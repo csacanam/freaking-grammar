@@ -103,6 +103,30 @@ export async function POST(
     return Response.json({ error: "already-answered" }, { status: 409 });
   }
 
+  // Load the question BEFORE the timing gate. Every run-ending response now
+  // carries the phrase + correct word so the game-over screen can show what
+  // the answer was (see the reveal note below), and the too-fast path MUST
+  // stay byte-identical in shape to a normal wrong answer — if the reveal
+  // fields were missing there, a bot could detect the floor by their absence.
+  const { data: qRow } = await supabase
+    .from("questions")
+    .select("correct,phrase")
+    .eq("id", rq.question_id)
+    .single();
+
+  if (!qRow) {
+    return Response.json({ error: "question-missing" }, { status: 500 });
+  }
+  const q = qRow as { correct: string; phrase: string };
+
+  // Revealing the correct word on a run-ending answer leaks nothing: with only
+  // two options on screen, "you were wrong" already tells the player the other
+  // word was right. It's shown explicitly because players genuinely misremember
+  // which side they tapped under the 5s clock and then believe the bank is
+  // wrong. The timeout case does reveal one bit the player hadn't earned, but
+  // bots don't time out — they answer fast — so it costs nothing defensively.
+  const reveal = { phrase: q.phrase, correctWord: q.correct };
+
   // Server-side timer enforcement. The 5s per-question clock the UI shows is
   // pure decoration — anyone POSTing here directly bypasses it. Read our own
   // served_at vs now and shut down two failure modes, mirroring the Math route:
@@ -138,19 +162,12 @@ export async function POST(
       reason,
       score: run.score,
       rank,
+      ...reveal,
+      // A too-slow answer WAS tapped, just late — show it. A too-fast one is a
+      // bot, but we still echo it to keep this response shape identical.
+      pickedWord,
     });
   }
-
-  const { data: qRow } = await supabase
-    .from("questions")
-    .select("correct")
-    .eq("id", rq.question_id)
-    .single();
-
-  if (!qRow) {
-    return Response.json({ error: "question-missing" }, { status: 500 });
-  }
-  const q = qRow as { correct: string };
 
   const isCorrect = pickedWord === q.correct;
 
@@ -180,6 +197,8 @@ export async function POST(
       reason: "wrong",
       score: run.score,
       rank,
+      ...reveal,
+      pickedWord,
     });
   }
 

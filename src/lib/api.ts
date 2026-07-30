@@ -112,18 +112,27 @@ export type RunQuestion = { phrase: string; options: [string, string] };
 
 export type StartRunResult = { runId: string; question: RunQuestion };
 
+// What the run ended on, so the game-over screen can show the answer. Only
+// present on run-ending failures — a cleared deck has nothing to reveal.
+export type AnswerReveal = {
+  phrase: string;
+  correctWord: string;
+  // Absent when the client's clock ran out before any tap.
+  pickedWord?: string;
+};
+
 export type AnswerResult =
   | { correct: true; score: number; nextQuestion: RunQuestion }
   | { correct: true; ended: true; score: number; rank: number; reason: "cleared" }
-  | {
+  | ({
       correct: false;
       ended: true;
       score: number;
       rank: number;
       reason: "wrong" | "timeout";
-    };
+    } & Partial<AnswerReveal>);
 
-export type FinishResult = { score: number; rank: number };
+export type FinishResult = { score: number; rank: number } & Partial<AnswerReveal>;
 
 export async function startRun(
   lang: Lang,
@@ -187,9 +196,30 @@ export type MathQuestion = {
 
 export type MathStartResult = { runId: string; question: MathQuestion };
 
+// The equation a run ended on, for the game-over reveal. `shown` is what was
+// on screen; `trueResult` is the real answer — equal when the equation was
+// honest, different when it was a decoy.
+export type MathReveal = {
+  left: number;
+  right: number;
+  op: MathQuestion["op"];
+  shown: number;
+  trueResult: number;
+  // Absent when the client's clock ran out before any tap.
+  pickedChoice?: "correct" | "incorrect";
+};
+
 export type MathAnswerResult =
   | { correct: true; score: number; nextQuestion: MathQuestion }
-  | { correct: false; ended: true; score: number; rank: number; reason: "wrong" };
+  | ({
+      correct: false;
+      ended: true;
+      score: number;
+      rank: number;
+      reason: "wrong" | "timeout";
+    } & Partial<MathReveal>);
+
+export type MathFinishResult = { score: number; rank: number } & Partial<MathReveal>;
 
 export async function startMathRun(
   player: string,
@@ -239,7 +269,7 @@ export async function submitMathAnswer(
 export async function finishMathRun(
   runId: string,
   reason: "timeout" | "abandoned",
-): Promise<FinishResult> {
+): Promise<MathFinishResult> {
   const r = await fetch(`/api/math/runs/${encodeURIComponent(runId)}/finish`, {
     method: "POST",
     headers: { "content-type": "application/json" },

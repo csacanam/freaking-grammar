@@ -55,6 +55,12 @@ export const dict = {
     timeUpHeadline: "⏰  Time's up",
     gameOverHeadline: "💥  Game over",
     clearedHeadline: "🏆  Cleared the deck",
+    // Game-over answer reveal. "Tapped" (not "answered") because on a timeout
+    // there was no answer at all, and the whole point of the line is to remind
+    // the player which side their thumb actually hit.
+    revealCorrectLabel: "Correct answer",
+    revealPickedLabel: "You tapped",
+    revealNoPick: "You ran out of time",
     retry: "RETRY",
     startErrorHeadline: "Couldn't start the run",
     startErrorFallback: "Could not start the run.",
@@ -403,6 +409,9 @@ export const dict = {
     timeUpHeadline: "⏰  Se acabó el tiempo",
     gameOverHeadline: "💥  Fin del juego",
     clearedHeadline: "🏆  ¡Mazo completo!",
+    revealCorrectLabel: "Respuesta correcta",
+    revealPickedLabel: "Tocaste",
+    revealNoPick: "Se te acabó el tiempo",
     retry: "REINTENTAR",
     startErrorHeadline: "No pudimos empezar la jugada",
     startErrorFallback: "No se pudo empezar la jugada.",

@@ -3,6 +3,7 @@
 
 import type { NextRequest } from "next/server";
 import { supabase, computeRank } from "@/lib/supabase";
+import { mathRevealFrom } from "@/lib/math-questions";
 
 export const dynamic = "force-dynamic";
 
@@ -57,11 +58,32 @@ export async function POST(
       .eq("id", runId);
   }
 
+  // Reveal the equation the clock ran out on, so the game-over screen can show
+  // the real result — same rationale as Grammar. Only the latest question, and
+  // only if it was never answered (a run finished right after a correct answer
+  // has nothing pending). Best-effort: no reveal beats a failed finish.
+  let reveal = null;
+  if (reason === "timeout") {
+    const { data: rqRow } = await supabase
+      .from("run_questions")
+      .select("answered_at,math_left,math_right,math_op,math_shown")
+      .eq("run_id", runId)
+      .order("q_index", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const rq = rqRow as
+      | ({ answered_at: string | null } & Parameters<
+          typeof mathRevealFrom
+        >[0])
+      | null;
+    if (rq && !rq.answered_at) reveal = mathRevealFrom(rq);
+  }
+
   const rank = await computeRank(
     { game: "math" },
     run.day_utc,
     run.player,
     run.score,
   );
-  return Response.json({ score: run.score, rank });
+  return Response.json({ score: run.score, rank, ...reveal });
 }

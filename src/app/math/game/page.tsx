@@ -8,7 +8,9 @@ import {
   submitMathAnswer,
   finishMathRun,
   type MathQuestion,
+  type MathReveal,
 } from "@/lib/api";
+import { opGlyph } from "@/lib/math-display";
 import { useLang } from "@/lib/lang-provider";
 import type { Strings } from "@/lib/i18n";
 import { posthog } from "@/lib/posthog-provider";
@@ -57,15 +59,19 @@ const MATH_BACKDROPS = [
   "bg-red",
 ];
 
-// Display-friendly operator glyphs. The server sends "x" / "/" because
-// those are stable in JSON; we render them as proper math symbols.
-function opGlyph(op: MathQuestion["op"]): string {
-  switch (op) {
-    case "+": return "+";
-    case "-": return "−";
-    case "x": return "×";
-    case "/": return "÷";
-  }
+// The equation a run died on, forwarded to /over as query params so the
+// game-over screen can show the real result. Mirrors the Grammar helper.
+function revealParams(res: Partial<MathReveal>): string {
+  if (res.left === undefined || res.trueResult === undefined) return "";
+  const p = new URLSearchParams({
+    l: String(res.left),
+    r: String(res.right),
+    o: String(res.op),
+    s: String(res.shown),
+    tr: String(res.trueResult),
+  });
+  if (res.pickedChoice) p.set("pc", res.pickedChoice);
+  return `&${p.toString()}`;
 }
 
 type Outcome = "playing" | "correct" | "wrong" | "timeout" | "loading";
@@ -237,7 +243,7 @@ function MathGameInner() {
         });
         transitionRef.current = setTimeout(() => {
           router.replace(
-            `/math/game/over?score=${res.score}&rank=${res.rank}&reason=timeout`,
+            `/math/game/over?score=${res.score}&rank=${res.rank}&reason=timeout${revealParams(res)}`,
           );
         }, 700);
       } catch {
@@ -277,7 +283,7 @@ function MathGameInner() {
           // we bounce to the over screen.
           await new Promise((r) => setTimeout(r, 600));
           router.replace(
-            `/math/game/over?score=${res.score}&rank=${res.rank}&reason=${res.reason}`,
+            `/math/game/over?score=${res.score}&rank=${res.rank}&reason=${res.reason}${revealParams(res)}`,
           );
           return;
         }
