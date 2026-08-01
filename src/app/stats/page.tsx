@@ -35,6 +35,14 @@ export const dynamic = "force-dynamic";
 const ENTRY_FEE_USD = 0.1;
 const PROTOCOL_BPS = 2000; // 20%
 const PROTOCOL_CUT_USD = (ENTRY_FEE_USD * PROTOCOL_BPS) / 10_000;
+// The rest of the entry stays in the pot and goes to the winner, so it is
+// the players funding each other — never protocol revenue, never our cost.
+const POT_SHARE_USD = ENTRY_FEE_USD - PROTOCOL_CUT_USD;
+
+// The MiniPay launch. Everything about the economics changes here —
+// 92 days before it not one day turned a profit; after it most do — so
+// the cumulative P&L is reported on both sides of this date.
+const MINIPAY_LAUNCH = "2026-07-21";
 
 type Lang = "en" | "es";
 
@@ -98,6 +106,13 @@ type GameTodayTile = {
   accent: string;
 };
 
+type PnlEra = {
+  paid: number;
+  revenueUSD: number;
+  prizeCostUSD: number;
+  netUSD: number;
+};
+
 type GameTreasuryTile = {
   key: GameKey;
   label: string;
@@ -142,6 +157,13 @@ type Stats = {
     // stated as a number. seedCostUSD is null when seeds are unreadable.
     last7: { paid: number; revenueUSD: number; seedCostUSD: number | null };
     byGame: ByGame;
+  };
+  // Protocol fee earned, split at the MiniPay launch.
+  pnl: {
+    launchDate: string;
+    pre: PnlEra;
+    post: PnlEra;
+    all: PnlEra;
   };
   economy: {
     revenueUSD: number;
@@ -219,10 +241,11 @@ async function loadStats(): Promise<Stats | null> {
       game: string | null;
       amount_units: string | number;
       claim_tx: string | null;
+      day_utc: string;
     }>((from, to) =>
       db
         .from("wins")
-        .select("lang,game,amount_units,claim_tx")
+        .select("lang,game,amount_units,claim_tx,day_utc")
         .range(from, to),
     ),
     fetchAllPaged<{
@@ -457,6 +480,50 @@ async function loadStats(): Promise<Stats | null> {
   );
   const revenueUSD = totalPaid * PROTOCOL_CUT_USD;
 
+  // ------------------------------------------------- P&L BY ERA
+  // The app's own result: what the protocol earned minus what it paid
+  // out of pocket in prizes.
+  //
+  //   revenue   = PROTOCOL_CUT_USD x paid plays   (the 20% cut)
+  //   prize cost= prizes awarded - POT_SHARE_USD x paid plays
+  //
+  // The second line matters: a prize is not all ours to expense. Every
+  // paid play leaves POT_SHARE_USD (80% of the entry) in the pot, so the
+  // players themselves fund most of what the winner takes home. Only the
+  // remainder — the daily seed the treasury puts in on rollDay — is a
+  // real cost to us. Subtracting whole prizes while counting only the
+  // 20% as revenue would double-count the players' own money against us.
+  //
+  // Split at the MiniPay launch because the two eras are not comparable:
+  // 92 days before it earned less than a single day earns now.
+  //
+  // Caveat: paid plays come from the DB, which undercounts against the
+  // chain by ~4% (some plays confirm on-chain but never land a run row).
+  // That trims revenue and inflates prize cost, so the figure shown is
+  // the conservative one — reality is slightly better.
+  const pnlEra = (from: string, to?: string): PnlEra => {
+    const inEra = (day: string) => day >= from && (!to || day < to);
+    const paid = runs.filter((r) => !r.was_free && inEra(r.day_utc)).length;
+    const prizesAwarded = wins
+      .filter((w) => inEra(w.day_utc))
+      .reduce((s, w) => s + Number(w.amount_units) / TOKEN_DECIMALS, 0);
+    const revenueUSD = paid * PROTOCOL_CUT_USD;
+    const prizeCostUSD = prizesAwarded - paid * POT_SHARE_USD;
+    return {
+      paid,
+      revenueUSD,
+      prizeCostUSD,
+      netUSD: revenueUSD - prizeCostUSD,
+    };
+  };
+
+  const pnl = {
+    launchDate: MINIPAY_LAUNCH,
+    pre: pnlEra("0000-00-00", MINIPAY_LAUNCH),
+    post: pnlEra(MINIPAY_LAUNCH),
+    all: pnlEra("0000-00-00"),
+  };
+
   // ---------------------------------------------------- ON-CHAIN
   // Each kind of operator/user tx leaves a hash in our DB. Counting
   // them gives a faithful "activity on Celo" picture without needing
@@ -539,6 +606,7 @@ async function loadStats(): Promise<Stats | null> {
       },
       byGame,
     },
+    pnl,
     economy: {
       revenueUSD,
       distributedUSD: totalDistributedUSD,
@@ -1117,6 +1185,69 @@ export default async function StatsPage() {
           </Card>
 
           <SectionTitle>{t.statsSectionEconomy}</SectionTitle>
+
+          {/* The app's own P&L, split at the MiniPay launch. The split is
+              the whole point: averaging the two eras hides that 92 days
+              before the launch earned less than a single day earns now. */}
+          <Card title={t.statsCardPnl}>
+            <div className="flex items-baseline gap-2">
+              <span
+                className={`font-display text-4xl tabular-nums ${
+                  stats.pnl.all.netUSD >= 0 ? "text-[#1ea869]" : "text-[#e0492e]"
+                }`}
+              >
+                {stats.pnl.all.netUSD >= 0 ? "+" : "−"}
+                {fmtUSD(Math.abs(stats.pnl.all.netUSD))}
+              </span>
+              <span className="text-[11px] text-muted">{t.statsPnlAllTime}</span>
+            </div>
+
+            <table className="mt-3 w-full text-[11px] font-mono">
+              <thead>
+                <tr className="text-muted text-left">
+                  <th className="font-normal py-1" />
+                  <th className="font-normal py-1 text-right">
+                    {t.statsPnlRevenue}
+                  </th>
+                  <th className="font-normal py-1 text-right">
+                    {t.statsPnlPrizeCost}
+                  </th>
+                  <th className="font-normal py-1 text-right">
+                    {t.statsPnlNet}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  { label: t.statsPnlPre, era: stats.pnl.pre },
+                  { label: t.statsPnlPost, era: stats.pnl.post },
+                ].map(({ label, era }) => (
+                  <tr key={label} className="border-t border-black/10">
+                    <td className="py-1.5">{label}</td>
+                    <td className="py-1.5 text-right tabular-nums">
+                      {fmtUSD(era.revenueUSD)}
+                    </td>
+                    <td className="py-1.5 text-right tabular-nums">
+                      −{fmtUSD(era.prizeCostUSD)}
+                    </td>
+                    <td
+                      className={`py-1.5 text-right tabular-nums font-semibold ${
+                        era.netUSD >= 0 ? "text-[#1ea869]" : "text-[#e0492e]"
+                      }`}
+                    >
+                      {era.netUSD >= 0 ? "+" : "−"}
+                      {fmtUSD(Math.abs(era.netUSD))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <p className="mt-2 text-[10px] font-mono text-muted leading-snug">
+              {t.statsPnlHint}
+            </p>
+          </Card>
+
           <section className="grid grid-cols-2 md:grid-cols-3 gap-3">
             <Tile
               label={t.statsRevenue}
