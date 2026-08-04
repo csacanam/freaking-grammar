@@ -33,6 +33,7 @@
 // mechanism is fully known.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { fetchAllPaged } from "@/lib/supabase";
 
 const MIN_SAMPLE = Number(process.env.BOT_MIN_SAMPLE ?? 30);
 const HEURISTIC_LOOKBACK_DAYS = Number(process.env.BOT_LOOKBACK_DAYS ?? 30);
@@ -68,6 +69,51 @@ const HEURISTIC_SCORE_MAX: Record<"grammar" | "math", number> = {
   math: Number(process.env.BOT_SCORE_MAX_MATH ?? 200),
 };
 
+// ---------------------------------------------------------- answer-key test
+// Grammar-only, settlement-only. Score alone CANNOT separate an answer key
+// from a returning player: the EN bank is finite (236), so someone who plays
+// daily accumulates coverage and their max streak climbs on memory alone. A
+// wallet at 188 with 198 of the bank already seen is a legitimate human; the
+// old live score ceiling flagged it anyway.
+//
+// The discriminating signal is accuracy on questions the wallet has NEVER seen
+// before. A real player is FLAT over time — their streak grows because more of
+// the run is repeats, but their first-exposure accuracy stays where it always
+// was (observed: 91–98%). An answer key jumps to ~100% on fresh questions with
+// no history to explain it.
+//
+// We score that jump as a binomial z against the wallet's OWN historical fresh
+// accuracy (or the population baseline when it has no history yet), rather
+// than a fixed percentage gate — the same 100% means very different things
+// over 30 fresh questions and over 236.
+const KEY_MIN_FRESH = Number(process.env.BOT_KEY_MIN_FRESH ?? 25);
+const KEY_MIN_HIST = Number(process.env.BOT_KEY_MIN_HIST ?? 20);
+// Stand-in first-exposure accuracy for a wallet with no history of its own,
+// and a FLOOR under every wallet's measured accuracy (see the baseline note in
+// checkGrammarAnswerKey for why own history may only raise the bar).
+//
+// This is deliberately NOT the population mean. Measured over 226 unflagged EN
+// players with 3+ runs (12.8k first-exposure answers): mean 85.5%, p90 91.9%,
+// best single player 97.9%. Assuming the mean would flag every strong player on
+// sight. The value here sits above the 90th percentile — i.e. we assume anyone
+// we are about to judge is better than nearly the entire player base, and only
+// call it a key when the run beats even that. Erring high costs us detections;
+// erring low costs us real players, and only one of those two churns.
+const KEY_BASELINE_ACC = Number(process.env.BOT_KEY_BASELINE_ACC ?? 0.96);
+// How many standard deviations above baseline counts as key-like. Backtested
+// against every wallet the old live ceiling flagged: everything the manual
+// audit could explain as a human sits below one side of a clear gap, and the
+// unexplained runs (a fresh address clearing essentially the whole bank) sit
+// well above it. Public default is the conservative end — like every other
+// threshold here, set the operative value in the prod env, not in this repo.
+//
+// Known residual: this cannot separate the very best humans from a key on a
+// long perfect run — the gap between 97.9% (best measured player) and 100% is
+// small, so a strong player who goes ~150 fresh questions without a miss can
+// trip it. That run is rare (~4% of attempts even for that player) and it costs
+// them one pot, not a ban, which is the trade this design deliberately makes.
+const KEY_Z_MIN = Number(process.env.BOT_KEY_Z_MIN ?? 3.0);
+
 export type BotFlag =
   | { flagged: false }
   | { flagged: true; reason: "blacklist" }
@@ -78,6 +124,15 @@ export type BotFlag =
       p50ms: number;
       sampleSize: number;
       relSpread: number;
+    }
+  | {
+      flagged: true;
+      reason: "answer-key";
+      freshN: number;
+      freshCorrect: number;
+      histN: number;
+      baseline: number;
+      z: number;
     };
 
 // Pull the full `bot_wallets` blacklist once per settlement so the
@@ -91,11 +146,210 @@ export async function loadBotBlacklist(
   return new Set(rows.map((r) => r.player.toLowerCase()));
 }
 
+export type AnswerKeyVerdict = {
+  keyLike: boolean;
+  freshN: number;
+  freshCorrect: number;
+  histN: number;
+  histAcc: number | null;
+  baseline: number;
+  z: number;
+  diedOnOwnMiss: boolean;
+  note: string;
+};
+
+type RunQuestionRow = {
+  run_id: string;
+  question_id: string;
+  q_index: number;
+  answer_correct: boolean | null;
+};
+
+// `.in()` on a huge id list blows past the URL limit, so chunk the run ids and
+// page each chunk (a daily player accumulates thousands of answered questions).
+async function fetchRunQuestions(
+  runIds: string[],
+  supabase: SupabaseClient,
+): Promise<RunQuestionRow[]> {
+  const out: RunQuestionRow[] = [];
+  for (let i = 0; i < runIds.length; i += 200) {
+    const chunk = runIds.slice(i, i + 200);
+    const rows = await fetchAllPaged<RunQuestionRow>((from, to) =>
+      supabase
+        .from("run_questions")
+        .select("run_id,question_id,q_index,answer_correct")
+        .in("run_id", chunk)
+        .range(from, to),
+    );
+    out.push(...rows);
+  }
+  return out;
+}
+
+// Judge ONE grammar run: does its first-exposure accuracy jump past what this
+// wallet has ever shown before? Returns the full evidence either way so the
+// settlement summary can show the numbers behind a skip.
+export async function checkGrammarAnswerKey(
+  player: string,
+  runId: string,
+  supabase: SupabaseClient,
+): Promise<AnswerKeyVerdict> {
+  const addr = player.toLowerCase();
+  const inconclusive = (note: string): AnswerKeyVerdict => ({
+    keyLike: false,
+    freshN: 0,
+    freshCorrect: 0,
+    histN: 0,
+    histAcc: null,
+    baseline: 0,
+    z: 0,
+    diedOnOwnMiss: false,
+    note,
+  });
+
+  const { data: runRow } = await supabase
+    .from("runs")
+    .select("id,lang,game,score,started_at")
+    .eq("id", runId)
+    .maybeSingle();
+  const run = runRow as {
+    id: string;
+    lang: string;
+    game: string;
+    score: number | null;
+    started_at: string;
+  } | null;
+  if (!run || run.game !== "grammar") return inconclusive("not-a-grammar-run");
+
+  // Cheap exit before the expensive history walk. A run answers at most
+  // score + 1 questions, so freshN <= score + 1, and z peaks when every fresh
+  // answer is correct: z_max = sqrt(freshN * (1 - p) / p), rising with freshN
+  // and falling with p. Since the baseline is floored at KEY_BASELINE_ACC, a
+  // score below this bound provably cannot reach KEY_Z_MIN no matter what the
+  // history turns out to be — so there is nothing to learn by fetching it.
+  // Derived from the constants rather than hardcoded, so retuning the env
+  // thresholds can't silently switch the test off.
+  const maxScoreThatCannotFire =
+    (KEY_Z_MIN * KEY_Z_MIN * KEY_BASELINE_ACC) / (1 - KEY_BASELINE_ACC) - 1;
+  const runScore = run.score ?? 0;
+  if (runScore < maxScoreThatCannotFire) {
+    return inconclusive("score-below-detectable-floor");
+  }
+
+  // Prior finished runs on the SAME bank (the ES and EN banks are disjoint, so
+  // ES history says nothing about which EN questions this wallet has seen).
+  const priorRuns = await fetchAllPaged<{ id: string; started_at: string }>(
+    (from, to) =>
+      supabase
+        .from("runs")
+        .select("id,started_at")
+        .eq("player", addr)
+        .eq("game", "grammar")
+        .eq("lang", run.lang)
+        .eq("status", "finished")
+        .lt("started_at", run.started_at)
+        .order("started_at", { ascending: true })
+        .range(from, to),
+  );
+
+  const startedAt = new Map(priorRuns.map((r) => [r.id, r.started_at]));
+  const priorQs = await fetchRunQuestions(
+    priorRuns.map((r) => r.id),
+    supabase,
+  );
+  const runQs = await fetchRunQuestions([run.id], supabase);
+  if (runQs.length === 0) return inconclusive("no-answers-on-run");
+
+  // Walk prior answers in true chronological order so "first exposure" means
+  // first exposure, and build the per-question record at the same time.
+  const prior = new Map<string, { seen: number; correct: number }>();
+  let histN = 0;
+  let histCorrect = 0;
+  const priorSorted = priorQs.slice().sort((a, b) => {
+    const ta = startedAt.get(a.run_id) ?? "";
+    const tb = startedAt.get(b.run_id) ?? "";
+    return ta === tb ? a.q_index - b.q_index : ta < tb ? -1 : 1;
+  });
+  for (const q of priorSorted) {
+    const seenBefore = prior.get(q.question_id);
+    if (!seenBefore) {
+      histN++;
+      if (q.answer_correct === true) histCorrect++;
+    }
+    const rec = seenBefore ?? { seen: 0, correct: 0 };
+    rec.seen++;
+    if (q.answer_correct === true) rec.correct++;
+    prior.set(q.question_id, rec);
+  }
+
+  let freshN = 0;
+  let freshCorrect = 0;
+  let diedOnOwnMiss = false;
+  for (const q of runQs.slice().sort((a, b) => a.q_index - b.q_index)) {
+    const rec = prior.get(q.question_id);
+    if (!rec) {
+      freshN++;
+      if (q.answer_correct === true) freshCorrect++;
+    }
+    // Dying on a question this wallet has previously gotten wrong is a strong
+    // human signal: a persistent blind spot is memorization, and an answer key
+    // does not reproduce its own past mistakes.
+    if (q.answer_correct === false && rec && rec.correct < rec.seen) {
+      diedOnOwnMiss = true;
+    }
+  }
+
+  const histAcc = histN >= KEY_MIN_HIST ? histCorrect / histN : null;
+  // A wallet's own history can only RAISE the bar, never lower it. Own accuracy
+  // measured over a few dozen questions is mostly noise, and letting a noisy-low
+  // baseline stand makes an ordinary good run look damning: wallets with ~27-40
+  // historical fresh answers scored 93% by chance, and using that as their bar
+  // pushed a routine 96/96 to the same z as a brand-new address clearing 193/194
+  // of the bank. Flooring collapses that false signal and opens a clean gap.
+  // Also clamp at 0.995: p=1 has zero variance and would make every z infinite.
+  const baseline = Math.min(
+    0.995,
+    Math.max(KEY_BASELINE_ACC, histAcc ?? KEY_BASELINE_ACC),
+  );
+
+  if (freshN < KEY_MIN_FRESH) {
+    return {
+      ...inconclusive("too-few-fresh-questions"),
+      freshN,
+      freshCorrect,
+      histN,
+      histAcc,
+      baseline,
+      diedOnOwnMiss,
+    };
+  }
+
+  const sd = Math.sqrt(freshN * baseline * (1 - baseline));
+  const z = sd > 0 ? (freshCorrect - freshN * baseline) / sd : 0;
+
+  const keyLike = z >= KEY_Z_MIN && !diedOnOwnMiss;
+  return {
+    keyLike,
+    freshN,
+    freshCorrect,
+    histN,
+    histAcc,
+    baseline,
+    z,
+    diedOnOwnMiss,
+    note: keyLike
+      ? "fresh-accuracy jump"
+      : diedOnOwnMiss
+        ? "died-on-own-miss"
+        : "within-baseline",
+  };
+}
+
 export async function checkBotPlayer(
   player: string,
   supabase: SupabaseClient,
   blacklist?: Set<string>,
-  scope?: { game?: "grammar" | "math" },
+  scope?: { game?: "grammar" | "math"; runId?: string },
 ): Promise<BotFlag> {
   const addr = player.toLowerCase();
 
@@ -107,6 +361,29 @@ export async function checkBotPlayer(
     : await isWalletBlacklisted(addr, supabase);
   if (isBlacklisted) {
     return { flagged: true, reason: "blacklist" };
+  }
+
+  // Grammar answer-key test. Needs the specific candidate run, so it only ever
+  // fires where the caller has one — settlement. The live answer path and the
+  // periodic sweep pass no runId and are unaffected.
+  //
+  // Deliberately does NOT persist to `bot_wallets`: this verdict is about ONE
+  // run, not the wallet. A wrong call costs the player a single pot instead of
+  // a permanent, cross-game ban they can never see or appeal, which is the
+  // right way round given a pot is small and a churned paying player is not.
+  if (scope?.game === "grammar" && scope.runId) {
+    const verdict = await checkGrammarAnswerKey(addr, scope.runId, supabase);
+    if (verdict.keyLike) {
+      return {
+        flagged: true,
+        reason: "answer-key",
+        freshN: verdict.freshN,
+        freshCorrect: verdict.freshCorrect,
+        histN: verdict.histN,
+        baseline: verdict.baseline,
+        z: verdict.z,
+      };
+    }
   }
 
   const since = new Date(

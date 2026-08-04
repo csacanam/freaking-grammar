@@ -21,18 +21,29 @@ const MIN_ANSWER_MS = 400;
 const GRAMMAR_QUESTION_MS = 5000;
 const ANSWER_OVERRUN_MS = 3000;
 
-// Silent live bot-flag ceiling for a single unbroken run. A grammar run is a
-// pure streak — it ends on the first wrong answer — so any in-progress run is
-// 100% correct by construction; the running score alone is the signal here.
-// When a streak climbs past what any human reaches (the top real player clears
-// ~70) without ever clearing the whole bank, it's a harvested answer key that
-// stops just short of the deterministic full-bank auto-flag below. We do NOT
-// end the run: cutting it at a fixed score would leak the line and let the
-// operator pace to just under it. Instead we flag the wallet silently (it drops
-// off the live podium via the lobby's bot_wallets filter and is skipped at
-// settlement) and let the run continue as if nothing happened. The OPERATIVE
-// value lives in the deployment env (private) — the public default is
-// effectively off so this repo reveals no threshold to calibrate against.
+// Silent live bot-flag ceiling for a single unbroken run, kept as a lever but
+// DELIBERATELY OFF FOR GRAMMAR (see below) — leave BOT_LIVE_SCORE_MAX_GRAMMAR
+// unset in prod. Math still runs its own ceiling, where the reasoning holds.
+//
+// The rule fires on score alone, and on a finite bank that does not identify a
+// bot. The EN bank is 236 questions, so a player who returns daily accumulates
+// coverage and their max streak climbs on memorization alone — the "~70 human
+// best" this was calibrated against was stale by the time it shipped. Audited
+// after two weeks live: of 25 wallets it flagged, only ~5 looked like genuine
+// keys, ~5 were clearly human, and the rest were unresolvable from score.
+//
+// It also failed on its own terms. Because a flagged wallet vanishes from the
+// live podium, the public leaderboard was truncated at the threshold, and the
+// number leaked: runs began piling up at exactly one below the ceiling (14 in
+// two weeks vs 1-4 at every neighbouring score) with players throwing the next
+// question on purpose. It stopped catching the operators it was aimed at and
+// went on penalising the honest players who did not know there was a line.
+//
+// Grammar's prize integrity is now defended at settlement instead, by the
+// answer-key test in src/lib/bot-detection.ts — which judges first-exposure
+// accuracy on ONE run rather than banning a wallet on a raw score, and so
+// costs a single pot when it is wrong. The deterministic full-bank clear below
+// stays: nobody memorizes all 236 inside the timer.
 const LIVE_FLAG_SCORE_GRAMMAR = Number(
   process.env.BOT_LIVE_SCORE_MAX_GRAMMAR ?? 100_000,
 );

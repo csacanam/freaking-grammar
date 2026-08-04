@@ -115,15 +115,25 @@ async function sendSettlementSummary(
       : `⚠️ No clean winner — pot rolls forward.`;
     lines.push("", `*${label} → ${c.day}*`, winnerLine);
     if (r.skipped.length > 0) {
-      lines.push(`🆕 auto-flagged ${r.skipped.length} new bot(s):`);
+      // "skipped", not "flagged": an answer-key skip costs this pot only and
+      // writes nothing to bot_wallets, so calling them all new bots would lie.
+      lines.push(`⏭️ skipped ${r.skipped.length} candidate(s):`);
       for (const s of r.skipped) {
-        const stats =
+        let stats = "blacklisted";
+        if (
           s.reason === "heuristic" &&
           s.correctRate !== undefined &&
           s.p50ms !== undefined &&
           s.sampleSize !== undefined
-            ? `correct=${(s.correctRate * 100).toFixed(1)}%, p50=${s.p50ms}ms${s.relSpread !== undefined ? `, spread=${s.relSpread.toFixed(2)}` : ""}, n=${s.sampleSize}`
-            : "blacklisted";
+        ) {
+          stats = `🆕 auto-flagged: correct=${(s.correctRate * 100).toFixed(1)}%, p50=${s.p50ms}ms${s.relSpread !== undefined ? `, spread=${s.relSpread.toFixed(2)}` : ""}, n=${s.sampleSize}`;
+        } else if (
+          s.reason === "answer-key" &&
+          s.freshN !== undefined &&
+          s.z !== undefined
+        ) {
+          stats = `answer-key (pot only, not banned): fresh=${s.freshCorrect}/${s.freshN}, hist n=${s.histN}, z=${s.z.toFixed(1)}`;
+        }
         lines.push(
           `   \`${s.player.slice(0, 6)}…${s.player.slice(-4)}\` score=${s.score} — ${stats}`,
         );
@@ -146,11 +156,15 @@ type LangResult =
       skipped: Array<{
         player: string;
         score: number;
-        reason: "blacklist" | "heuristic";
+        reason: "blacklist" | "heuristic" | "answer-key";
         correctRate?: number;
         p50ms?: number;
         sampleSize?: number;
         relSpread?: number;
+        freshN?: number;
+        freshCorrect?: number;
+        histN?: number;
+        z?: number;
       }>;
       opened: string;
       day_number: number;
@@ -250,7 +264,7 @@ async function rollPot(b: Bucket, today: string): Promise<LangResult> {
       let query = withLangFilter(
         supabase
           .from("runs")
-          .select("player,score,ended_at")
+          .select("id,player,score,ended_at")
           .eq("game", b.game),
         b.lang,
       )
@@ -266,7 +280,8 @@ async function rollPot(b: Bucket, today: string): Promise<LangResult> {
       const { data: page } = await query;
 
       const candidates =
-        (page as Array<{ player: string; score: number }> | null) ?? [];
+        (page as Array<{ id: string; player: string; score: number }> | null) ??
+        [];
       if (candidates.length === 0) break;
 
       for (const c of candidates) {
@@ -277,8 +292,14 @@ async function rollPot(b: Bucket, today: string): Promise<LangResult> {
         // Pass the in-memory blacklist so the heuristic short-circuit
         // also catches wallets just-flagged earlier in this same loop
         // (cross-page dedup against fresh adds).
+        //
+        // `runId` is this candidate's top-scoring run for the day (the loop
+        // walks score-desc and dedups by player, so the first row we see for a
+        // player IS their best). It enables the Grammar answer-key test, which
+        // judges that one run rather than the wallet.
         const flag = await checkBotPlayer(player, supabase, botBlacklist, {
           game: b.game,
+          runId: c.id,
         });
         if (flag.flagged) {
           skipped.push({ player, score: c.score, flag });
@@ -433,23 +454,35 @@ async function rollPot(b: Bucket, today: string): Promise<LangResult> {
   return {
     status: "settled",
     closed: { day: prevDay, winner, winnerScore, rolledTx },
-    skipped: skipped.map((s) =>
-      s.flag.flagged && s.flag.reason === "heuristic"
-        ? {
-            player: s.player,
-            score: s.score,
-            reason: "heuristic" as const,
-            correctRate: s.flag.correctRate,
-            p50ms: s.flag.p50ms,
-            sampleSize: s.flag.sampleSize,
-            relSpread: s.flag.relSpread,
-          }
-        : {
-            player: s.player,
-            score: s.score,
-            reason: "blacklist" as const,
-          },
-    ),
+    skipped: skipped.map((s) => {
+      if (s.flag.flagged && s.flag.reason === "heuristic") {
+        return {
+          player: s.player,
+          score: s.score,
+          reason: "heuristic" as const,
+          correctRate: s.flag.correctRate,
+          p50ms: s.flag.p50ms,
+          sampleSize: s.flag.sampleSize,
+          relSpread: s.flag.relSpread,
+        };
+      }
+      if (s.flag.flagged && s.flag.reason === "answer-key") {
+        return {
+          player: s.player,
+          score: s.score,
+          reason: "answer-key" as const,
+          freshN: s.flag.freshN,
+          freshCorrect: s.flag.freshCorrect,
+          histN: s.flag.histN,
+          z: s.flag.z,
+        };
+      }
+      return {
+        player: s.player,
+        score: s.score,
+        reason: "blacklist" as const,
+      };
+    }),
     opened: today,
     day_number: lastPot.day_number + 1,
   };
