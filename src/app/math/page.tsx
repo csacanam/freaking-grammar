@@ -211,7 +211,13 @@ export default function MathLobbyPage() {
 function Row({
   r,
 }: {
-  r: { rank: number; player: string; score: number; isMe?: boolean };
+  r: {
+    rank: number;
+    player: string;
+    score: number;
+    tickets?: number;
+    isMe?: boolean;
+  };
 }) {
   const { t } = useLang();
   return (
@@ -245,6 +251,12 @@ function Row({
           </span>
         )}
       </span>
+      {/* Draw-ticket badge: only when > 0 — absence, never "🎟0". */}
+      {(r.tickets ?? 0) > 0 && (
+        <span className="shrink-0 text-[11px] font-semibold text-teal bg-teal/10 rounded-full px-1.5 py-0.5 tabular-nums">
+          🎟{r.tickets}
+        </span>
+      )}
       <span className="font-display text-lg tabular-nums">{r.score}</span>
     </li>
   );

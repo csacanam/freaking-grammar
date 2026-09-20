@@ -70,8 +70,8 @@ function TermsEN() {
         EN, Grammar ES, Math). You can play one round per day for free, or pay
         a small USDT entry fee to play again. Each paid round that finishes
         with a score above zero earns 1 to 3 entries into that day&apos;s prize
-        draw depending on the score reached (a player&apos;s best 5 paid rounds
-        of the day count). At midnight UTC one entry is drawn — using a seed
+        draw depending on the score reached, with no limit on paid rounds per
+        day. At midnight UTC one entry is drawn — using a seed
         derived from the public Celo blockchain, verifiable by anyone — and
         that player wins the pot, settled automatically by an on-chain smart
         contract. If a day has no eligible entries, the pot carries over to
@@ -175,8 +175,8 @@ function TermsES() {
         gratis al día o pagar una pequeña entrada en USDT para jugar otra.
         Cada ronda pagada que termina con puntaje mayor a cero obtiene de 1 a
         3 participaciones en el sorteo del premio de ese día según el puntaje
-        alcanzado (cuentan las mejores 5 rondas pagadas del día de cada
-        jugador). Al cierre del día UTC se sortea una participación — con una
+        alcanzado, sin límite de rondas pagadas por día. Al cierre del día UTC
+        se sortea una participación — con una
         semilla derivada de la blockchain pública de Celo, verificable por
         cualquiera — y ese jugador gana el premio, liquidado automáticamente
         por un contrato inteligente on-chain. Si un día no hay participaciones

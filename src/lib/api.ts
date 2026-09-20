@@ -13,7 +13,14 @@ export type BonusLine = {
 export type LobbyData = {
   potUSD: number;
   closesAtIso: string;
-  leaderboard: { rank: number; player: string; score: number; isMe?: boolean }[];
+  leaderboard: {
+    rank: number;
+    player: string;
+    score: number;
+    // Draw tickets this player holds today (🎟 badge; absent/0 = no badge).
+    tickets?: number;
+    isMe?: boolean;
+  }[];
   playerHasFreePlay: boolean;
   bonuses?: BonusLine[];
   // Daily draw (since 2026-09-21): the pot is drawn among the day's paid

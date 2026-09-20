@@ -27,11 +27,7 @@ import type { NextRequest } from "next/server";
 import { supabase, todayUtc } from "@/lib/supabase";
 import { celoClient } from "@/lib/onchain";
 import { drawSeedForGame, pickWinnerIndex } from "@/lib/draw";
-import {
-  MAX_TICKETS_PER_RUN,
-  RUNS_CAP_PER_WALLET,
-  ticketStepFor,
-} from "@/lib/draw-config";
+import { MAX_TICKETS_PER_RUN, ticketStepFor } from "@/lib/draw-config";
 
 export const dynamic = "force-dynamic";
 
@@ -99,7 +95,6 @@ export async function GET(req: NextRequest) {
       rule: {
         ticketStep: ticketStepFor(b.gameId),
         maxTicketsPerRun: MAX_TICKETS_PER_RUN,
-        runsCapPerWallet: RUNS_CAP_PER_WALLET,
       },
     };
 

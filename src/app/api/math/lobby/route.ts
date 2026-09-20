@@ -108,6 +108,11 @@ export async function GET(req: NextRequest) {
   const myTickets = player
     ? drawEntries.filter((e) => e.player === player).length
     : 0;
+  // Per-player ticket counts for the leaderboard badge (see Grammar lobby).
+  const ticketsByPlayer = new Map<string, number>();
+  for (const e of drawEntries) {
+    ticketsByPlayer.set(e.player, (ticketsByPlayer.get(e.player) ?? 0) + 1);
+  }
 
   let potUSD = potRes.data?.amount_units
     ? Number(potRes.data.amount_units) / TOKEN_DECIMALS
@@ -146,6 +151,7 @@ export async function GET(req: NextRequest) {
     rank: i + 1,
     player: p,
     score,
+    tickets: ticketsByPlayer.get(p.toLowerCase()) ?? 0,
     ...(player === p ? { isMe: true } : {}),
   }));
 

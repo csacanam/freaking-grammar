@@ -210,10 +210,10 @@ export const dict = {
     drawYours: "yours",
     drawNoTickets: "No tickets yet — the first paid play could take the whole pot.",
     // {n} is replaced with the game's point step at render time.
-    drawRule: "1 ticket per paid play · +1 every {n} pts (max 3)",
+    drawRule: "1 ticket per paid play · +1 every {n} pts · max 3 per play, unlimited plays",
     drawAnnounceTitle: "New: the pot is now a daily draw",
     drawAnnounceBody:
-      "The winner is no longer the top score. Every paid play ($0.10) earns 1 to 3 tickets for today's draw depending on your score (your best 5 plays count), and at 00:00 UTC one ticket takes the whole pot — drawn with a verifiable on-chain seed. Free plays and the leaderboard stay exactly as they are.",
+      "Top score no longer takes the pot: it's drawn among the day's paid plays — every play adds tickets. The full rule is on each pot card.",
     drawAnnounceCta: "Got it",
     drawTicketInDraw: "Your ticket is in today's draw",
     // Game-over ticket feedback. {k} = tickets this run earned, {n} = the
@@ -587,10 +587,10 @@ export const dict = {
     drawYours: "tuyos",
     drawNoTickets: "Aún no hay tickets — la primera jugada pagada puede llevarse todo el pote.",
     // {n} se reemplaza con el paso de puntos del juego al renderizar.
-    drawRule: "1 ticket por jugada pagada · +1 cada {n} pts (máx. 3)",
+    drawRule: "1 ticket por jugada pagada · +1 cada {n} pts · máx. 3 por jugada, sin límite de jugadas",
     drawAnnounceTitle: "Nuevo: el pote ahora se sortea",
     drawAnnounceBody:
-      "El ganador ya no es el mejor puntaje. Cada jugada pagada ($0.10) suma de 1 a 3 tickets al sorteo del día según tu puntaje (cuentan tus mejores 5 jugadas), y a las 00:00 UTC un ticket se lleva todo el pote — sorteado con una semilla verificable on-chain. Las jugadas gratis y la tabla siguen igual.",
+      "El mejor puntaje ya no se lleva el pote: se sortea entre las jugadas pagadas del día — cada jugada suma tickets. La regla completa está en cada tarjeta.",
     drawAnnounceCta: "Entendido",
     drawTicketInDraw: "Tu ticket está en el sorteo de hoy",
     // Feedback de tickets en el game-over. {k} = tickets de esta jugada,

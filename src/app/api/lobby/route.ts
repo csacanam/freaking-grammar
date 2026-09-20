@@ -39,6 +39,9 @@ type LeaderboardRow = {
   rank: number;
   player: string;
   score: number;
+  // Draw tickets this player holds today — rendered as a 🎟 badge on the
+  // row. Rank stays score-based; the badge just shows who holds chances.
+  tickets?: number;
   isMe?: boolean;
 };
 
@@ -135,6 +138,12 @@ export async function GET(req: NextRequest) {
   const myTickets = player
     ? drawEntries.filter((e) => e.player === player).length
     : 0;
+  // Per-player ticket counts ride on the leaderboard rows as a badge —
+  // rank stays score-based (glory), the badge shows who holds chances.
+  const ticketsByPlayer = new Map<string, number>();
+  for (const e of drawEntries) {
+    ticketsByPlayer.set(e.player, (ticketsByPlayer.get(e.player) ?? 0) + 1);
+  }
 
   // Prefer the live on-chain pot so sponsorPot / seedCurrentDay calls show up
   // immediately in the UI. Fall back to the DB mirror if the RPC hiccups or
@@ -174,6 +183,7 @@ export async function GET(req: NextRequest) {
       rank: i + 1,
       player: p,
       score,
+      tickets: ticketsByPlayer.get(p.toLowerCase()) ?? 0,
       ...(player === p ? { isMe: true } : {}),
     }),
   );

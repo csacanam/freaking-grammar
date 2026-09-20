@@ -5,9 +5,15 @@ import { useLang } from "@/lib/lang-provider";
 
 // One-time announcement of the daily-draw dynamic (live since 2026-09-21):
 // the pot is raffled among the day's paid runs instead of going to the top
-// score. Dismiss persists in localStorage so regulars see it exactly once;
-// remove the component once the change is old news.
+// score. Dismiss persists in localStorage so regulars see it exactly once.
+//
+// This is a TRANSITION device — it exists for players who knew the old
+// top-score rule. New players learn from the ambient UI (rule line on each
+// pot card, 🎟 leaderboard badges, game-over ticket feedback), so the
+// banner self-sunsets after SHOW_UNTIL and the component can be deleted in
+// any cleanup pass after that date.
 const DISMISS_KEY = "draw-announce-2026-09-21";
+const SHOW_UNTIL = "2026-10-06"; // aligns with the experiment's decision checkpoint
 
 // localStorage read via useSyncExternalStore: the server snapshot says
 // "dismissed" so SSR/hydration renders nothing, then the client snapshot
@@ -37,6 +43,7 @@ export function DrawAnnouncement() {
   const { t } = useLang();
 
   if (dismissed) return null;
+  if (new Date().toISOString().slice(0, 10) > SHOW_UNTIL) return null;
 
   return (
     <div className="rounded-3xl bg-yellow/40 border border-yellow/60 px-4 py-3 flex flex-col gap-1.5">

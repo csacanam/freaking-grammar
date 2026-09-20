@@ -197,7 +197,13 @@ export function PotCard({
 function Row({
   r,
 }: {
-  r: { rank: number; player: string; score: number; isMe?: boolean };
+  r: {
+    rank: number;
+    player: string;
+    score: number;
+    tickets?: number;
+    isMe?: boolean;
+  };
 }) {
   const { t } = useLang();
   return (
@@ -231,6 +237,14 @@ function Row({
           </span>
         )}
       </span>
+      {/* Draw-ticket badge: teaches the mechanic by observation. Only when
+          > 0 — a "🎟0" on every free row would read as shaming, absence
+          doesn't. */}
+      {(r.tickets ?? 0) > 0 && (
+        <span className="shrink-0 text-[11px] font-semibold text-teal bg-teal/10 rounded-full px-1.5 py-0.5 tabular-nums">
+          🎟{r.tickets}
+        </span>
+      )}
       <span className="font-display text-lg tabular-nums">{r.score}</span>
     </li>
   );

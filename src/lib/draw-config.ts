@@ -3,14 +3,16 @@
 // into the client bundle for three numbers would be waste).
 //
 // A paid finished run earns 1 ticket for playing plus 1 per TICKET_STEP
-// points, capped at MAX_TICKETS_PER_RUN. Only a wallet's best
-// RUNS_CAP_PER_WALLET runs of the day count.
+// points, capped at MAX_TICKETS_PER_RUN. There is NO cap on runs per day:
+// every paid run adds tickets, so odds scale with spend — deliberately.
+// A whale's extra runs are fees for us and pot growth for everyone else,
+// the pool is parimutuel (buying more dilutes your own EV), and the 🎟
+// leaderboard badge keeps big holders transparent.
 //
-// Why the cap is the load-bearing piece: score→tickets UNCAPPED is an API
-// for bots — one perfect $0.10 run would buy ~30 tickets and every other
-// ticket in the pool would look visibly dead. Capped at 3, a perfect run
-// earns what a good human run earns, and the only way to buy more odds is
-// more paid runs — which is revenue and pot growth, from bots included.
+// The per-RUN cap is the load-bearing piece: score→tickets UNCAPPED is an
+// API for bots — one perfect $0.10 run would buy ~30 tickets. Capped at 3,
+// a perfect run earns what a good human run earns, and the only way to buy
+// more odds is more paid runs — which is revenue, from bots included.
 //
 // Steps are calibrated on the REAL paying population (last 30d, flagged
 // wallets excluded): paid-run medians are tiny (EN 2, ES 1, MATH 5), so the
@@ -26,7 +28,6 @@ export const TICKET_STEP_BY_GAME: Record<number, number> = {
 export const DEFAULT_TICKET_STEP = 8;
 
 export const MAX_TICKETS_PER_RUN = 3;
-export const RUNS_CAP_PER_WALLET = 5;
 
 export function ticketStepFor(gameId: number): number {
   return TICKET_STEP_BY_GAME[gameId] ?? DEFAULT_TICKET_STEP;

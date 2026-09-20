@@ -14,9 +14,9 @@
 //     plus 1 per TICKET_STEP points, capped at MAX_TICKETS_PER_RUN (3).
 //     Skill multiplies your odds — bounded, so a perfect (bot) run earns
 //     what a good human run earns and score can never *decide* the pot.
-//   - Only a wallet's best RUNS_CAP_PER_WALLET (5) runs of the day count,
-//     so maxing your odds means buying more runs — revenue and pot growth,
-//     from bots included.
+//   - No cap on runs per day: every paid run adds tickets, so odds scale
+//     with spend. More runs = revenue and pot growth, from bots included;
+//     the parimutuel pool self-limits (buying more dilutes your own EV).
 //   - Blacklisted wallets (bot_wallets) never enter the draw.
 //   - Zero tickets → no winner → the contract carries the pot forward and
 //     skips the treasury seed (rollDay's ghost-day branch), so a quiet day
@@ -31,7 +31,7 @@
 
 import { encodePacked, hexToBigInt, keccak256, type Hex } from "viem";
 
-import { RUNS_CAP_PER_WALLET, ticketsForScore } from "@/lib/draw-config";
+import { ticketsForScore } from "@/lib/draw-config";
 
 // Minimal structural view of a viem public client. The Celo client's
 // getBlock returns CIP-64 transaction unions that don't unify with the
@@ -56,45 +56,19 @@ export type TicketEntry = {
   score: number;
 };
 
-// One entry per ticket. Per wallet, only its best RUNS_CAP_PER_WALLET runs
-// count (score desc, run id asc as tiebreak — "best" so a player who
-// improves late isn't punished for early throwaway runs); each counted run
-// contributes ticketsForScore() consecutive entries. Final order is run id
-// asc — uuids are stable and public — so the whole expansion is
-// reproducible from raw data regardless of input order.
+// One entry per ticket: every paid run contributes ticketsForScore()
+// consecutive entries, in run id order — uuids are stable and public — so
+// the whole expansion is reproducible from raw data regardless of input
+// order.
 export function buildTicketEntries(
   rows: Array<{ id: string; player: string; score: number }>,
   gameId: number,
 ): TicketEntry[] {
-  const byWallet = new Map<
-    string,
-    Array<{ id: string; player: string; score: number }>
-  >();
-  for (const r of rows) {
-    const player = r.player.toLowerCase();
-    const list = byWallet.get(player);
-    if (list) list.push(r);
-    else byWallet.set(player, [r]);
-  }
-
-  const counted: Array<{ id: string; player: string; score: number }> = [];
-  for (const [, list] of byWallet) {
-    list.sort((a, b) =>
-      b.score !== a.score
-        ? b.score - a.score
-        : a.id < b.id
-          ? -1
-          : a.id > b.id
-            ? 1
-            : 0,
-    );
-    counted.push(...list.slice(0, RUNS_CAP_PER_WALLET));
-  }
-
-  counted.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-
+  const sorted = [...rows].sort((a, b) =>
+    a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
+  );
   const entries: TicketEntry[] = [];
-  for (const r of counted) {
+  for (const r of sorted) {
     const player = r.player.toLowerCase();
     const tickets = ticketsForScore(r.score, gameId);
     for (let k = 0; k < tickets; k++) {
