@@ -1,6 +1,6 @@
-// Pulls the live EmailData payload (pot amounts, top scores, active
-// sponsor bonuses) that the daily-email templates need. Shared by both
-// cron endpoints so the rendering logic stays pure string-formatting
+// Pulls the live EmailData payload (pot amounts, draw-ticket counts,
+// active sponsor bonuses) that the daily-email templates need. Shared by
+// both cron endpoints so the rendering logic stays pure string-formatting
 // on top of a known shape.
 
 import { erc20Abi } from "viem";
@@ -8,31 +8,34 @@ import { celoClient, FREAKING_POT_ABI } from "./onchain";
 import { POT_ADDRESS } from "./chain";
 import { supabase, TOKEN_DECIMALS, todayUtc } from "./supabase";
 import { loadBotBlacklist } from "./bot-detection";
+import { buildTicketEntries } from "./draw";
 import type { EmailData, SponsorBonus } from "./email-templates";
 
-const GAMES: Array<{ id: number; key: "en" | "es" }> = [
+const GAMES: Array<{ id: number; key: "en" | "es" | "math" }> = [
   { id: 1, key: "en" },
   { id: 2, key: "es" },
+  { id: 3, key: "math" },
 ];
 
 export async function fetchDailyEmailData(): Promise<EmailData> {
-  const [potsByGame, scoresByGame, sponsors] = await Promise.all([
+  const [potsByGame, ticketsByGame, sponsors] = await Promise.all([
     fetchPots(),
-    fetchTopScores(),
+    fetchDrawTickets(),
     fetchActiveSponsors(),
   ]);
 
   return {
     pots: {
-      en: { usdt: potsByGame.en, topScore: scoresByGame.en },
-      es: { usdt: potsByGame.es, topScore: scoresByGame.es },
+      en: { usdt: potsByGame.en, drawTickets: ticketsByGame.en },
+      es: { usdt: potsByGame.es, drawTickets: ticketsByGame.es },
+      math: { usdt: potsByGame.math, drawTickets: ticketsByGame.math },
     },
     sponsors,
   };
 }
 
-async function fetchPots(): Promise<{ en: number; es: number }> {
-  const out: { en: number; es: number } = { en: 0, es: 0 };
+async function fetchPots(): Promise<{ en: number; es: number; math: number }> {
+  const out = { en: 0, es: 0, math: 0 };
   await Promise.all(
     GAMES.map(async (g) => {
       try {
@@ -57,18 +60,17 @@ async function fetchPots(): Promise<{ en: number; es: number }> {
   return out;
 }
 
-async function fetchTopScores(): Promise<{
-  en: number | null;
-  es: number | null;
+// Tickets bought so far today per game, under the exact settlement rules
+// (src/lib/draw.ts): paid finished runs with score > 0, blacklist excluded,
+// 1-3 tickets each by score. Same numbers the lobby shows.
+async function fetchDrawTickets(): Promise<{
+  en: number;
+  es: number;
+  math: number;
 }> {
-  const out: { en: number | null; es: number | null } = {
-    en: null,
-    es: null,
-  };
+  const out = { en: 0, es: 0, math: 0 };
   if (!supabase) return out;
   const day = todayUtc();
-  // Exclude blacklisted wallets so the daily email doesn't headline a bot's
-  // score as the day's top. Mirrors the lobby + stats-page filter.
   const blacklist = await loadBotBlacklist(supabase);
   const blacklistFilter =
     blacklist.size > 0
@@ -76,19 +78,23 @@ async function fetchTopScores(): Promise<{
       : null;
   await Promise.all(
     GAMES.map(async (g) => {
+      // Math runs carry game='math' and lang=NULL; grammar runs are
+      // uniquely identified by their lang.
       let q = supabase!
         .from("runs")
-        .select("score")
-        .eq("lang", g.key)
+        .select("id,player,score")
         .eq("day_utc", day)
         .eq("status", "finished")
-        .order("score", { ascending: false })
-        .order("ended_at", { ascending: true })
-        .limit(1);
+        .eq("was_free", false)
+        .gt("score", 0)
+        .limit(1000);
+      q = g.key === "math" ? q.eq("game", "math") : q.eq("lang", g.key);
       if (blacklistFilter) q = q.not("player", "in", blacklistFilter);
-      const { data } = await q.maybeSingle();
-      const row = data as { score: number } | null;
-      if (row) out[g.key] = row.score;
+      const { data } = await q;
+      out[g.key] = buildTicketEntries(
+        (data ?? []) as Array<{ id: string; player: string; score: number }>,
+        g.id,
+      ).length;
     }),
   );
   return out;
