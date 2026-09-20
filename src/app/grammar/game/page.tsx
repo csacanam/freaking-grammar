@@ -29,6 +29,13 @@ function revealParams(res: Partial<AnswerReveal>): string {
   return `&${p.toString()}`;
 }
 
+// Whether the run bought draw tickets. Strictly `=== false` so older server
+// responses without the field (deploy skew) just render a neutral game-over
+// instead of a wrong claim.
+function paidParam(res: { wasFree?: boolean }): string {
+  return res.wasFree === false ? "&paid=1" : "";
+}
+
 // "submitting" is the brief window after a tap while we await the server's
 // verdict — the client no longer knows correctness locally (the answer isn't
 // leaked anymore), so it highlights the tapped side and waits.
@@ -160,7 +167,7 @@ function GameInner() {
         });
         transitionRef.current = setTimeout(() => {
           router.replace(
-            `/grammar/game/over?score=${res.score}&rank=${res.rank}&reason=timeout&game=${game}${revealParams(res)}`,
+            `/grammar/game/over?score=${res.score}&rank=${res.rank}&reason=timeout&game=${game}${paidParam(res)}${revealParams(res)}`,
           );
         }, 700);
       } catch {
@@ -199,7 +206,7 @@ function GameInner() {
           });
           router.replace(
             // A cleared deck ends on a CORRECT answer — nothing to reveal.
-            `/grammar/game/over?score=${res.score}&rank=${res.rank}&reason=${res.reason}&game=${game}${res.correct ? "" : revealParams(res)}`,
+            `/grammar/game/over?score=${res.score}&rank=${res.rank}&reason=${res.reason}&game=${game}${paidParam(res)}${res.correct ? "" : revealParams(res)}`,
           );
         } else if (res.correct && "nextQuestion" in res) {
           setQuestion(res.nextQuestion);

@@ -59,7 +59,7 @@ function TermsEN() {
       <h1 className="font-display text-3xl tracking-wide mb-1">
         Terms of Service
       </h1>
-      <p className="text-xs text-muted">Last updated: 2026-06-03</p>
+      <p className="text-xs text-muted">Last updated: 2026-09-20</p>
 
       <h2 className="font-display text-xl tracking-wide mt-4">
         1. What nerdos.fun is
@@ -68,9 +68,14 @@ function TermsEN() {
         nerdos.fun is a platform for daily skill-based mini-games on the Celo
         blockchain. Each day there is a USDT prize pot for each game (Grammar
         EN, Grammar ES, Math). You can play one round per day for free, or pay
-        a small USDT entry fee to play again. The player with the highest score
-        at midnight UTC wins the pot, settled automatically by an on-chain
-        smart contract.
+        a small USDT entry fee to play again. Each paid round that finishes
+        with a score above zero earns 1 to 3 entries into that day&apos;s prize
+        draw depending on the score reached (a player&apos;s best 5 paid rounds
+        of the day count). At midnight UTC one entry is drawn — using a seed
+        derived from the public Celo blockchain, verifiable by anyone — and
+        that player wins the pot, settled automatically by an on-chain smart
+        contract. If a day has no eligible entries, the pot carries over to
+        the next day.
       </p>
 
       <h2 className="font-display text-xl tracking-wide mt-4">2. Eligibility</h2>
@@ -158,7 +163,7 @@ function TermsES() {
       <h1 className="font-display text-3xl tracking-wide mb-1">
         Términos de servicio
       </h1>
-      <p className="text-xs text-muted">Última actualización: 2026-06-03</p>
+      <p className="text-xs text-muted">Última actualización: 2026-09-20</p>
 
       <h2 className="font-display text-xl tracking-wide mt-4">
         1. Qué es nerdos.fun
@@ -167,9 +172,15 @@ function TermsES() {
         nerdos.fun es una plataforma de mini-juegos diarios de habilidad sobre
         la blockchain de Celo. Cada día hay un premio en USDT por juego
         (Gramática EN, Gramática ES, Matemáticas). Puedes jugar una ronda
-        gratis al día o pagar una pequeña entrada en USDT para jugar otra. El
-        jugador con el puntaje más alto al cierre del día UTC gana el premio,
-        liquidado automáticamente por un contrato inteligente on-chain.
+        gratis al día o pagar una pequeña entrada en USDT para jugar otra.
+        Cada ronda pagada que termina con puntaje mayor a cero obtiene de 1 a
+        3 participaciones en el sorteo del premio de ese día según el puntaje
+        alcanzado (cuentan las mejores 5 rondas pagadas del día de cada
+        jugador). Al cierre del día UTC se sortea una participación — con una
+        semilla derivada de la blockchain pública de Celo, verificable por
+        cualquiera — y ese jugador gana el premio, liquidado automáticamente
+        por un contrato inteligente on-chain. Si un día no hay participaciones
+        elegibles, el premio se acumula para el día siguiente.
       </p>
 
       <h2 className="font-display text-xl tracking-wide mt-4">2. Elegibilidad</h2>

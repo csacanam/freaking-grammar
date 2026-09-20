@@ -17,7 +17,7 @@ export async function POST(
 
   const { data: runRow } = await supabase
     .from("runs")
-    .select("player,score,status,day_utc,lang")
+    .select("player,score,status,day_utc,lang,was_free")
     .eq("id", runId)
     .maybeSingle();
 
@@ -30,6 +30,7 @@ export async function POST(
     status: string;
     day_utc: string;
     lang: string;
+    was_free: boolean;
   };
 
   if (run.status === "open") {
@@ -71,5 +72,5 @@ export async function POST(
     run.player,
     run.score,
   );
-  return Response.json({ score: run.score, rank, ...reveal });
+  return Response.json({ score: run.score, rank, wasFree: run.was_free, ...reveal });
 }

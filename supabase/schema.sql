@@ -343,3 +343,24 @@ create table if not exists grants (
 );
 
 create index if not exists grants_received_at_idx on grants (received_at desc);
+
+-- ------------------------------------------------------- daily draw (2026-09-21)
+-- The pot winner is no longer the top score: it's DRAWN among the day's paid
+-- runs (1 ticket per paid finished run with score > 0, capped per wallet).
+-- Rationale: 43% of all prize money had gone to bot wallets and only 0.7% of
+-- players ever won anything — top-score-wins made the prize unwinnable for
+-- humans, which killed paid conversion. A draw makes every ticket equal, so a
+-- bot's perfect score buys it nothing.
+--
+-- These columns make each draw publicly auditable: the seed derives from the
+-- hash of the first Celo block at/after the day boundary (outside anyone's
+-- control), and winner = tickets[seed % ticket_count] over runs ordered by id.
+alter table pots add column if not exists draw_seed    text;    -- per-game keccak(blockHash ‖ gameId)
+alter table pots add column if not exists draw_block   bigint;  -- boundary block number used
+alter table pots add column if not exists draw_tickets integer; -- total tickets in the draw
+-- Frozen ticket list for each draw: [{runId, player, score, tickets}] in run
+-- id order. Stored AT settlement because recomputing later can differ (e.g.
+-- a wallet blacklisted after the draw would drop out of a live recompute and
+-- look like a mismatch). This snapshot + draw_seed + draw_block is the full
+-- audit input served by GET /api/draw?day=.
+alter table pots add column if not exists draw_entries jsonb;

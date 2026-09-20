@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/cron/treasury-alert",
-      "schedule": "0 14 * * *"
+      "schedule": "0 23 * * *"
     },
     {
       "path": "/api/cron/sweep-bots",

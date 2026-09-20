@@ -7,6 +7,13 @@ import { ButtonLink } from "@/components/Button";
 import { PayAndPlayButton } from "@/components/PayAndPlayButton";
 import { useLang } from "@/lib/lang-provider";
 import { opGlyph } from "@/lib/math-display";
+import {
+  MAX_TICKETS_PER_RUN,
+  ticketStepFor,
+  ticketsForScore,
+} from "@/lib/draw-config";
+
+const MATH_GAME_ID = 3; // matches the contract's gameId
 
 export default function MathGameOverPage() {
   return (
@@ -56,6 +63,7 @@ function MathGameOverInner() {
         <div className="text-xs text-muted mt-3">
           {t.yourRank}: <span className="font-mono">{rank ? `#${rank}` : "—"}</span>
         </div>
+        <TicketLine paid={sp.get("paid") === "1"} score={score} />
       </div>
 
       <div className="w-full flex flex-col gap-3">
@@ -64,6 +72,39 @@ function MathGameOverInner() {
           ← {t.backToLobby}
         </ButtonLink>
       </div>
+    </div>
+  );
+}
+
+// Ticket feedback under the score — rank is glory, tickets are the prize
+// path. Mirrors the Grammar game-over. `paid` comes via URL param from the
+// game page (older responses without the flag render nothing — never a
+// wrong claim).
+function TicketLine({ paid, score }: { paid: boolean; score: number }) {
+  const { t } = useLang();
+  if (!paid) {
+    return (
+      <div className="text-xs text-muted mt-4 border-t border-black/5 pt-3 leading-snug">
+        🎟 {t.gameOverFreeNudge}
+      </div>
+    );
+  }
+  const tickets = ticketsForScore(score, MATH_GAME_ID);
+  const line =
+    tickets === 1
+      ? t.gameOverTicketOne
+      : t.gameOverTicketsMany.replace("{k}", String(tickets));
+  return (
+    <div className="text-xs text-ink mt-4 border-t border-black/5 pt-3 leading-snug">
+      <span className="font-semibold">🎟 {line}</span>
+      {tickets < MAX_TICKETS_PER_RUN && (
+        <div className="text-muted mt-1">
+          {t.gameOverNextTicket.replace(
+            "{n}",
+            String(tickets * ticketStepFor(MATH_GAME_ID)),
+          )}
+        </div>
+      )}
     </div>
   );
 }

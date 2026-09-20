@@ -31,9 +31,9 @@ export const dict = {
     obTitle2: "One wrong answer ends the run",
     obBody2:
       "Answer fast — the timer gets shorter with every question. A single mistake ends it, and your best streak is your score.",
-    obTitle3: "Winner takes the whole prize",
+    obTitle3: "Every paid play is a ticket",
     obBody3:
-      "Every $0.10 entry feeds today's prize. The highest score when the day closes takes all of it, paid in USDT.",
+      "Paid plays ($0.10) earn 1 to 3 tickets each, by score. When the day closes, one ticket is drawn and takes the whole prize in USDT — verifiable on-chain.",
     obTitle4: "Ready to play?",
     obBody4:
       "Pick Grammar or Math, keep a little USDT in your wallet, and go. A fresh prize starts every day.",
@@ -45,7 +45,7 @@ export const dict = {
     mathTitle: "Math",
     mathRule1: "You see an equation. Decide if the result shown is right or wrong.",
     mathRule2: "2.5 seconds at first — the timer gets shorter every question.",
-    mathRule3: "One wrong answer = game over. Highest streak wins the daily prize.",
+    mathRule3: "One wrong answer = game over. Paid plays earn tickets for the daily prize draw.",
     mathReady: "I'M READY",
     mathScore: "SCORE",
     mathLevel: "LEVEL",
@@ -202,8 +202,28 @@ export const dict = {
     pickGame: "Pick a game",
     tapToSwitch: "Tap to switch",
     closesIn: "Closes in",
-    winnerTakesAll: "Winner takes all",
     potShare: "$0.08 feeds the prize",
+    // Daily draw (since 2026-09-21): the pot is raffled among the day's
+    // paid runs instead of going to the top score.
+    dailyDraw: "Daily draw",
+    drawTicketsToday: "tickets today",
+    drawYours: "yours",
+    drawNoTickets: "No tickets yet — the first paid play could take the whole pot.",
+    // {n} is replaced with the game's point step at render time.
+    drawRule: "1 ticket per paid play · +1 every {n} pts (max 3)",
+    drawAnnounceTitle: "New: the pot is now a daily draw",
+    drawAnnounceBody:
+      "The winner is no longer the top score. Every paid play ($0.10) earns 1 to 3 tickets for today's draw depending on your score (your best 5 plays count), and at 00:00 UTC one ticket takes the whole pot — drawn with a verifiable on-chain seed. Free plays and the leaderboard stay exactly as they are.",
+    drawAnnounceCta: "Got it",
+    drawTicketInDraw: "Your ticket is in today's draw",
+    // Game-over ticket feedback. {k} = tickets this run earned, {n} = the
+    // score that would have earned one more.
+    gameOverTicketOne: "This play holds 1 ticket in today's draw",
+    gameOverTicketsMany: "This play holds {k} tickets in today's draw",
+    gameOverNextTicket: "Reach {n} pts for an extra ticket",
+    gameOverFreeNudge:
+      "The pot is drawn among paid plays — your next paid play enters today's draw",
+    leaderboardPrestige: "Top scores are for glory — the pot is decided by the draw",
     leaderboard: "Leaderboard",
     todaysLeaderboard: "Today's leaderboard",
     finalStandings: "Final standings",
@@ -220,7 +240,7 @@ export const dict = {
     rulesTime: "5 seconds per question",
     rulesMiss: "One mistake ends the game",
     imReady: "I'm ready",
-    rulesHint: "5s per question · top score wins",
+    rulesHint: "5s per question · paid plays earn draw tickets",
     // Tutorial Q1 (first run ever)
     firstPlayBadge: "No clock",
     firstPlayHint: "First question — tap when you're ready. The 5s clock starts after.",
@@ -397,9 +417,9 @@ export const dict = {
     obTitle2: "Un error y se acaba",
     obBody2:
       "Responde rápido — el tiempo se acorta con cada pregunta. Un solo error termina la partida, y tu mejor racha es tu puntaje.",
-    obTitle3: "El ganador se lleva todo",
+    obTitle3: "Cada jugada pagada es un ticket",
     obBody3:
-      "Cada entrada de $0.10 alimenta el premio del día. El puntaje más alto al cierre se lo lleva completo, pagado en USDT.",
+      "Las jugadas pagadas ($0.10) ganan de 1 a 3 tickets según tu puntaje. Al cierre del día se sortea un ticket y se lleva todo el premio en USDT — verificable on-chain.",
     obTitle4: "¿Listo para jugar?",
     obBody4:
       "Elige Gramática o Matemáticas, ten un poco de USDT en tu wallet y arranca. Cada día empieza un premio nuevo.",
@@ -410,7 +430,7 @@ export const dict = {
     mathTitle: "Matemáticas",
     mathRule1: "Ves una ecuación. Decide si el resultado mostrado es correcto o incorrecto.",
     mathRule2: "2.5 segundos al inicio — el reloj baja cada pregunta.",
-    mathRule3: "Una respuesta mala = se acaba. La racha más larga gana el premio del día.",
+    mathRule3: "Una respuesta mala = se acaba. Las jugadas pagadas ganan tickets para el sorteo del premio.",
     mathReady: "ESTOY LISTO",
     mathScore: "PUNTAJE",
     mathLevel: "NIVEL",
@@ -559,8 +579,28 @@ export const dict = {
     pickGame: "Elige un juego",
     tapToSwitch: "Toca para cambiar",
     closesIn: "Cierra en",
-    winnerTakesAll: "El ganador se lo lleva",
     potShare: "$0.08 alimenta el premio",
+    // Sorteo diario (desde 2026-09-21): el pote se sortea entre las jugadas
+    // pagadas del día en vez de ir al mejor puntaje.
+    dailyDraw: "Sorteo del día",
+    drawTicketsToday: "tickets hoy",
+    drawYours: "tuyos",
+    drawNoTickets: "Aún no hay tickets — la primera jugada pagada puede llevarse todo el pote.",
+    // {n} se reemplaza con el paso de puntos del juego al renderizar.
+    drawRule: "1 ticket por jugada pagada · +1 cada {n} pts (máx. 3)",
+    drawAnnounceTitle: "Nuevo: el pote ahora se sortea",
+    drawAnnounceBody:
+      "El ganador ya no es el mejor puntaje. Cada jugada pagada ($0.10) suma de 1 a 3 tickets al sorteo del día según tu puntaje (cuentan tus mejores 5 jugadas), y a las 00:00 UTC un ticket se lleva todo el pote — sorteado con una semilla verificable on-chain. Las jugadas gratis y la tabla siguen igual.",
+    drawAnnounceCta: "Entendido",
+    drawTicketInDraw: "Tu ticket está en el sorteo de hoy",
+    // Feedback de tickets en el game-over. {k} = tickets de esta jugada,
+    // {n} = puntaje que habría dado uno más.
+    gameOverTicketOne: "Esta jugada tiene 1 ticket en el sorteo de hoy",
+    gameOverTicketsMany: "Esta jugada tiene {k} tickets en el sorteo de hoy",
+    gameOverNextTicket: "Llega a {n} pts y ganas un ticket extra",
+    gameOverFreeNudge:
+      "El pote se sortea entre jugadas pagadas — tu próxima jugada pagada entra al sorteo de hoy",
+    leaderboardPrestige: "La tabla es por gloria — el pote lo decide el sorteo",
     leaderboard: "Tabla",
     todaysLeaderboard: "Tabla de hoy",
     finalStandings: "Resultado final",
@@ -577,7 +617,7 @@ export const dict = {
     rulesTime: "5 segundos por pregunta",
     rulesMiss: "Un error y se acaba",
     imReady: "Estoy listo",
-    rulesHint: "5s por pregunta · mayor puntaje gana",
+    rulesHint: "5s por pregunta · las pagadas ganan tickets",
     // Tutorial Q1 (first run ever)
     firstPlayBadge: "Sin reloj",
     firstPlayHint: "Primera pregunta — toca cuando estés listo. El reloj de 5s arranca después.",

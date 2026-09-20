@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { PotCard } from "@/components/PotCard";
 import { Countdown } from "@/components/Countdown";
+import { DrawAnnouncement } from "@/components/DrawAnnouncement";
 import { UnclaimedBanner } from "@/components/UnclaimedBanner";
 import { ResumePaidBanner } from "@/components/ResumePaidBanner";
 import { SakaLabsCredit } from "@/components/SakaLabsCredit";
@@ -135,6 +136,7 @@ export default function LobbyPage() {
       <div className="px-5 pt-4 pb-10 flex flex-col gap-4">
         <ResumePaidBanner runs={openRuns} filter="grammar" />
         <UnclaimedBanner totalUSD={totalUnclaimed} />
+        <DrawAnnouncement />
         {GAMES.map((g) => (
           <PotCard key={g} game={g} lobby={lobbies[g]} />
         ))}

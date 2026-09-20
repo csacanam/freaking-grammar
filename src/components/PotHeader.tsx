@@ -120,7 +120,7 @@ export function PotHeader({ closesAtIso }: { closesAtIso: string }) {
       </div>
 
       <div className="relative z-10 font-display text-base tracking-wider uppercase opacity-95 mt-4 text-center">
-        {t.winnerTakesAll}
+        {t.dailyDraw}
       </div>
     </div>
   );

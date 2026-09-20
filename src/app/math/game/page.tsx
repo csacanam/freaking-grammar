@@ -74,6 +74,13 @@ function revealParams(res: Partial<MathReveal>): string {
   return `&${p.toString()}`;
 }
 
+// Whether the run bought draw tickets. Strictly `=== false` so older server
+// responses without the field (deploy skew) just render a neutral game-over
+// instead of a wrong claim.
+function paidParam(res: { wasFree?: boolean }): string {
+  return res.wasFree === false ? "&paid=1" : "";
+}
+
 type Outcome = "playing" | "correct" | "wrong" | "timeout" | "loading";
 
 export default function MathGamePage() {
@@ -243,7 +250,7 @@ function MathGameInner() {
         });
         transitionRef.current = setTimeout(() => {
           router.replace(
-            `/math/game/over?score=${res.score}&rank=${res.rank}&reason=timeout${revealParams(res)}`,
+            `/math/game/over?score=${res.score}&rank=${res.rank}&reason=timeout${paidParam(res)}${revealParams(res)}`,
           );
         }, 700);
       } catch {
@@ -283,7 +290,7 @@ function MathGameInner() {
           // we bounce to the over screen.
           await new Promise((r) => setTimeout(r, 600));
           router.replace(
-            `/math/game/over?score=${res.score}&rank=${res.rank}&reason=${res.reason}${revealParams(res)}`,
+            `/math/game/over?score=${res.score}&rank=${res.rank}&reason=${res.reason}${paidParam(res)}${revealParams(res)}`,
           );
           return;
         }

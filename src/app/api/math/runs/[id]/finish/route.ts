@@ -30,7 +30,7 @@ export async function POST(
 
   const { data: runRow } = await supabase
     .from("runs")
-    .select("player,score,status,day_utc,game")
+    .select("player,score,status,day_utc,game,was_free")
     .eq("id", runId)
     .maybeSingle();
 
@@ -43,6 +43,7 @@ export async function POST(
     status: string;
     day_utc: string;
     game: string;
+    was_free: boolean;
   };
   if (run.game !== "math") {
     return Response.json({ error: "not-a-math-run" }, { status: 400 });
@@ -85,5 +86,5 @@ export async function POST(
     run.player,
     run.score,
   );
-  return Response.json({ score: run.score, rank, ...reveal });
+  return Response.json({ score: run.score, rank, wasFree: run.was_free, ...reveal });
 }

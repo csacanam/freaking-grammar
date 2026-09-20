@@ -100,7 +100,7 @@ export async function POST(
 
   const { data: runRow } = await supabase
     .from("runs")
-    .select("id,player,score,status,day_utc,game")
+    .select("id,player,score,status,day_utc,game,was_free")
     .eq("id", runId)
     .maybeSingle();
 
@@ -114,6 +114,7 @@ export async function POST(
     status: string;
     day_utc: string;
     game: string;
+    was_free: boolean;
   };
   if (run.game !== "math") {
     return Response.json({ error: "not-a-math-run" }, { status: 400 });
@@ -225,6 +226,9 @@ export async function POST(
       reason,
       score: run.score,
       rank,
+      // Whether this run buys draw tickets — the game-over screen renders
+      // "your ticket is in" vs the paid-play nudge off this.
+      wasFree: run.was_free,
       ...reveal,
       // A too-slow answer WAS tapped, just late. A too-fast one is a bot, but
       // we still echo it so this response shape matches a normal wrong answer.
@@ -264,6 +268,7 @@ export async function POST(
       reason: "wrong",
       score: run.score,
       rank,
+      wasFree: run.was_free,
       ...reveal,
       pickedChoice: choice,
     });

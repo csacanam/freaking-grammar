@@ -72,7 +72,7 @@ export async function POST(
 
   const { data: runRow } = await supabase
     .from("runs")
-    .select("id,player,score,status,day_utc,lang")
+    .select("id,player,score,status,day_utc,lang,was_free")
     .eq("id", runId)
     .maybeSingle();
 
@@ -86,6 +86,7 @@ export async function POST(
     status: string;
     day_utc: string;
     lang: string;
+    was_free: boolean;
   };
   if (run.status !== "open") {
     return Response.json({ error: "run-closed" }, { status: 409 });
@@ -173,6 +174,9 @@ export async function POST(
       reason,
       score: run.score,
       rank,
+      // Whether this run buys draw tickets — the game-over screen renders
+      // "your ticket is in" vs the paid-play nudge off this.
+      wasFree: run.was_free,
       ...reveal,
       // A too-slow answer WAS tapped, just late — show it. A too-fast one is a
       // bot, but we still echo it to keep this response shape identical.
@@ -208,6 +212,7 @@ export async function POST(
       reason: "wrong",
       score: run.score,
       rank,
+      wasFree: run.was_free,
       ...reveal,
       pickedWord,
     });
@@ -292,6 +297,7 @@ export async function POST(
       reason: "cleared",
       score: newScore,
       rank,
+      wasFree: run.was_free,
     });
   }
 

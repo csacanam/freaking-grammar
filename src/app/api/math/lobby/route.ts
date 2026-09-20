@@ -26,6 +26,7 @@ import {
   readHasFreePlayToday,
 } from "@/lib/onchain";
 import { loadBotBlacklist } from "@/lib/bot-detection";
+import { buildTicketEntries } from "@/lib/draw";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,9 @@ export async function GET(req: NextRequest) {
       closesAtIso: nextUtcMidnightIso(),
       leaderboard: [],
       playerHasFreePlay: true,
+      drawTicketsToday: 0,
+      drawPlayersToday: 0,
+      myTickets: 0,
     });
   }
 
@@ -69,7 +73,22 @@ export async function GET(req: NextRequest) {
     runsQuery = runsQuery.not("player", "in", blacklistFilter);
   }
 
-  const [potRes, runsRes] = await Promise.all([
+  // Today's draw entries — paid finished runs under the same rules the
+  // settlement draw applies (see src/lib/draw.ts).
+  let drawQuery = supabase
+    .from("runs")
+    .select("id,player,score")
+    .eq("game", "math")
+    .eq("day_utc", day)
+    .eq("status", "finished")
+    .eq("was_free", false)
+    .gt("score", 0)
+    .limit(1000);
+  if (blacklistFilter) {
+    drawQuery = drawQuery.not("player", "in", blacklistFilter);
+  }
+
+  const [potRes, runsRes, drawRes] = await Promise.all([
     supabase
       .from("pots")
       .select("amount_units,day_number")
@@ -77,7 +96,18 @@ export async function GET(req: NextRequest) {
       .eq("day_utc", day)
       .maybeSingle(),
     runsQuery,
+    drawQuery,
   ]);
+
+  const drawEntries = buildTicketEntries(
+    (drawRes.data ?? []) as Array<{ id: string; player: string; score: number }>,
+    MATH_GAME_ID,
+  );
+  const drawTicketsToday = drawEntries.length;
+  const drawPlayersToday = new Set(drawEntries.map((e) => e.player)).size;
+  const myTickets = player
+    ? drawEntries.filter((e) => e.player === player).length
+    : 0;
 
   let potUSD = potRes.data?.amount_units
     ? Number(potRes.data.amount_units) / TOKEN_DECIMALS
@@ -154,5 +184,8 @@ export async function GET(req: NextRequest) {
     closesAtIso: nextUtcMidnightIso(),
     leaderboard,
     playerHasFreePlay,
+    drawTicketsToday,
+    drawPlayersToday,
+    myTickets,
   });
 }

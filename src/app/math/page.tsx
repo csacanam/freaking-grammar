@@ -9,6 +9,8 @@ import { PlayerName } from "@/components/PlayerName";
 import { SakaLabsCredit } from "@/components/SakaLabsCredit";
 import { ResumePaidBanner } from "@/components/ResumePaidBanner";
 import { UnclaimedBanner } from "@/components/UnclaimedBanner";
+import { DrawAnnouncement } from "@/components/DrawAnnouncement";
+import { ticketStepFor } from "@/lib/draw-config";
 import { fmtUSD } from "@/lib/format";
 import {
   getMathLobby,
@@ -22,6 +24,7 @@ import { useCurrentPlayer } from "@/lib/wallet";
 import { useLang } from "@/lib/lang-provider";
 
 const TOP = 3;
+const MATH_GAME_ID = 3; // matches the contract's gameId
 
 // Math home. Single-game, no language toggle. Visually mirrors the
 // Grammar PotCard (white card, accent stripe, tinted pot tag, mini
@@ -108,6 +111,7 @@ export default function MathLobbyPage() {
       <div className="px-5 pt-4 pb-10 flex flex-col gap-4">
         <ResumePaidBanner runs={openRuns} filter="math" />
         <UnclaimedBanner totalUSD={totalUnclaimed} />
+        <DrawAnnouncement />
         <div className="rounded-3xl bg-white border border-black/5 shadow-[0_6px_0_0_rgba(0,0,0,0.06)] flex flex-col overflow-hidden">
           <div className="h-1.5 bg-orange" />
           <div className="p-5 flex flex-col gap-4">
@@ -129,13 +133,44 @@ export default function MathLobbyPage() {
               </div>
             </div>
 
-            <div className="rounded-2xl bg-orange/10 px-4 py-3 flex items-baseline justify-between gap-3">
-              <div className="font-display text-sm tracking-[0.15em] uppercase text-orange leading-tight">
-                {t.winnerTakesAll}
+            <div className="rounded-2xl bg-orange/10 px-4 py-3 flex flex-col gap-2">
+              <div className="flex items-baseline justify-between gap-3">
+                <div className="font-display text-sm tracking-[0.15em] uppercase text-orange leading-tight">
+                  {t.dailyDraw}
+                </div>
+                <div className="font-display text-5xl text-ink leading-none tabular-nums">
+                  {lobby ? fmtUSD(lobby.potUSD) : "—"}
+                </div>
               </div>
-              <div className="font-display text-5xl text-ink leading-none tabular-nums">
-                {lobby ? fmtUSD(lobby.potUSD) : "—"}
+              {/* Honest odds line — same rules as the settlement draw. */}
+              {lobby && (
+                <div className="text-xs text-ink/60 leading-snug">
+                  {(lobby.drawTicketsToday ?? 0) > 0 ? (
+                    <>
+                      🎟 {lobby.drawTicketsToday} {t.drawTicketsToday}
+                      {(lobby.myTickets ?? 0) > 0 && (
+                        <>
+                          {" · "}
+                          <span className="font-semibold text-ink/80">
+                            {lobby.myTickets} {t.drawYours}
+                          </span>
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <>🎟 {t.drawNoTickets}</>
+                  )}
+                </div>
+              )}
+              <div className="text-[11px] text-ink/40 leading-snug">
+                {t.drawRule.replace("{n}", String(ticketStepFor(MATH_GAME_ID)))}
               </div>
+            </div>
+
+            {/* The podium used to BE the prize; now it's status only. Saying
+                so right above it prevents the misread ("#1 takes the pot"). */}
+            <div className="text-[11px] text-ink/40 leading-snug">
+              🏆 {t.leaderboardPrestige}
             </div>
 
             <ul className="divide-y divide-black/5">

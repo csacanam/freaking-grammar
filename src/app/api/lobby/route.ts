@@ -15,6 +15,7 @@ import {
   readHasFreePlayToday,
 } from "@/lib/onchain";
 import { loadBotBlacklist } from "@/lib/bot-detection";
+import { buildTicketEntries } from "@/lib/draw";
 
 // Cache the operator address at module scope — it's derived from a stable
 // env var and reused on every lobby fetch to validate sponsor balances.
@@ -66,6 +67,9 @@ export async function GET(req: NextRequest) {
         isMe: player ? r.isMe : r.isMe,
       })),
       playerHasFreePlay: true,
+      drawTicketsToday: 9,
+      drawPlayersToday: 7,
+      myTickets: 0,
     });
   }
 
@@ -95,7 +99,23 @@ export async function GET(req: NextRequest) {
     runsQuery = runsQuery.not("player", "in", blacklistFilter);
   }
 
-  const [potRes, runsRes] = await Promise.all([
+  // Today's draw entries — paid finished runs under the same rules the
+  // settlement draw applies (see src/lib/draw.ts: score > 0, per-wallet
+  // cap, blacklist out). Lets the UI show honest odds: "N tickets today".
+  let drawQuery = supabase
+    .from("runs")
+    .select("id,player,score")
+    .eq("lang", lang)
+    .eq("day_utc", day)
+    .eq("status", "finished")
+    .eq("was_free", false)
+    .gt("score", 0)
+    .limit(1000);
+  if (blacklistFilter) {
+    drawQuery = drawQuery.not("player", "in", blacklistFilter);
+  }
+
+  const [potRes, runsRes, drawRes] = await Promise.all([
     supabase
       .from("pots")
       .select("amount_units,day_number")
@@ -103,7 +123,18 @@ export async function GET(req: NextRequest) {
       .eq("day_utc", day)
       .maybeSingle(),
     runsQuery,
+    drawQuery,
   ]);
+
+  const drawEntries = buildTicketEntries(
+    (drawRes.data ?? []) as Array<{ id: string; player: string; score: number }>,
+    gameId,
+  );
+  const drawTicketsToday = drawEntries.length;
+  const drawPlayersToday = new Set(drawEntries.map((e) => e.player)).size;
+  const myTickets = player
+    ? drawEntries.filter((e) => e.player === player).length
+    : 0;
 
   // Prefer the live on-chain pot so sponsorPot / seedCurrentDay calls show up
   // immediately in the UI. Fall back to the DB mirror if the RPC hiccups or
@@ -290,5 +321,8 @@ export async function GET(req: NextRequest) {
     leaderboard,
     playerHasFreePlay,
     bonuses,
+    drawTicketsToday,
+    drawPlayersToday,
+    myTickets,
   });
 }

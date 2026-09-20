@@ -6,6 +6,12 @@ import Image from "next/image";
 import { ButtonLink } from "@/components/Button";
 import { PayAndPlayButton } from "@/components/PayAndPlayButton";
 import { useLang } from "@/lib/lang-provider";
+import { gameIdFor } from "@/lib/i18n";
+import {
+  MAX_TICKETS_PER_RUN,
+  ticketStepFor,
+  ticketsForScore,
+} from "@/lib/draw-config";
 
 export default function GameOverPage() {
   return (
@@ -54,6 +60,7 @@ function GameOverInner() {
         <div className="text-xs text-muted mt-3">
           {t.yourRank}: <span className="font-mono">{rank ? `#${rank}` : "—"}</span>
         </div>
+        <TicketLine paid={sp.get("paid") === "1"} score={score} />
       </div>
 
       <div className="w-full flex flex-col gap-3">
@@ -62,6 +69,42 @@ function GameOverInner() {
           ← {t.backToLobby}
         </ButtonLink>
       </div>
+    </div>
+  );
+}
+
+// Ticket feedback under the score — rank is glory, tickets are the prize
+// path, and this is where the player learns the difference. Paid run: how
+// many tickets it holds + how far the next one was. Free run: the nudge that
+// the draw is where paid plays go. `paid` comes via URL param from the game
+// page (older responses without the flag render nothing — never a wrong
+// claim).
+function TicketLine({ paid, score }: { paid: boolean; score: number }) {
+  const { t, game } = useLang();
+  if (!paid) {
+    return (
+      <div className="text-xs text-muted mt-4 border-t border-black/5 pt-3 leading-snug">
+        🎟 {t.gameOverFreeNudge}
+      </div>
+    );
+  }
+  const gameId = gameIdFor(game);
+  const tickets = ticketsForScore(score, gameId);
+  const line =
+    tickets === 1
+      ? t.gameOverTicketOne
+      : t.gameOverTicketsMany.replace("{k}", String(tickets));
+  return (
+    <div className="text-xs text-ink mt-4 border-t border-black/5 pt-3 leading-snug">
+      <span className="font-semibold">🎟 {line}</span>
+      {tickets < MAX_TICKETS_PER_RUN && (
+        <div className="text-muted mt-1">
+          {t.gameOverNextTicket.replace(
+            "{n}",
+            String(tickets * ticketStepFor(gameId)),
+          )}
+        </div>
+      )}
     </div>
   );
 }

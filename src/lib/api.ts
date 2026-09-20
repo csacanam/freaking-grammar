@@ -16,6 +16,12 @@ export type LobbyData = {
   leaderboard: { rank: number; player: string; score: number; isMe?: boolean }[];
   playerHasFreePlay: boolean;
   bonuses?: BonusLine[];
+  // Daily draw (since 2026-09-21): the pot is drawn among the day's paid
+  // runs — 1 ticket per paid finished run, capped per wallet. These power
+  // the honest-odds line in the lobby ("N tickets today · yours: M").
+  drawTicketsToday?: number;
+  drawPlayersToday?: number;
+  myTickets?: number;
 };
 
 export type HistoryDay = {
@@ -123,16 +129,30 @@ export type AnswerReveal = {
 
 export type AnswerResult =
   | { correct: true; score: number; nextQuestion: RunQuestion }
-  | { correct: true; ended: true; score: number; rank: number; reason: "cleared" }
+  | {
+      correct: true;
+      ended: true;
+      score: number;
+      rank: number;
+      reason: "cleared";
+      // false = this run bought draw tickets; the game-over screen shows
+      // "your tickets are in" vs the paid-play nudge off this.
+      wasFree?: boolean;
+    }
   | ({
       correct: false;
       ended: true;
       score: number;
       rank: number;
       reason: "wrong" | "timeout";
+      wasFree?: boolean;
     } & Partial<AnswerReveal>);
 
-export type FinishResult = { score: number; rank: number } & Partial<AnswerReveal>;
+export type FinishResult = {
+  score: number;
+  rank: number;
+  wasFree?: boolean;
+} & Partial<AnswerReveal>;
 
 export async function startRun(
   lang: Lang,
@@ -217,9 +237,14 @@ export type MathAnswerResult =
       score: number;
       rank: number;
       reason: "wrong" | "timeout";
+      wasFree?: boolean;
     } & Partial<MathReveal>);
 
-export type MathFinishResult = { score: number; rank: number } & Partial<MathReveal>;
+export type MathFinishResult = {
+  score: number;
+  rank: number;
+  wasFree?: boolean;
+} & Partial<MathReveal>;
 
 export async function startMathRun(
   player: string,

@@ -7,7 +7,8 @@ import { PayAndPlayButton } from "@/components/PayAndPlayButton";
 import { PlayerName } from "@/components/PlayerName";
 import { useLang } from "@/lib/lang-provider";
 import { useIsMiniPay } from "@/lib/minipay";
-import type { Lang } from "@/lib/i18n";
+import { gameIdFor, type Lang } from "@/lib/i18n";
+import { ticketStepFor } from "@/lib/draw-config";
 import type { LobbyData } from "@/lib/api";
 
 const TOP = 3;
@@ -75,17 +76,42 @@ export function PotCard({
         </div>
 
         <div
-          className={`rounded-2xl ${meta.tagBg} px-4 py-3 flex flex-col gap-3`}
+          className={`rounded-2xl ${meta.tagBg} px-4 py-3 flex flex-col gap-2`}
         >
           <div className="flex items-baseline justify-between gap-3">
             <div
               className={`font-display text-sm tracking-[0.15em] uppercase ${meta.tagText} leading-tight`}
             >
-              {t.winnerTakesAll}
+              {t.dailyDraw}
             </div>
             <div className="font-display text-5xl text-ink leading-none tabular-nums">
               {lobby ? fmtUSD(lobby.potUSD) : "—"}
             </div>
+          </div>
+          {/* Honest odds line — the draw only works as an incentive if the
+              player can SEE their chance. Zero tickets is the strongest
+              pitch of all: first paid play takes the whole pot. */}
+          {lobby && (
+            <div className="text-xs text-ink/60 leading-snug">
+              {(lobby.drawTicketsToday ?? 0) > 0 ? (
+                <>
+                  🎟 {lobby.drawTicketsToday} {t.drawTicketsToday}
+                  {(lobby.myTickets ?? 0) > 0 && (
+                    <>
+                      {" · "}
+                      <span className="font-semibold text-ink/80">
+                        {lobby.myTickets} {t.drawYours}
+                      </span>
+                    </>
+                  )}
+                </>
+              ) : (
+                <>🎟 {t.drawNoTickets}</>
+              )}
+            </div>
+          )}
+          <div className="text-[11px] text-ink/40 leading-snug">
+            {t.drawRule.replace("{n}", String(ticketStepFor(gameIdFor(game))))}
           </div>
         </div>
 
@@ -119,6 +145,12 @@ export function PotCard({
             )}
           </div>
         ))}
+
+      {/* The podium used to BE the prize; now it's status only. Saying so
+          right above it prevents the obvious misread ("#1 takes the pot"). */}
+      <div className="text-[11px] text-ink/40 leading-snug">
+        🏆 {t.leaderboardPrestige}
+      </div>
 
       <ul className="divide-y divide-black/5">
         {lobby === null && (

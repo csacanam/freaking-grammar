@@ -11,6 +11,14 @@ import {
   loadBotBlacklist,
   type BotFlag,
 } from "@/lib/bot-detection";
+import {
+  DRAW_START_DAY,
+  buildTicketEntries,
+  drawSeedForGame,
+  fallbackSeed,
+  findBoundaryBlock,
+  pickWinnerIndex,
+} from "@/lib/draw";
 import { sendTelegramMessage } from "@/lib/telegram";
 
 export const dynamic = "force-dynamic";
@@ -112,8 +120,18 @@ async function sendSettlementSummary(
     const c = r.closed;
     const winnerLine = c.winner
       ? `✅ Winner: \`${c.winner.slice(0, 6)}…${c.winner.slice(-4)}\` (score ${c.winnerScore})`
-      : `⚠️ No clean winner — pot rolls forward.`;
+      : r.draw
+        ? `⏭️ No paid tickets — pot carries over.`
+        : `⚠️ No clean winner — pot rolls forward.`;
     lines.push("", `*${label} → ${c.day}*`, winnerLine);
+    if (r.draw && r.draw.tickets > 0) {
+      lines.push(
+        `🎟 Draw: ${r.draw.tickets} ticket(s) · ${r.draw.players} player(s)` +
+          (r.draw.block
+            ? ` · block ${r.draw.block}`
+            : ` · ⚠️ fallback seed`),
+      );
+    }
     if (r.skipped.length > 0) {
       // "skipped", not "flagged": an answer-key skip costs this pot only and
       // writes nothing to bot_wallets, so calling them all new bots would lie.
@@ -144,6 +162,23 @@ async function sendSettlementSummary(
   await sendTelegramMessage(lines.join("\n"));
 }
 
+// Draw audit info surfaced in the JSON response + Telegram summary.
+// `entries` is the frozen per-run ticket list persisted to pots.draw_entries
+// so the draw stays auditable even if the blacklist changes later.
+type DrawEntry = {
+  runId: string;
+  player: string;
+  score: number;
+  tickets: number;
+};
+type DrawInfo = {
+  tickets: number;
+  players: number;
+  seed: string;
+  block: number | null;
+  entries: DrawEntry[];
+};
+
 type LangResult =
   | {
       status: "settled";
@@ -153,6 +188,7 @@ type LangResult =
         winnerScore: number | null;
         rolledTx: string | null;
       };
+      draw?: DrawInfo;
       skipped: Array<{
         player: string;
         score: number;
@@ -238,82 +274,22 @@ async function rollPot(b: Bucket, today: string): Promise<LangResult> {
   const skipped: Array<{ player: string; score: number; flag: BotFlag }> = [];
   const botBlacklist = await loadBotBlacklist(supabase);
 
+  // Days settling on/after DRAW_START_DAY use the ticket draw; older days
+  // (late settlements, strand recoveries) keep the top-score rule their
+  // players actually competed under.
+  let drawInfo: DrawInfo | null = null;
+
   if (!lastPot.closed) {
-    // Push the blacklist filter down into Postgres instead of pulling
-    // bot rows just to drop them client-side. With the blacklist
-    // short-circuited at the DB, the only candidates we ever see are
-    // either truly clean or new wallets the heuristic still has to
-    // evaluate. Two-layer filter (DB blocklist + correctRate/p50
-    // heuristic) lives in src/lib/bot-detection.ts.
-    //
-    // Pagination is still here because heuristic-flagged wallets are
-    // possible inside the result set (they're new, not yet in
-    // bot_wallets) and dedup is still needed because each player can
-    // own multiple runs on the same day.
-    const blacklistArr = [...botBlacklist];
-    const blacklistFilter =
-      blacklistArr.length > 0
-        ? `(${blacklistArr.map((p) => `"${p}"`).join(",")})`
-        : null;
-
-    const PAGE = 1000;
-    const seen = new Set<string>();
-    let offset = 0;
-    let pickedWinner = false;
-    walk: while (!pickedWinner) {
-      let query = withLangFilter(
-        supabase
-          .from("runs")
-          .select("id,player,score,ended_at")
-          .eq("game", b.game),
-        b.lang,
-      )
-        .eq("day_utc", prevDay)
-        .eq("status", "finished")
-        .gt("score", 0)
-        .order("score", { ascending: false })
-        .order("ended_at", { ascending: true })
-        .range(offset, offset + PAGE - 1);
-      if (blacklistFilter) {
-        query = query.not("player", "in", blacklistFilter);
-      }
-      const { data: page } = await query;
-
-      const candidates =
-        (page as Array<{ id: string; player: string; score: number }> | null) ??
-        [];
-      if (candidates.length === 0) break;
-
-      for (const c of candidates) {
-        const player = c.player.toLowerCase();
-        if (seen.has(player)) continue;
-        seen.add(player);
-
-        // Pass the in-memory blacklist so the heuristic short-circuit
-        // also catches wallets just-flagged earlier in this same loop
-        // (cross-page dedup against fresh adds).
-        //
-        // `runId` is this candidate's top-scoring run for the day (the loop
-        // walks score-desc and dedups by player, so the first row we see for a
-        // player IS their best). It enables the Grammar answer-key test, which
-        // judges that one run rather than the wallet.
-        const flag = await checkBotPlayer(player, supabase, botBlacklist, {
-          game: b.game,
-          runId: c.id,
-        });
-        if (flag.flagged) {
-          skipped.push({ player, score: c.score, flag });
-          continue;
-        }
-
-        winner = player;
-        winnerScore = c.score;
-        pickedWinner = true;
-        break walk;
-      }
-
-      if (candidates.length < PAGE) break;
-      offset += PAGE;
+    if (prevDay >= DRAW_START_DAY) {
+      const d = await drawPotWinner(b, prevDay, botBlacklist);
+      winner = d.winner;
+      winnerScore = d.winnerScore;
+      drawInfo = d.draw;
+    } else {
+      const legacy = await pickTopScoreWinner(b, prevDay, botBlacklist);
+      winner = legacy.winner;
+      winnerScore = legacy.winnerScore;
+      skipped.push(...legacy.skipped);
     }
 
     await withLangFilter(
@@ -323,6 +299,30 @@ async function rollPot(b: Bucket, today: string): Promise<LangResult> {
         .eq("game", b.game),
       b.lang,
     ).eq("day_utc", prevDay);
+
+    if (drawInfo) {
+      // Audit trail for the draw (seed, boundary block, ticket count) so
+      // anyone can recompute the winner from public data. Separate
+      // best-effort write: a missing migration must never break settlement.
+      const { error: drawErr } = await withLangFilter(
+        supabase
+          .from("pots")
+          .update({
+            draw_seed: drawInfo.seed || null,
+            draw_block: drawInfo.block,
+            draw_tickets: drawInfo.tickets,
+            draw_entries: drawInfo.entries,
+          })
+          .eq("game", b.game),
+        b.lang,
+      ).eq("day_utc", prevDay);
+      if (drawErr) {
+        console.warn(
+          `draw metadata write failed for ${b.label} ${prevDay}:`,
+          drawErr.message,
+        );
+      }
+    }
 
     if (winner && Number(lastPot.amount_units) > 0) {
       await supabase.from("wins").upsert(
@@ -454,6 +454,7 @@ async function rollPot(b: Bucket, today: string): Promise<LangResult> {
   return {
     status: "settled",
     closed: { day: prevDay, winner, winnerScore, rolledTx },
+    draw: drawInfo ?? undefined,
     skipped: skipped.map((s) => {
       if (s.flag.flagged && s.flag.reason === "heuristic") {
         return {
@@ -486,6 +487,215 @@ async function rollPot(b: Bucket, today: string): Promise<LangResult> {
     opened: today,
     day_number: lastPot.day_number + 1,
   };
+}
+
+// One boundary-block lookup per closed day, shared by all three games (they
+// settle against the same UTC boundary). Promise-cached per warm instance;
+// failed lookups evict themselves so a transient RPC error doesn't poison
+// retries.
+const boundaryBlockCache = new Map<
+  string,
+  Promise<{ number: bigint; hash: `0x${string}` }>
+>();
+function getBoundaryBlock(closedDayUtc: string) {
+  let p = boundaryBlockCache.get(closedDayUtc);
+  if (!p) {
+    p = findBoundaryBlock(celoClient, closedDayUtc);
+    p.catch(() => boundaryBlockCache.delete(closedDayUtc));
+    boundaryBlockCache.set(closedDayUtc, p);
+  }
+  return p;
+}
+
+// Winner selection under the ticket draw (days >= DRAW_START_DAY): 1 ticket
+// per paid finished run with score > 0, capped per wallet, blacklist
+// excluded — see src/lib/draw.ts for the rationale and the verifiability
+// contract. Null winner = nobody bought a ticket; rollDay then passes 0x0
+// and the contract carries the pot forward at zero treasury cost.
+async function drawPotWinner(
+  b: Bucket,
+  prevDay: string,
+  botBlacklist: Set<string>,
+): Promise<{
+  winner: string | null;
+  winnerScore: number | null;
+  draw: DrawInfo;
+}> {
+  const empty: DrawInfo = {
+    tickets: 0,
+    players: 0,
+    seed: "",
+    block: null,
+    entries: [],
+  };
+  if (!supabase) return { winner: null, winnerScore: null, draw: empty };
+  const db = supabase;
+
+  const blacklistArr = [...botBlacklist];
+  const blacklistFilter =
+    blacklistArr.length > 0
+      ? `(${blacklistArr.map((p) => `"${p}"`).join(",")})`
+      : null;
+
+  const PAGE = 1000;
+  const rows: Array<{ id: string; player: string; score: number }> = [];
+  let offset = 0;
+  for (;;) {
+    let query = withLangFilter(
+      db.from("runs").select("id,player,score").eq("game", b.game),
+      b.lang,
+    )
+      .eq("day_utc", prevDay)
+      .eq("status", "finished")
+      .eq("was_free", false)
+      .gt("score", 0)
+      .order("id", { ascending: true })
+      .range(offset, offset + PAGE - 1);
+    if (blacklistFilter) {
+      query = query.not("player", "in", blacklistFilter);
+    }
+    const { data: page } = await query;
+    const batch =
+      (page as Array<{ id: string; player: string; score: number }> | null) ??
+      [];
+    rows.push(...batch);
+    if (batch.length < PAGE) break;
+    offset += PAGE;
+  }
+
+  const entries = buildTicketEntries(rows, b.gameId);
+  if (entries.length === 0) {
+    return { winner: null, winnerScore: null, draw: empty };
+  }
+
+  let seed: `0x${string}`;
+  let block: number | null = null;
+  try {
+    const boundary = await getBoundaryBlock(prevDay);
+    seed = drawSeedForGame(boundary.hash, b.gameId);
+    block = Number(boundary.number);
+  } catch (e) {
+    // Chain-sourced seed unavailable — hash the ticket list itself instead.
+    // Still deterministic and auditable from the DB, just not trustless;
+    // logged loudly so it never becomes the silent normal.
+    console.error(
+      `draw boundary block failed for ${b.label} ${prevDay}; using fallback seed:`,
+      (e as Error).message,
+    );
+    seed = fallbackSeed(prevDay, b.gameId, entries);
+  }
+
+  const picked = entries[pickWinnerIndex(seed, entries.length)];
+
+  // Collapse the expanded ticket list back to per-run rows for storage.
+  // Entries are consecutive per run by construction, so this is a fold.
+  const perRun: DrawEntry[] = [];
+  for (const e of entries) {
+    const last = perRun[perRun.length - 1];
+    if (last && last.runId === e.runId) last.tickets++;
+    else perRun.push({ runId: e.runId, player: e.player, score: e.score, tickets: 1 });
+  }
+
+  return {
+    winner: picked.player,
+    winnerScore: picked.score,
+    draw: {
+      tickets: entries.length,
+      players: new Set(entries.map((en) => en.player)).size,
+      seed,
+      block,
+      entries: perRun,
+    },
+  };
+}
+
+// Legacy winner selection — top score, earliest finish breaks ties — used
+// only for days that closed before DRAW_START_DAY, so late settlements honor
+// the rule those players actually competed under.
+//
+// Blacklist is pushed down into Postgres; pagination + per-player dedup stay
+// because heuristic-flagged wallets can still appear inside the result set
+// (they're new, not yet in bot_wallets). Two-layer filter (DB blocklist +
+// correctRate/p50 heuristic + grammar answer-key test) lives in
+// src/lib/bot-detection.ts.
+async function pickTopScoreWinner(
+  b: Bucket,
+  prevDay: string,
+  botBlacklist: Set<string>,
+): Promise<{
+  winner: string | null;
+  winnerScore: number | null;
+  skipped: Array<{ player: string; score: number; flag: BotFlag }>;
+}> {
+  const skipped: Array<{ player: string; score: number; flag: BotFlag }> = [];
+  let winner: string | null = null;
+  let winnerScore: number | null = null;
+  if (!supabase) return { winner, winnerScore, skipped };
+  const db = supabase;
+
+  const blacklistArr = [...botBlacklist];
+  const blacklistFilter =
+    blacklistArr.length > 0
+      ? `(${blacklistArr.map((p) => `"${p}"`).join(",")})`
+      : null;
+
+  const PAGE = 1000;
+  const seen = new Set<string>();
+  let offset = 0;
+  let pickedWinner = false;
+  walk: while (!pickedWinner) {
+    let query = withLangFilter(
+      db
+        .from("runs")
+        .select("id,player,score,ended_at")
+        .eq("game", b.game),
+      b.lang,
+    )
+      .eq("day_utc", prevDay)
+      .eq("status", "finished")
+      .gt("score", 0)
+      .order("score", { ascending: false })
+      .order("ended_at", { ascending: true })
+      .range(offset, offset + PAGE - 1);
+    if (blacklistFilter) {
+      query = query.not("player", "in", blacklistFilter);
+    }
+    const { data: page } = await query;
+
+    const candidates =
+      (page as Array<{ id: string; player: string; score: number }> | null) ??
+      [];
+    if (candidates.length === 0) break;
+
+    for (const c of candidates) {
+      const player = c.player.toLowerCase();
+      if (seen.has(player)) continue;
+      seen.add(player);
+
+      // `runId` is this candidate's top-scoring run for the day (the loop
+      // walks score-desc and dedups by player, so the first row we see for a
+      // player IS their best). It enables the Grammar answer-key test, which
+      // judges that one run rather than the wallet.
+      const flag = await checkBotPlayer(player, db, botBlacklist, {
+        game: b.game,
+        runId: c.id,
+      });
+      if (flag.flagged) {
+        skipped.push({ player, score: c.score, flag });
+        continue;
+      }
+
+      winner = player;
+      winnerScore = c.score;
+      pickedWinner = true;
+      break walk;
+    }
+
+    if (candidates.length < PAGE) break;
+    offset += PAGE;
+  }
+
+  return { winner, winnerScore, skipped };
 }
 
 async function rollDayOnChain(
