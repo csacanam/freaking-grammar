@@ -251,9 +251,16 @@ function Row({
           </span>
         )}
       </span>
-      {/* Draw-ticket badge: only when > 0 — absence, never "🎟0". */}
-      {(r.tickets ?? 0) > 0 && (
-        <span className="shrink-0 text-[11px] font-semibold text-teal bg-teal/10 rounded-full px-1.5 py-0.5 tabular-nums">
+      {/* Draw-ticket badge on EVERY row, zeros included — the mechanic
+          reads as a column, not an absence. Muted at 0, teal when holding. */}
+      {typeof r.tickets === "number" && (
+        <span
+          className={`shrink-0 text-[11px] font-semibold rounded-full px-1.5 py-0.5 tabular-nums ${
+            r.tickets > 0
+              ? "text-teal bg-teal/10"
+              : "text-muted bg-black/[0.05]"
+          }`}
+        >
           🎟{r.tickets}
         </span>
       )}
