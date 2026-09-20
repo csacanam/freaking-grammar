@@ -167,6 +167,8 @@ export default function MathLobbyPage() {
               </div>
             </div>
 
+            <DrawEntrants lobby={lobby} />
+
             {/* The podium used to BE the prize; now it's status only. Saying
                 so right above it prevents the misread ("#1 takes the pot"). */}
             <div className="text-[11px] text-ink/40 leading-snug">
@@ -204,6 +206,53 @@ export default function MathLobbyPage() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Ticket holders sorted by tickets, separate from the glory board —
+// mirrors the Grammar PotCard (see rationale there).
+function DrawEntrants({ lobby }: { lobby: LobbyData | null }) {
+  const { t } = useLang();
+  if (!lobby) return null;
+  const total = lobby.drawTicketsToday ?? 0;
+  if (total <= 0) return null;
+  const entrants = (lobby.leaderboard ?? [])
+    .filter((r) => (r.tickets ?? 0) > 0)
+    .sort((a, b) => (b.tickets ?? 0) - (a.tickets ?? 0) || b.score - a.score);
+  if (entrants.length === 0) return null;
+  return (
+    <div className="flex flex-col">
+      <div className="text-[11px] text-ink/40 leading-snug">
+        🎟 {t.drawTodayTitle}
+      </div>
+      <ul className="divide-y divide-black/5">
+        {entrants.map((e) => (
+          <li
+            key={e.player}
+            className={`flex items-center gap-3 py-2 ${
+              e.isMe ? "font-semibold" : ""
+            }`}
+          >
+            <span className="flex-1 text-sm text-ink truncate">
+              <PlayerName address={e.player} />
+              {e.isMe && (
+                <span className="ml-2 text-[10px] text-teal font-display tracking-widest uppercase">
+                  {t.youTag}
+                </span>
+              )}
+            </span>
+            <span className="shrink-0 w-10 text-right text-[11px] text-muted tabular-nums">
+              {Math.round((100 * (e.tickets ?? 0)) / total)}%
+            </span>
+            <span className="shrink-0 w-11 text-right">
+              <span className="text-[11px] font-semibold text-teal bg-teal/10 rounded-full px-1.5 py-0.5 tabular-nums">
+                🎟{e.tickets}
+              </span>
+            </span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -251,19 +300,6 @@ function Row({
           </span>
         )}
       </span>
-      {/* Draw-ticket badge on EVERY row, zeros included — the mechanic
-          reads as a column, not an absence. Muted at 0, teal when holding. */}
-      {typeof r.tickets === "number" && (
-        <span
-          className={`shrink-0 text-[11px] font-semibold rounded-full px-1.5 py-0.5 tabular-nums ${
-            r.tickets > 0
-              ? "text-teal bg-teal/10"
-              : "text-muted bg-black/[0.05]"
-          }`}
-        >
-          🎟{r.tickets}
-        </span>
-      )}
       <span className="font-display text-lg tabular-nums">{r.score}</span>
     </li>
   );

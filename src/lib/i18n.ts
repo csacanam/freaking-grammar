@@ -209,6 +209,7 @@ export const dict = {
     drawTicketsToday: "tickets today",
     drawYours: "yours",
     drawNoTickets: "No tickets yet — the first paid play could take the whole pot.",
+    drawTodayTitle: "In today's draw",
     // {n} is replaced with the game's point step at render time.
     drawRule: "1 ticket per paid play · +1 every {n} pts · max 3 per play, unlimited plays",
     drawAnnounceTitle: "New: the pot is now a daily draw",
@@ -586,6 +587,7 @@ export const dict = {
     drawTicketsToday: "tickets hoy",
     drawYours: "tuyos",
     drawNoTickets: "Aún no hay tickets — la primera jugada pagada puede llevarse todo el pote.",
+    drawTodayTitle: "En el sorteo de hoy",
     // {n} se reemplaza con el paso de puntos del juego al renderizar.
     drawRule: "1 ticket por jugada pagada · +1 cada {n} pts · máx. 3 por jugada, sin límite de jugadas",
     drawAnnounceTitle: "Nuevo: el pote ahora se sortea",
