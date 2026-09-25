@@ -3,6 +3,8 @@
 // pot regardless of UI language.
 
 import { supabase, TOKEN_DECIMALS } from "@/lib/supabase";
+import { DRAW_START_DAY } from "@/lib/draw";
+import { buildDrawProof, type DrawColumns, type DrawProof } from "@/lib/draw-proof";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +21,11 @@ type HistoryDay = {
   winner: string | null;
   winnerScore: number | null;
   bonuses?: HistoryBonus[];
+  // How the winner was picked: "draw" (with the full proof), "no-tickets"
+  // (draw day nobody entered — pot carried over) or "top-score" (legacy
+  // days before DRAW_START_DAY).
+  mode?: "draw" | "no-tickets" | "top-score";
+  draw?: DrawProof;
 };
 
 export async function GET() {
@@ -26,7 +33,9 @@ export async function GET() {
 
   const { data: potsData } = await supabase
     .from("pots")
-    .select("day_utc,amount_units,winner,winner_score")
+    .select(
+      "day_utc,amount_units,winner,winner_score,rolled_tx,draw_seed,draw_block,draw_tickets,draw_entries",
+    )
     .eq("game", "math")
     .eq("closed", true)
     .order("day_utc", { ascending: false })
@@ -35,9 +44,8 @@ export async function GET() {
   const pots = (potsData ?? []) as Array<{
     day_utc: string;
     amount_units: string | number;
-    winner: string | null;
     winner_score: number | null;
-  }>;
+  } & DrawColumns>;
 
   // Bonus payouts joined client-side so we don't need a Postgres view.
   const days = pots.map((p) => p.day_utc);
@@ -75,13 +83,24 @@ export async function GET() {
     }
   }
 
-  const out: HistoryDay[] = pots.map((p) => ({
-    date: p.day_utc,
-    potUSD: Number(p.amount_units) / TOKEN_DECIMALS,
-    winner: p.winner,
-    winnerScore: p.winner_score,
-    bonuses: bonusesByDay.get(p.day_utc),
-  }));
+  const out: HistoryDay[] = await Promise.all(
+    pots.map(async (p) => {
+      const draw = await buildDrawProof(p, 3);
+      return {
+        date: p.day_utc,
+        potUSD: Number(p.amount_units) / TOKEN_DECIMALS,
+        winner: p.winner,
+        winnerScore: p.winner_score,
+        bonuses: bonusesByDay.get(p.day_utc),
+        mode: draw
+          ? "draw"
+          : p.day_utc >= DRAW_START_DAY
+            ? "no-tickets"
+            : "top-score",
+        draw: draw ?? undefined,
+      } satisfies HistoryDay;
+    }),
+  );
 
   return Response.json(out);
 }

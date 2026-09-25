@@ -1,6 +1,8 @@
 import type { NextRequest } from "next/server";
 import { validateLang } from "@/lib/i18n";
 import { supabase, TOKEN_DECIMALS } from "@/lib/supabase";
+import { DRAW_START_DAY } from "@/lib/draw";
+import { buildDrawProof, type DrawColumns, type DrawProof } from "@/lib/draw-proof";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +19,11 @@ type HistoryDay = {
   winner: string | null;
   winnerScore: number | null;
   bonuses?: HistoryBonus[];
+  // How the winner was picked: "draw" (with the full proof), "no-tickets"
+  // (draw day nobody entered — pot carried over) or "top-score" (legacy
+  // days before DRAW_START_DAY).
+  mode?: "draw" | "no-tickets" | "top-score";
+  draw?: DrawProof;
 };
 
 const MOCK: HistoryDay[] = [
@@ -47,7 +54,9 @@ export async function GET(req: NextRequest) {
 
   const { data: potsData } = await supabase
     .from("pots")
-    .select("day_utc,amount_units,winner,winner_score")
+    .select(
+      "day_utc,amount_units,winner,winner_score,rolled_tx,draw_seed,draw_block,draw_tickets,draw_entries",
+    )
     .eq("lang", lang)
     .eq("closed", true)
     .order("day_utc", { ascending: false })
@@ -56,9 +65,8 @@ export async function GET(req: NextRequest) {
   const pots = (potsData ?? []) as Array<{
     day_utc: string;
     amount_units: string | number;
-    winner: string | null;
     winner_score: number | null;
-  }>;
+  } & DrawColumns>;
 
   // Pull bonus payouts for these days in one shot — join client-side so we
   // don't need a Postgres view. Lists each sponsor's contribution inline
@@ -100,13 +108,25 @@ export async function GET(req: NextRequest) {
     }, new Map<string, HistoryBonus[]>());
   }
 
-  const history: HistoryDay[] = pots.map((row) => ({
-    date: row.day_utc,
-    potUSD: Number(row.amount_units) / TOKEN_DECIMALS,
-    winner: row.winner,
-    winnerScore: row.winner_score,
-    bonuses: bonusesByDay.get(row.day_utc),
-  }));
+  const gameId = lang === "es" ? 2 : 1;
+  const history: HistoryDay[] = await Promise.all(
+    pots.map(async (row) => {
+      const draw = await buildDrawProof(row, gameId);
+      return {
+        date: row.day_utc,
+        potUSD: Number(row.amount_units) / TOKEN_DECIMALS,
+        winner: row.winner,
+        winnerScore: row.winner_score,
+        bonuses: bonusesByDay.get(row.day_utc),
+        mode: draw
+          ? "draw"
+          : row.day_utc >= DRAW_START_DAY
+            ? "no-tickets"
+            : "top-score",
+        draw: draw ?? undefined,
+      } satisfies HistoryDay;
+    }),
+  );
 
   return Response.json(history);
 }

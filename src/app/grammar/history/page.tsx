@@ -8,6 +8,7 @@ import { useIsMiniPay } from "@/lib/minipay";
 import { type Lang } from "@/lib/i18n";
 import { SakaLabsCredit } from "@/components/SakaLabsCredit";
 import { PlayerName } from "@/components/PlayerName";
+import { DrawProofDetails } from "@/components/DrawProofDetails";
 
 const LANGS: Lang[] = ["en", "es"];
 
@@ -83,9 +84,18 @@ export default function HistoryPage() {
                     <div className="text-xs text-muted">
                       {t.score}: <span className="font-display">{d.winnerScore}</span>
                     </div>
+                    {d.draw && (
+                      <div className="text-xs text-muted">
+                        {t.drawWinnerOdds
+                          .replace("{k}", String(d.draw.winnerTickets))
+                          .replace("{n}", String(d.draw.totalTickets))}
+                      </div>
+                    )}
                   </>
                 ) : (
-                  <div className="text-sm text-muted italic">{t.noWinner}</div>
+                  <div className="text-sm text-muted italic max-w-[10rem]">
+                    {d.mode === "no-tickets" ? t.drawCarriedOver : t.noWinner}
+                  </div>
                 )}
               </div>
             </div>
@@ -112,6 +122,9 @@ export default function HistoryPage() {
                   </div>
                 ))}
               </div>
+            )}
+            {d.draw && (
+              <DrawProofDetails day={d.date} winner={d.winner} draw={d.draw} />
             )}
           </li>
         ))}

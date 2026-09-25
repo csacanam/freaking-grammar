@@ -7,6 +7,7 @@ import { useLang } from "@/lib/lang-provider";
 import { useIsMiniPay } from "@/lib/minipay";
 import { SakaLabsCredit } from "@/components/SakaLabsCredit";
 import { PlayerName } from "@/components/PlayerName";
+import { DrawProofDetails } from "@/components/DrawProofDetails";
 
 // Past Math pots, newest first. No EN/ES tag column because Math has
 // a single global pot — every row is "Math". Mirrors the Grammar
@@ -67,9 +68,18 @@ export default function MathHistoryPage() {
                     <div className="text-xs text-muted">
                       {t.score}: <span className="font-display">{d.winnerScore}</span>
                     </div>
+                    {d.draw && (
+                      <div className="text-xs text-muted">
+                        {t.drawWinnerOdds
+                          .replace("{k}", String(d.draw.winnerTickets))
+                          .replace("{n}", String(d.draw.totalTickets))}
+                      </div>
+                    )}
                   </>
                 ) : (
-                  <div className="text-sm text-muted italic">{t.noWinner}</div>
+                  <div className="text-sm text-muted italic max-w-[10rem]">
+                    {d.mode === "no-tickets" ? t.drawCarriedOver : t.noWinner}
+                  </div>
                 )}
               </div>
             </div>
@@ -91,6 +101,9 @@ export default function MathHistoryPage() {
                   </div>
                 ))}
               </div>
+            )}
+            {d.draw && (
+              <DrawProofDetails day={d.date} winner={d.winner} draw={d.draw} />
             )}
           </li>
         ))}

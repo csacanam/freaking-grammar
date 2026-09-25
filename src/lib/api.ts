@@ -2,6 +2,7 @@
 // Every call takes a `lang` ("en" | "es") — same app, two games.
 
 import type { Lang } from "@/lib/i18n";
+import type { DrawProof } from "@/lib/draw-proof";
 
 export type BonusLine = {
   sponsor: string;
@@ -37,6 +38,9 @@ export type HistoryDay = {
   winner: string | null;
   winnerScore: number | null;
   bonuses?: BonusLine[];
+  // How the winner was picked; `draw` carries the step-by-step proof.
+  mode?: "draw" | "no-tickets" | "top-score";
+  draw?: DrawProof;
 };
 
 export type StatsData = {
