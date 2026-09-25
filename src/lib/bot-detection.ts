@@ -146,6 +146,23 @@ export async function loadBotBlacklist(
   return new Set(rows.map((r) => r.player.toLowerCase()));
 }
 
+// Only ops-confirmed fraud (reason='manual'). This — not the full blacklist —
+// gates the pot draw: under the draw a score buys at most 3 tickets per paid
+// run, so a heuristic "bot" paying $0.10 is revenue, not a threat, and
+// silently dropping a paid run (false positives on fast humans included)
+// breaks the published ticket list. Heuristic flags still hide wallets from
+// the glory leaderboard.
+export async function loadManualBlacklist(
+  supabase: SupabaseClient,
+): Promise<Set<string>> {
+  const { data } = await supabase
+    .from("bot_wallets")
+    .select("player")
+    .eq("reason", "manual");
+  const rows = (data ?? []) as Array<{ player: string }>;
+  return new Set(rows.map((r) => r.player.toLowerCase()));
+}
+
 export type AnswerKeyVerdict = {
   keyLike: boolean;
   freshN: number;

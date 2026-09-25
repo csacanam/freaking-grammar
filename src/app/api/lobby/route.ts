@@ -14,7 +14,7 @@ import {
   FREAKING_POT_ABI,
   readHasFreePlayToday,
 } from "@/lib/onchain";
-import { loadBotBlacklist } from "@/lib/bot-detection";
+import { loadBotBlacklist, loadManualBlacklist } from "@/lib/bot-detection";
 import { buildTicketEntries } from "@/lib/draw";
 
 // Cache the operator address at module scope — it's derived from a stable
@@ -83,11 +83,17 @@ export async function GET(req: NextRequest) {
   // live podium until daily settlement skips them — bad UX (real
   // players see "I can't compete" and bounce). Tabla `bot_wallets` is
   // tiny, so the extra round-trip is cheap.
-  const blacklist = await loadBotBlacklist(supabase);
-  const blacklistFilter =
-    blacklist.size > 0
-      ? `(${[...blacklist].map((p) => `"${p}"`).join(",")})`
-      : null;
+  // The draw only excludes ops-confirmed fraud (see loadManualBlacklist),
+  // so the ticket counts below use the manual list — otherwise the odds
+  // shown here wouldn't match the settlement draw.
+  const [blacklist, manualBlacklist] = await Promise.all([
+    loadBotBlacklist(supabase),
+    loadManualBlacklist(supabase),
+  ]);
+  const toFilter = (set: Set<string>) =>
+    set.size > 0 ? `(${[...set].map((p) => `"${p}"`).join(",")})` : null;
+  const blacklistFilter = toFilter(blacklist);
+  const drawBlacklistFilter = toFilter(manualBlacklist);
 
   let runsQuery = supabase
     .from("runs")
@@ -103,8 +109,8 @@ export async function GET(req: NextRequest) {
   }
 
   // Today's draw entries — paid finished runs under the same rules the
-  // settlement draw applies (see src/lib/draw.ts: score > 0, per-wallet
-  // cap, blacklist out). Lets the UI show honest odds: "N tickets today".
+  // settlement draw applies (see src/lib/draw.ts: score > 0, per-run
+  // cap, confirmed fraud out). Lets the UI show honest odds: "N tickets today".
   let drawQuery = supabase
     .from("runs")
     .select("id,player,score")
@@ -114,8 +120,8 @@ export async function GET(req: NextRequest) {
     .eq("was_free", false)
     .gt("score", 0)
     .limit(1000);
-  if (blacklistFilter) {
-    drawQuery = drawQuery.not("player", "in", blacklistFilter);
+  if (drawBlacklistFilter) {
+    drawQuery = drawQuery.not("player", "in", drawBlacklistFilter);
   }
 
   const [potRes, runsRes, drawRes] = await Promise.all([

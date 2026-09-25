@@ -7,7 +7,7 @@ import { erc20Abi } from "viem";
 import { celoClient, FREAKING_POT_ABI } from "./onchain";
 import { POT_ADDRESS } from "./chain";
 import { supabase, TOKEN_DECIMALS, todayUtc } from "./supabase";
-import { loadBotBlacklist } from "./bot-detection";
+import { loadManualBlacklist } from "./bot-detection";
 import { buildTicketEntries } from "./draw";
 import type { EmailData, SponsorBonus } from "./email-templates";
 
@@ -61,7 +61,7 @@ async function fetchPots(): Promise<{ en: number; es: number; math: number }> {
 }
 
 // Tickets bought so far today per game, under the exact settlement rules
-// (src/lib/draw.ts): paid finished runs with score > 0, blacklist excluded,
+// (src/lib/draw.ts): paid finished runs with score > 0, confirmed fraud excluded,
 // 1-3 tickets each by score. Same numbers the lobby shows.
 async function fetchDrawTickets(): Promise<{
   en: number;
@@ -71,7 +71,7 @@ async function fetchDrawTickets(): Promise<{
   const out = { en: 0, es: 0, math: 0 };
   if (!supabase) return out;
   const day = todayUtc();
-  const blacklist = await loadBotBlacklist(supabase);
+  const blacklist = await loadManualBlacklist(supabase);
   const blacklistFilter =
     blacklist.size > 0
       ? `(${[...blacklist].map((p) => `"${p}"`).join(",")})`

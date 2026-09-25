@@ -25,7 +25,7 @@ import {
   FREAKING_POT_ABI,
   readHasFreePlayToday,
 } from "@/lib/onchain";
-import { loadBotBlacklist } from "@/lib/bot-detection";
+import { loadBotBlacklist, loadManualBlacklist } from "@/lib/bot-detection";
 import { buildTicketEntries } from "@/lib/draw";
 
 export const dynamic = "force-dynamic";
@@ -54,11 +54,17 @@ export async function GET(req: NextRequest) {
   // Same reasoning as the Grammar lobby: settlement already skips
   // them, but unfiltered they dominate the live podium and demoralize
   // real players.
-  const blacklist = await loadBotBlacklist(supabase);
-  const blacklistFilter =
-    blacklist.size > 0
-      ? `(${[...blacklist].map((p) => `"${p}"`).join(",")})`
-      : null;
+  // The draw only excludes ops-confirmed fraud (see loadManualBlacklist),
+  // so the ticket counts below use the manual list — otherwise the odds
+  // shown here wouldn't match the settlement draw.
+  const [blacklist, manualBlacklist] = await Promise.all([
+    loadBotBlacklist(supabase),
+    loadManualBlacklist(supabase),
+  ]);
+  const toFilter = (set: Set<string>) =>
+    set.size > 0 ? `(${[...set].map((p) => `"${p}"`).join(",")})` : null;
+  const blacklistFilter = toFilter(blacklist);
+  const drawBlacklistFilter = toFilter(manualBlacklist);
 
   let runsQuery = supabase
     .from("runs")
@@ -84,8 +90,8 @@ export async function GET(req: NextRequest) {
     .eq("was_free", false)
     .gt("score", 0)
     .limit(1000);
-  if (blacklistFilter) {
-    drawQuery = drawQuery.not("player", "in", blacklistFilter);
+  if (drawBlacklistFilter) {
+    drawQuery = drawQuery.not("player", "in", drawBlacklistFilter);
   }
 
   const [potRes, runsRes, drawRes] = await Promise.all([

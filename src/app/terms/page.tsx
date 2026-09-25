@@ -107,9 +107,11 @@ function TermsEN() {
       <h2 className="font-display text-xl tracking-wide mt-4">5. Fair play</h2>
       <p>
         We use timing and pattern heuristics, plus on-chain analytics, to
-        detect bot-like behavior. Wallets that show bot signatures may be
-        excluded from prize distribution without prior notice. If you believe
-        your wallet was wrongly flagged, contact us.
+        detect bot-like behavior. Flagged wallets may be hidden from the
+        score leaderboard. Every paid play keeps its draw tickets; only
+        wallets confirmed to commit fraud (e.g. exploiting payments or the
+        game) are excluded from the draw. If you believe your wallet was
+        wrongly flagged, contact us.
       </p>
 
       <h2 className="font-display text-xl tracking-wide mt-4">6. No warranty</h2>
@@ -214,10 +216,11 @@ function TermsES() {
       <h2 className="font-display text-xl tracking-wide mt-4">5. Juego limpio</h2>
       <p>
         Usamos heurísticas de tiempos y patrones, además de analítica
-        on-chain, para detectar comportamiento de bot. Las wallets con
-        firma de bot pueden quedar excluidas de la distribución de premios
-        sin aviso previo. Si crees que tu wallet fue marcada por error,
-        contáctanos.
+        on-chain, para detectar comportamiento de bot. Las wallets marcadas
+        pueden ocultarse de la tabla de puntajes. Toda jugada pagada conserva
+        sus tickets del sorteo; solo las wallets con fraude confirmado (p. ej.
+        explotar los pagos o el juego) quedan excluidas del sorteo. Si crees
+        que tu wallet fue marcada por error, contáctanos.
       </p>
 
       <h2 className="font-display text-xl tracking-wide mt-4">6. Sin garantía</h2>

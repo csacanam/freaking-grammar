@@ -9,6 +9,7 @@ import { FREAKING_POT_ABI, celoClient, readPotAmount } from "@/lib/onchain";
 import {
   checkBotPlayer,
   loadBotBlacklist,
+  loadManualBlacklist,
   type BotFlag,
 } from "@/lib/bot-detection";
 import {
@@ -281,7 +282,9 @@ async function rollPot(b: Bucket, today: string): Promise<LangResult> {
 
   if (!lastPot.closed) {
     if (prevDay >= DRAW_START_DAY) {
-      const d = await drawPotWinner(b, prevDay, botBlacklist);
+      // Draw excludes only ops-confirmed fraud, not heuristic flags — see
+      // loadManualBlacklist for why.
+      const d = await drawPotWinner(b, prevDay, await loadManualBlacklist(supabase));
       winner = d.winner;
       winnerScore = d.winnerScore;
       drawInfo = d.draw;

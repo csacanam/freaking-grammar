@@ -17,7 +17,10 @@
 //   - No cap on runs per day: every paid run adds tickets, so odds scale
 //     with spend. More runs = revenue and pot growth, from bots included;
 //     the parimutuel pool self-limits (buying more dilutes your own EV).
-//   - Blacklisted wallets (bot_wallets) never enter the draw.
+//   - Only ops-confirmed fraud (bot_wallets reason='manual') is excluded.
+//     Heuristic score/timing flags no longer touch the draw (2026-09-24):
+//     a flagged payer's tickets stay in, since score is capped at 3 tickets
+//     per run and dropping paid runs contradicted the public ticket list.
 //   - Zero tickets → no winner → the contract carries the pot forward and
 //     skips the treasury seed (rollDay's ghost-day branch), so a quiet day
 //     costs nothing and the pot waits for its first entrant.
