@@ -12,6 +12,7 @@
 
 import type { NextRequest } from "next/server";
 import { supabase, computeRank } from "@/lib/supabase";
+import { BOT_FRIENDLY } from "@/lib/bot-detection";
 import {
   generateMathQuestion,
   timeBudgetMs,
@@ -282,7 +283,7 @@ export async function POST(
   // wallet's original context; errors are non-fatal so a failed flag never
   // blocks the answer; `>=` so a transient write failure at the crossing
   // retries on the next answer.
-  if (newScore >= LIVE_FLAG_SCORE_MATH) {
+  if (!BOT_FRIENDLY && newScore >= LIVE_FLAG_SCORE_MATH) {
     const { error: liveFlagErr } = await supabase.from("bot_wallets").upsert(
       {
         player: run.player,

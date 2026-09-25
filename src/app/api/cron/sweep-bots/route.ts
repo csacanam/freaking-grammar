@@ -16,7 +16,11 @@
 
 import type { NextRequest } from "next/server";
 import { fetchAllPaged, supabase } from "@/lib/supabase";
-import { checkBotPlayer, loadBotBlacklist } from "@/lib/bot-detection";
+import {
+  BOT_FRIENDLY,
+  checkBotPlayer,
+  loadBotBlacklist,
+} from "@/lib/bot-detection";
 import { sendTelegramMessage } from "@/lib/telegram";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +38,10 @@ export async function GET(req: NextRequest) {
   }
   if (!supabase) {
     return Response.json({ error: "db-unconfigured" }, { status: 503 });
+  }
+  // Bot-friendly mode: nothing to sweep for (see BOT_FRIENDLY).
+  if (BOT_FRIENDLY) {
+    return Response.json({ ok: true, skipped: "bot-friendly" });
   }
   const db = supabase;
 

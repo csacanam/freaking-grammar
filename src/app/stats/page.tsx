@@ -22,7 +22,7 @@ import {
   readTreasuryState,
 } from "@/lib/onchain";
 import { POT_ADDRESS } from "@/lib/chain";
-import { loadBotBlacklist } from "@/lib/bot-detection";
+import { loadLeaderboardBlacklist } from "@/lib/bot-detection";
 import {
   fetchPostHogStats,
   countryFlag,
@@ -287,7 +287,7 @@ async function loadStats(): Promise<Stats | null> {
   // (e.g. a metronomic 101 in Math) as the day's record. The lobby already
   // filters bot_wallets; the stats top-score didn't. `runs.player` is stored
   // lower-case, matching the Set from loadBotBlacklist.
-  const botBlacklist = await loadBotBlacklist(db);
+  const botBlacklist = await loadLeaderboardBlacklist(db);
   const todayTopByGame = new Map<GameKey, number>();
   for (const r of todayRuns) {
     if (botBlacklist.has(r.player)) continue;

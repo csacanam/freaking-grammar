@@ -152,6 +152,23 @@ export async function loadBotBlacklist(
 // silently dropping a paid run (false positives on fast humans included)
 // breaks the published ticket list. Heuristic flags still hide wallets from
 // the glory leaderboard.
+// Bot-friendly mode — OFF unless BOT_FRIENDLY=1 in the deploy env.
+// Since the pot became a draw (score buys at most 3 tickets per paid run),
+// a bot is either a free player who can't win or a payer with human-equal
+// odds. When on: no automatic flags are written (heuristic, live score,
+// full-bank clear), sweep-bots idles, and leaderboards hide only manual
+// (ops-confirmed fraud) bans. Off keeps today's behavior. Held back until
+// the draw experiment's 2026-10-06 checkpoint so it can be measured as its
+// own change.
+export const BOT_FRIENDLY = process.env.BOT_FRIENDLY === "1";
+
+// Wallets hidden from score leaderboards (lobby, stats podium).
+export function loadLeaderboardBlacklist(
+  supabase: SupabaseClient,
+): Promise<Set<string>> {
+  return BOT_FRIENDLY ? loadManualBlacklist(supabase) : loadBotBlacklist(supabase);
+}
+
 export async function loadManualBlacklist(
   supabase: SupabaseClient,
 ): Promise<Set<string>> {
@@ -499,20 +516,24 @@ export async function checkBotPlayer(
     // (roll-day) rolls every new flag into a single settlement summary
     // Telegram. Errors here are non-fatal: still return the flag so
     // settlement can keep going.
-    const { error } = await supabase.from("bot_wallets").upsert(
-      {
-        player: addr,
-        reason: "heuristic",
-        correct_rate: correctRate,
-        p50_ms: p50,
-        sample_size: timedMs.length,
-        // No dedicated column for spread; stash it in notes for audit trail.
-        notes: `spread=${relSpread.toFixed(2)} (p10=${p10}ms p90=${p90}ms)`,
-      },
-      { onConflict: "player", ignoreDuplicates: true },
-    );
-    if (error) {
-      console.error("bot-detection: upsert failed (non-fatal):", error);
+    // Bot-friendly mode still returns the verdict (admin check-bot, legacy
+    // settlements) but never persists it.
+    if (!BOT_FRIENDLY) {
+      const { error } = await supabase.from("bot_wallets").upsert(
+        {
+          player: addr,
+          reason: "heuristic",
+          correct_rate: correctRate,
+          p50_ms: p50,
+          sample_size: timedMs.length,
+          // No dedicated column for spread; stash it in notes for audit trail.
+          notes: `spread=${relSpread.toFixed(2)} (p10=${p10}ms p90=${p90}ms)`,
+        },
+        { onConflict: "player", ignoreDuplicates: true },
+      );
+      if (error) {
+        console.error("bot-detection: upsert failed (non-fatal):", error);
+      }
     }
 
     // Mutate the in-memory blacklist so the same settlement run doesn't

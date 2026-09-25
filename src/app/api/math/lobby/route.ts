@@ -25,7 +25,10 @@ import {
   FREAKING_POT_ABI,
   readHasFreePlayToday,
 } from "@/lib/onchain";
-import { loadBotBlacklist, loadManualBlacklist } from "@/lib/bot-detection";
+import {
+  loadLeaderboardBlacklist,
+  loadManualBlacklist,
+} from "@/lib/bot-detection";
 import { buildTicketEntries } from "@/lib/draw";
 
 export const dynamic = "force-dynamic";
@@ -58,7 +61,7 @@ export async function GET(req: NextRequest) {
   // so the ticket counts below use the manual list — otherwise the odds
   // shown here wouldn't match the settlement draw.
   const [blacklist, manualBlacklist] = await Promise.all([
-    loadBotBlacklist(supabase),
+    loadLeaderboardBlacklist(supabase),
     loadManualBlacklist(supabase),
   ]);
   const toFilter = (set: Set<string>) =>

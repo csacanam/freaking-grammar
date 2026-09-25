@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { supabase, computeRank } from "@/lib/supabase";
+import { BOT_FRIENDLY } from "@/lib/bot-detection";
 
 export const dynamic = "force-dynamic";
 
@@ -226,7 +227,7 @@ export async function POST(
   // already-flagged wallet's original context; errors are non-fatal so a failed
   // flag never blocks the player's answer. Runs on `>=` so a transient write
   // failure at the crossing retries on the next answer.
-  if (newScore >= LIVE_FLAG_SCORE_GRAMMAR) {
+  if (!BOT_FRIENDLY && newScore >= LIVE_FLAG_SCORE_GRAMMAR) {
     const { error: liveFlagErr } = await supabase.from("bot_wallets").upsert(
       {
         player: run.player,
@@ -272,17 +273,19 @@ export async function POST(
     // bot_wallets) and is skipped at settlement. reason='heuristic' (automated);
     // ignoreDuplicates so an already-flagged wallet keeps its original context;
     // non-fatal so the player's result still returns.
-    const { error: flagErr } = await supabase.from("bot_wallets").upsert(
-      {
-        player: run.player,
-        reason: "heuristic",
-        sample_size: newScore,
-        notes: `auto: cleared full ${run.lang.toUpperCase()} bank (${newScore})`,
-      },
-      { onConflict: "player", ignoreDuplicates: true },
-    );
-    if (flagErr) {
-      console.error("bank-clear auto-flag failed (non-fatal):", flagErr);
+    if (!BOT_FRIENDLY) {
+      const { error: flagErr } = await supabase.from("bot_wallets").upsert(
+        {
+          player: run.player,
+          reason: "heuristic",
+          sample_size: newScore,
+          notes: `auto: cleared full ${run.lang.toUpperCase()} bank (${newScore})`,
+        },
+        { onConflict: "player", ignoreDuplicates: true },
+      );
+      if (flagErr) {
+        console.error("bank-clear auto-flag failed (non-fatal):", flagErr);
+      }
     }
 
     const rank = await computeRank(
