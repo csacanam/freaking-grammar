@@ -36,7 +36,9 @@ export function friendlyError(e: unknown, cap = 160): string {
   if (/user rejected|rejected the request|denied/i.test(msg)) {
     return "Transaction rejected.";
   }
-  if (/insufficient funds/i.test(msg)) return "Insufficient funds for gas.";
+  if (/insufficient funds|gas required exceeds allowance/i.test(msg)) {
+    return "Insufficient funds for gas.";
+  }
   if (/insufficient allowance/i.test(msg)) return "Insufficient USDT allowance.";
   const head = msg.split(/\n|\. /)[0].trim();
   return head.length > cap ? head.slice(0, cap) + "…" : head;

@@ -318,6 +318,11 @@ export const dict = {
     mpDepositHint:
       "Top up in MiniPay — deposit USDT or swap from USDC or USDm.",
     mpDepositCta: "Deposit",
+    // Same branch, when the play is free but MiniPay pays the network fee
+    // in USDT and the wallet has none.
+    mpFeeTitle: "Add a little USDT to play",
+    mpFeeHint:
+      "Your free play costs nothing, but MiniPay pays the network fee in USDT (less than a cent). Adding $0.10 is plenty.",
     // NeedFundsModal
     notEnoughUSDT: "Not enough USDT",
     notEnoughCELO: "Not enough CELO",
@@ -707,6 +712,9 @@ export const dict = {
     mpDepositHint:
       "Recarga en MiniPay — deposita USDT o cámbialo desde USDC o USDm.",
     mpDepositCta: "Depositar",
+    mpFeeTitle: "Agrega un poco de USDT para jugar",
+    mpFeeHint:
+      "Tu jugada gratis no cuesta nada, pero MiniPay paga la tarifa de red en USDT (menos de un centavo). Con $0.10 te alcanza.",
     // NeedFundsModal
     notEnoughUSDT: "No tienes USDT suficiente",
     notEnoughCELO: "No tienes CELO suficiente",

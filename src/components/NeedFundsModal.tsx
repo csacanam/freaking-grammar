@@ -43,6 +43,7 @@ export function NeedFundsModal({
   need,
   walletAddress,
   mode = "add",
+  reason,
   onClose,
 }: {
   open: boolean;
@@ -51,6 +52,8 @@ export function NeedFundsModal({
   need?: string;
   walletAddress?: string;
   mode?: Mode;
+  // "fee": the play itself is free but MiniPay needs USDT for the network fee.
+  reason?: "fee";
   onClose: () => void;
 }) {
   const { t } = useLang();
@@ -86,10 +89,10 @@ export function NeedFundsModal({
             <Image src="/mascot.png" alt="" width={48} height={48} />
             <div>
               <h2 className="font-display text-2xl tracking-wide leading-tight">
-                {t.mpDepositTitle}
+                {reason === "fee" ? t.mpFeeTitle : t.mpDepositTitle}
               </h2>
               <p className="text-[11px] text-muted mt-1 leading-snug">
-                {t.mpDepositHint}
+                {reason === "fee" ? t.mpFeeHint : t.mpDepositHint}
               </p>
             </div>
           </div>

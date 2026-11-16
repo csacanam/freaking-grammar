@@ -45,6 +45,12 @@ const FREAKING_POT_ABI = FreakingPotArtifact.abi;
 // entry fee.
 const APPROVE_UNITS = ENTRY_FEE_UNITS * 50n;
 
+// Inside MiniPay every tx pays its network fee in USDT (CIP-64), free plays
+// included. A play costs ~0.0006 USDT in fees; the wallet pre-flight reserves
+// several times that, so we ask for a cent of headroom. With 0 USDT the node
+// rejects gas estimation and MiniPay surfaces it as a bare "play reverted".
+const MINIPAY_FEE_RESERVE_UNITS = 10_000n;
+
 type Stage =
   | "idle"
   | "switching"
@@ -91,6 +97,7 @@ export function PayAndPlayButton({
     balance: string;
     need: string;
     address: string;
+    reason?: "fee";
   } | null>(null);
 
   const contractLive = !isAddressEqual(POT_ADDRESS, zeroAddress);
@@ -143,6 +150,14 @@ export function PayAndPlayButton({
       }
     }
 
+    if (inMiniPay && playerHasFreePlay) {
+      const balance = await readUsdtBalance(currentAddress);
+      if (balance < MINIPAY_FEE_RESERVE_UNITS) {
+        showFeeModal(currentAddress, balance);
+        throw new Error("insufficient-usdt");
+      }
+    }
+
     // Approve + USDT balance check only needed for paid plays — free plays
     // don't pull USDT. The contract itself decides free vs paid from
     // `lastFreePlayDay`.
@@ -162,7 +177,8 @@ export function PayAndPlayButton({
         }),
       ])) as [bigint, bigint];
 
-      if (balance < ENTRY_FEE_UNITS) {
+      const feeReserve = inMiniPay ? MINIPAY_FEE_RESERVE_UNITS : 0n;
+      if (balance < ENTRY_FEE_UNITS + feeReserve) {
         setNeedFunds({
           token: "USDT",
           balance: (Number(balance) / 1_000_000).toFixed(2),
@@ -225,6 +241,27 @@ export function PayAndPlayButton({
     router.push(dest);
   }
 
+  async function readUsdtBalance(owner: `0x${string}`): Promise<bigint> {
+    if (!publicClient) throw new Error("no-rpc");
+    return (await publicClient.readContract({
+      address: token.address,
+      abi: erc20Abi,
+      functionName: "balanceOf",
+      args: [owner],
+    })) as bigint;
+  }
+
+  function showFeeModal(owner: `0x${string}`, balance: bigint) {
+    setNeedFunds({
+      token: "USDT",
+      balance: (Number(balance) / 1_000_000).toFixed(2),
+      need: "0.01",
+      address: owner,
+      reason: "fee",
+    });
+    setStage("idle");
+  }
+
   async function handleClick() {
     setError(null);
 
@@ -245,7 +282,16 @@ export function PayAndPlayButton({
       // Insufficient-funds cases are already surfaced via NeedFundsModal.
       const msg = err?.message;
       if (msg !== "insufficient-usdt" && msg !== "insufficient-celo") {
-        setError(friendlyError(e, 120));
+        // MiniPay reports a fee shortfall as a generic revert, so check the
+        // balance before showing the raw wallet error.
+        const balance = inMiniPay
+          ? await readUsdtBalance(address).catch(() => null)
+          : null;
+        if (balance !== null && balance < MINIPAY_FEE_RESERVE_UNITS) {
+          showFeeModal(address, balance);
+        } else {
+          setError(friendlyError(e, 120));
+        }
       }
       setStage("idle");
     }
@@ -364,6 +410,7 @@ export function PayAndPlayButton({
         balance={needFunds?.balance}
         need={needFunds?.need}
         walletAddress={needFunds?.address}
+        reason={needFunds?.reason}
         onClose={() => setNeedFunds(null)}
       />
     </div>
