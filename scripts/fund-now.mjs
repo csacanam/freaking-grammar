@@ -190,6 +190,7 @@ if (allowance < usdtBal) {
 }
 
 // --- fundTreasury per game ---
+let lastBlock;
 for (let i = 0; i < allocs.length; i++) {
   const a = allocs[i];
   if (a.amount === 0n) continue;
@@ -202,17 +203,32 @@ for (let i = 0; i < allocs.length; i++) {
     args: [a.id, a.amount],
   });
   console.log("  tx:", hash);
-  await pub.waitForTransactionReceipt({ hash });
+  const receipt = await pub.waitForTransactionReceipt({ hash });
+  lastBlock = receipt.blockNumber;
   console.log("  ✓ confirmed");
 }
 
 // --- Verify ---
+// Forno is load-balanced: an unpinned read right after the last receipt can
+// land on a node that hasn't seen that block and report pre-fund balances.
+// Pin every read to the last fund block and retry until a node has it.
+async function readAfter(args) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await pub.readContract({ ...args, ...(lastBlock ? { blockNumber: lastBlock } : {}) });
+    } catch (e) {
+      if (attempt >= 6) throw e;
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+  }
+}
+
 console.log("");
 console.log("Treasury state AFTER:");
 for (const g of GAMES) {
   const [treasury, dailySeed] = await Promise.all([
-    pub.readContract({ address: POT, abi: POT_ABI, functionName: "treasury", args: [g.id] }),
-    pub.readContract({ address: POT, abi: POT_ABI, functionName: "dailySeed", args: [g.id] }),
+    readAfter({ address: POT, abi: POT_ABI, functionName: "treasury", args: [g.id] }),
+    readAfter({ address: POT, abi: POT_ABI, functionName: "dailySeed", args: [g.id] }),
   ]);
   const t = Number(formatUnits(treasury, 6));
   const d = Number(formatUnits(dailySeed, 6));
@@ -220,7 +236,7 @@ for (const g of GAMES) {
   console.log(`  ${g.label}: treasury ${t.toFixed(2)} USDT · runway ${runway}d`);
 }
 
-const finalUsdt = await pub.readContract({
+const finalUsdt = await readAfter({
   address: USDT,
   abi: erc20Abi,
   functionName: "balanceOf",
