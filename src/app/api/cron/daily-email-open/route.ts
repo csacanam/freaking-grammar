@@ -47,6 +47,11 @@ export async function GET(req: NextRequest) {
       return Response.json({ error: "unauthorized" }, { status: 401 });
     }
   }
+  // Daily emails are paused. The code stays so they can come back by setting
+  // DAILY_EMAILS_ENABLED=1; a 200 keeps cron-job.org from flagging failures.
+  if (process.env.DAILY_EMAILS_ENABLED !== "1") {
+    return Response.json({ skipped: "daily-emails-disabled" });
+  }
   if (!supabase) {
     return Response.json({ error: "db-unconfigured" }, { status: 503 });
   }
